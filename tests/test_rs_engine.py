@@ -146,3 +146,31 @@ def test_compare_stock_with_sector():
     assert result["stock_return_pct"] == pytest.approx(15.0)
     assert result["sector_return_pct"] == pytest.approx(10.0)
     assert result["relative_performance_pct"] == pytest.approx(5.0)
+
+
+from rs_engine import calculate_return_windows
+
+
+def test_calculate_return_windows():
+    data = pd.DataFrame({
+        "Date": [
+            "2026-10-01",
+            "2026-10-05",
+            "2026-10-10",
+            "2026-10-15",
+        ],
+        "Close": [100, 105, 110, 120],
+    })
+
+    windows = {
+        "Window_A": ("2026-10-01", "2026-10-10"),
+        "Window_B": ("2026-10-05", "2026-10-15"),
+    }
+
+    result = calculate_return_windows(data, windows)
+
+    assert result["Window_A"] == pytest.approx(10.0)
+    assert result["Window_B"] == pytest.approx(
+        ((120 / 105) - 1) * 100
+    )
+    
