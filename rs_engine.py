@@ -59,3 +59,30 @@ def calculate_period_return(
 
     return calculate_return(start_close, end_close)
     
+
+def compare_stock_with_benchmark(
+    stock_data,
+    benchmark_data,
+    start_date,
+    end_date,
+) -> dict:
+    """Compare stock and benchmark returns over the same date range."""
+
+    stock_return = calculate_period_return(
+        stock_data, start_date, end_date
+    )
+
+    benchmark_return = calculate_period_return(
+        benchmark_data, start_date, end_date
+    )
+
+    relative = relative_performance(
+        stock_return, benchmark_return
+    )
+
+    return {
+        "stock_return_pct": stock_return,
+        "benchmark_return_pct": benchmark_return,
+        "relative_performance_pct": relative,
+    }
+    
