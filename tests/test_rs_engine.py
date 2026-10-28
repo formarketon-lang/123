@@ -281,3 +281,55 @@ def test_compare_trading_day_performance_without_sector():
     assert result["stock_vs_benchmark_pct"] == pytest.approx(0.0)
     assert "sector_return_pct" not in result
     
+
+from rs_engine import compare_on_common_dates
+
+
+def test_compare_on_common_dates():
+    stock_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-05", "2026-10-10"],
+        "Close": [100, 110, 120],
+    })
+
+    benchmark_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-07", "2026-10-10"],
+        "Close": [100, 105, 110],
+    })
+
+    result = compare_on_common_dates(
+        stock_data,
+        benchmark_data,
+        "2026-10-01",
+        "2026-10-10",
+    )
+
+    # Only Oct 1 and Oct 10 are common dates.
+    assert result["start_date"] == "2026-10-01"
+    assert result["end_date"] == "2026-10-10"
+    assert result["common_trading_sessions"] == 2
+    assert result["stock_return_pct"] == pytest.approx(20.0)
+    assert result["benchmark_return_pct"] == pytest.approx(10.0)
+    assert result["stock_vs_benchmark_pct"] == pytest.approx(10.0)
+
+
+def test_compare_on_common_dates_rejects_no_common_dates():
+    stock_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-02"],
+        "Close": [100, 105],
+    })
+
+    benchmark_data = pd.DataFrame({
+        "Date": ["2026-10-05", "2026-10-06"],
+        "Close": [100, 108],
+    })
+
+    with pytest.raises(
+        ValueError, match="At least two common trading dates"
+    ):
+        compare_on_common_dates(
+            stock_data,
+            benchmark_data,
+            "2026-10-01",
+            "2026-10-10",
+        )
+        
