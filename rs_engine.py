@@ -226,3 +226,97 @@ def compare_trading_day_performance(
 
     return result
     
+
+def compare_on_common_dates(
+    stock_data,
+    benchmark_data,
+    start_date,
+    end_date,
+    sector_data=None,
+) -> dict:
+    """
+    Compare stock, benchmark, and optional sector using
+    the same common trading dates.
+    """
+
+    datasets = {
+        "stock": stock_data,
+        "benchmark": benchmark_data,
+    }
+
+    if sector_data is not None:
+        datasets["sector"] = sector_data
+
+    normalized = {}
+
+    for name, data in datasets.items():
+        if data.empty:
+            raise ValueError(f"{name} data must not be empty")
+
+        if "Date" not in data.columns or "Close" not in data.columns:
+            raise ValueError(f"{name} data must contain Date and Close")
+
+        prices = data[["Date", "Close"]].copy()
+        prices["Date"] = pd.to_datetime(
+            prices["Date"], errors="raise"
+        )
+        prices["Close"] = pd.to_numeric(
+            prices["Close"], errors="raise"
+        )
+
+        if prices["Date"].duplicated().any():
+            raise ValueError(f"{name} data contains duplicate dates")
+
+        if prices["Close"].isna().any() or (prices["Close"] <= 0).any():
+            raise ValueError(f"{name} Close prices must be positive")
+
+        normalized[name] = prices.set_index("Date")["Close"]
+
+    start_date = pd.Timestamp(start_date)
+    end_date = pd.Timestamp(end_date)
+
+    if end_date < start_date:
+        raise ValueError("end_date must not be earlier than start_date")
+
+    common = pd.concat(normalized, axis=1, join="inner").sort_index()
+    common = common.loc[
+        (common.index >= start_date) & (common.index <= end_date)
+    ]
+
+    if len(common) < 2:
+        raise ValueError(
+            "At least two common trading dates are required"
+        )
+
+    first = common.iloc[0]
+    last = common.iloc[-1]
+
+    stock_return = calculate_return(
+        float(first["stock"]), float(last["stock"])
+    )
+    benchmark_return = calculate_return(
+        float(first["benchmark"]), float(last["benchmark"])
+    )
+
+    result = {
+        "start_date": common.index[0].strftime("%Y-%m-%d"),
+        "end_date": common.index[-1].strftime("%Y-%m-%d"),
+        "common_trading_sessions": len(common),
+        "stock_return_pct": stock_return,
+        "benchmark_return_pct": benchmark_return,
+        "stock_vs_benchmark_pct": relative_performance(
+            stock_return, benchmark_return
+        ),
+    }
+
+    if sector_data is not None:
+        sector_return = calculate_return(
+            float(first["sector"]), float(last["sector"])
+        )
+        result["sector_return_pct"] = sector_return
+        result["stock_vs_sector_pct"] = relative_performance(
+            stock_return, sector_return
+        )
+
+    return result
+    
