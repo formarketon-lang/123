@@ -1,6 +1,6 @@
 import pytest
 
-from core.rs_engine import calculate_return, relative_performance
+from rs_engine import calculate_return, relative_performance
 
 
 def test_calculate_return_positive():
