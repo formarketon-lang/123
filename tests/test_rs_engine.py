@@ -333,3 +333,40 @@ def test_compare_on_common_dates_rejects_no_common_dates():
             "2026-10-10",
         )
         
+
+def test_compare_on_common_dates_with_sector():
+    stock_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-05", "2026-10-10"],
+        "Close": [100, 110, 120],
+    })
+
+    benchmark_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-07", "2026-10-10"],
+        "Close": [100, 105, 110],
+    })
+
+    sector_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-08", "2026-10-10"],
+        "Close": [100, 108, 115],
+    })
+
+    result = compare_on_common_dates(
+        stock_data,
+        benchmark_data,
+        "2026-10-01",
+        "2026-10-10",
+        sector_data=sector_data,
+    )
+
+    # The common dates across all three datasets are Oct 1 and Oct 10.
+    assert result["start_date"] == "2026-10-01"
+    assert result["end_date"] == "2026-10-10"
+    assert result["common_trading_sessions"] == 2
+
+    assert result["stock_return_pct"] == pytest.approx(20.0)
+    assert result["benchmark_return_pct"] == pytest.approx(10.0)
+    assert result["sector_return_pct"] == pytest.approx(15.0)
+
+    assert result["stock_vs_benchmark_pct"] == pytest.approx(10.0)
+    assert result["stock_vs_sector_pct"] == pytest.approx(5.0)
+    
