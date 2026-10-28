@@ -113,3 +113,33 @@ def compare_stock_with_sector(
         "relative_performance_pct": relative,
     }
     
+
+def calculate_return_windows(
+    data,
+    windows: dict,
+) -> dict:
+    """
+    Calculate returns for multiple custom date windows.
+
+    Example:
+        windows = {
+            "1M": ("2026-09-01", "2026-10-01"),
+            "3M": ("2026-07-01", "2026-10-01"),
+        }
+    """
+    results = {}
+
+    for name, dates in windows.items():
+        if len(dates) != 2:
+            raise ValueError(
+                f"Window '{name}' must contain start and end dates"
+            )
+
+        start_date, end_date = dates
+
+        results[name] = calculate_period_return(
+            data, start_date, end_date
+        )
+
+    return results
+    
