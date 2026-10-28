@@ -71,3 +71,29 @@ def test_calculate_period_return_rejects_empty_data():
             data, "2026-10-01", "2026-10-10"
         )
         
+
+from rs_engine import compare_stock_with_benchmark
+
+
+def test_compare_stock_with_benchmark():
+    stock_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-10"],
+        "Close": [100, 112],
+    })
+
+    benchmark_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-10"],
+        "Close": [100, 108],
+    })
+
+    result = compare_stock_with_benchmark(
+        stock_data,
+        benchmark_data,
+        "2026-10-01",
+        "2026-10-10",
+    )
+
+    assert result["stock_return_pct"] == pytest.approx(12.0)
+    assert result["benchmark_return_pct"] == pytest.approx(8.0)
+    assert result["relative_performance_pct"] == pytest.approx(4.0)
+    
