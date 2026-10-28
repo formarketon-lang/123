@@ -143,3 +143,47 @@ def calculate_return_windows(
 
     return results
     
+
+def calculate_trading_day_return(
+    data,
+    trading_days: int,
+) -> float:
+    """
+    Calculate return using the first and last Close
+    among the latest N available trading sessions.
+
+    N sessions contain N Close prices and N-1 intervals.
+    """
+    if not isinstance(trading_days, int) or isinstance(trading_days, bool):
+        raise ValueError("trading_days must be a positive integer")
+
+    if trading_days < 2:
+        raise ValueError("trading_days must be at least 2")
+
+    if data.empty:
+        raise ValueError("data must not be empty")
+
+    if "Date" not in data.columns or "Close" not in data.columns:
+        raise ValueError("data must contain Date and Close columns")
+
+    prices = data[["Date", "Close"]].copy()
+    prices["Date"] = pd.to_datetime(prices["Date"], errors="raise")
+    prices["Close"] = pd.to_numeric(prices["Close"], errors="raise")
+    prices = prices.sort_values("Date")
+
+    if prices["Date"].duplicated().any():
+        raise ValueError("data must not contain duplicate dates")
+
+    if prices["Close"].isna().any() or (prices["Close"] <= 0).any():
+        raise ValueError("Close prices must be positive and non-missing")
+
+    if len(prices) < trading_days:
+        raise ValueError("Not enough trading sessions in the data")
+
+    selected = prices.tail(trading_days)
+
+    return calculate_return(
+        float(selected.iloc[0]["Close"]),
+        float(selected.iloc[-1]["Close"]),
+    )
+    
