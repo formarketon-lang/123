@@ -174,3 +174,45 @@ def test_calculate_return_windows():
         ((120 / 105) - 1) * 100
     )
     
+
+from rs_engine import calculate_trading_day_return
+
+
+def test_calculate_trading_day_return():
+    data = pd.DataFrame({
+        "Date": [
+            "2026-10-01",
+            "2026-10-05",
+            "2026-10-10",
+            "2026-10-15",
+        ],
+        "Close": [100, 102, 105, 110],
+    })
+
+    result = calculate_trading_day_return(data, 3)
+
+    # Latest 3 sessions: 102, 105, 110
+    assert result == pytest.approx(
+        ((110 / 102) - 1) * 100
+    )
+
+
+def test_trading_day_return_rejects_insufficient_data():
+    data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-05"],
+        "Close": [100, 105],
+    })
+
+    with pytest.raises(ValueError, match="Not enough trading sessions"):
+        calculate_trading_day_return(data, 3)
+
+
+def test_trading_day_return_rejects_one_session():
+    data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-05"],
+        "Close": [100, 105],
+    })
+
+    with pytest.raises(ValueError, match="at least 2"):
+        calculate_trading_day_return(data, 1)
+        
