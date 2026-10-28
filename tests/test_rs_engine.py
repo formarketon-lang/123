@@ -216,3 +216,68 @@ def test_trading_day_return_rejects_one_session():
     with pytest.raises(ValueError, match="at least 2"):
         calculate_trading_day_return(data, 1)
         
+
+from rs_engine import compare_trading_day_performance
+
+
+def test_compare_trading_day_performance_with_sector():
+    stock_data = pd.DataFrame({
+        "Date": [
+            "2026-10-01",
+            "2026-10-05",
+            "2026-10-10",
+        ],
+        "Close": [100, 105, 112],
+    })
+
+    benchmark_data = pd.DataFrame({
+        "Date": [
+            "2026-10-01",
+            "2026-10-05",
+            "2026-10-10",
+        ],
+        "Close": [100, 103, 107],
+    })
+
+    sector_data = pd.DataFrame({
+        "Date": [
+            "2026-10-01",
+            "2026-10-05",
+            "2026-10-10",
+        ],
+        "Close": [100, 104, 109],
+    })
+
+    result = compare_trading_day_performance(
+        stock_data,
+        benchmark_data,
+        trading_days=3,
+        sector_data=sector_data,
+    )
+
+    assert result["stock_return_pct"] == pytest.approx(12.0)
+    assert result["benchmark_return_pct"] == pytest.approx(7.0)
+    assert result["stock_vs_benchmark_pct"] == pytest.approx(5.0)
+    assert result["sector_return_pct"] == pytest.approx(9.0)
+    assert result["stock_vs_sector_pct"] == pytest.approx(3.0)
+
+
+def test_compare_trading_day_performance_without_sector():
+    data = pd.DataFrame({
+        "Date": [
+            "2026-10-01",
+            "2026-10-05",
+            "2026-10-10",
+        ],
+        "Close": [100, 105, 110],
+    })
+
+    result = compare_trading_day_performance(
+        data, data, trading_days=3
+    )
+
+    assert result["stock_return_pct"] == pytest.approx(10.0)
+    assert result["benchmark_return_pct"] == pytest.approx(10.0)
+    assert result["stock_vs_benchmark_pct"] == pytest.approx(0.0)
+    assert "sector_return_pct" not in result
+    
