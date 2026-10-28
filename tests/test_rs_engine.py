@@ -5,8 +5,14 @@ from rs_engine import (
     calculate_return,
     relative_performance,
     calculate_period_return,
+    compare_stock_with_benchmark,
+    compare_stock_with_sector,
 )
 
+
+# --------------------------------------------------
+# 1. Basic Return Calculation Tests
+# --------------------------------------------------
 
 def test_calculate_return_positive():
     assert calculate_return(100, 110) == pytest.approx(10.0)
@@ -21,9 +27,17 @@ def test_calculate_return_rejects_nonpositive_start():
         calculate_return(0, 100)
 
 
+# --------------------------------------------------
+# 2. Relative Performance Tests
+# --------------------------------------------------
+
 def test_relative_performance():
     assert relative_performance(8.0, 5.0) == pytest.approx(3.0)
 
+
+# --------------------------------------------------
+# 3. Date-Based Return Calculation Tests
+# --------------------------------------------------
 
 def test_calculate_period_return():
     data = pd.DataFrame({
@@ -32,7 +46,9 @@ def test_calculate_period_return():
     })
 
     result = calculate_period_return(
-        data, "2026-10-01", "2026-10-10"
+        data,
+        "2026-10-01",
+        "2026-10-10",
     )
 
     assert result == pytest.approx(10.0)
@@ -45,7 +61,9 @@ def test_calculate_period_return_uses_previous_trading_day():
     })
 
     result = calculate_period_return(
-        data, "2026-10-03", "2026-10-10"
+        data,
+        "2026-10-03",
+        "2026-10-10",
     )
 
     assert result == pytest.approx(10.0)
@@ -59,7 +77,9 @@ def test_calculate_period_return_rejects_reversed_dates():
 
     with pytest.raises(ValueError):
         calculate_period_return(
-            data, "2026-10-10", "2026-10-01"
+            data,
+            "2026-10-10",
+            "2026-10-01",
         )
 
 
@@ -68,12 +88,15 @@ def test_calculate_period_return_rejects_empty_data():
 
     with pytest.raises(ValueError):
         calculate_period_return(
-            data, "2026-10-01", "2026-10-10"
+            data,
+            "2026-10-01",
+            "2026-10-10",
         )
-        
 
-from rs_engine import compare_stock_with_benchmark
 
+# --------------------------------------------------
+# 4. Stock vs Benchmark Comparison Tests
+# --------------------------------------------------
 
 def test_compare_stock_with_benchmark():
     stock_data = pd.DataFrame({
@@ -96,4 +119,30 @@ def test_compare_stock_with_benchmark():
     assert result["stock_return_pct"] == pytest.approx(12.0)
     assert result["benchmark_return_pct"] == pytest.approx(8.0)
     assert result["relative_performance_pct"] == pytest.approx(4.0)
-    
+
+
+# --------------------------------------------------
+# 5. Stock vs Sector Comparison Tests
+# --------------------------------------------------
+
+def test_compare_stock_with_sector():
+    stock_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-10"],
+        "Close": [100, 115],
+    })
+
+    sector_data = pd.DataFrame({
+        "Date": ["2026-10-01", "2026-10-10"],
+        "Close": [100, 110],
+    })
+
+    result = compare_stock_with_sector(
+        stock_data,
+        sector_data,
+        "2026-10-01",
+        "2026-10-10",
+    )
+
+    assert result["stock_return_pct"] == pytest.approx(15.0)
+    assert result["sector_return_pct"] == pytest.approx(10.0)
+    assert result["relative_performance_pct"] == pytest.approx(5.0)
