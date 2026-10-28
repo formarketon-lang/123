@@ -86,3 +86,30 @@ def compare_stock_with_benchmark(
         "relative_performance_pct": relative,
     }
     
+
+def compare_stock_with_sector(
+    stock_data,
+    sector_data,
+    start_date,
+    end_date,
+) -> dict:
+    """Compare stock returns with sector returns over the same period."""
+
+    stock_return = calculate_period_return(
+        stock_data, start_date, end_date
+    )
+
+    sector_return = calculate_period_return(
+        sector_data, start_date, end_date
+    )
+
+    relative = relative_performance(
+        stock_return, sector_return
+    )
+
+    return {
+        "stock_return_pct": stock_return,
+        "sector_return_pct": sector_return,
+        "relative_performance_pct": relative,
+    }
+    
