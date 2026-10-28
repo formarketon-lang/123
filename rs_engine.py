@@ -1,4 +1,4 @@
-"""Relative Strength calculation functions will be implemented in Phase 3."""
+"""Relative Strength calculation and comparison functions."""
 
 
 def calculate_return(start_price: float, end_price: float) -> float:
