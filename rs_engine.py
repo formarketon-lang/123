@@ -187,3 +187,42 @@ def calculate_trading_day_return(
         float(selected.iloc[-1]["Close"]),
     )
     
+
+def compare_trading_day_performance(
+    stock_data,
+    benchmark_data,
+    trading_days: int,
+    sector_data=None,
+) -> dict:
+    """Compare stock with benchmark and optionally its sector
+    over the same number of trading sessions.
+    """
+
+    stock_return = calculate_trading_day_return(
+        stock_data, trading_days
+    )
+
+    benchmark_return = calculate_trading_day_return(
+        benchmark_data, trading_days
+    )
+
+    result = {
+        "stock_return_pct": stock_return,
+        "benchmark_return_pct": benchmark_return,
+        "stock_vs_benchmark_pct": relative_performance(
+            stock_return, benchmark_return
+        ),
+    }
+
+    if sector_data is not None:
+        sector_return = calculate_trading_day_return(
+            sector_data, trading_days
+        )
+
+        result["sector_return_pct"] = sector_return
+        result["stock_vs_sector_pct"] = relative_performance(
+            stock_return, sector_return
+        )
+
+    return result
+    
