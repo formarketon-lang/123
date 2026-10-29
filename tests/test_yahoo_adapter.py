@@ -53,7 +53,10 @@ def test_validates_and_returns_yahoo_ohlcv_data():
             "Close": [102.0, 107.0],
             "Volume": [1000, 1200],
         },
-        index=pd.to_datetime(["2026-10-05", "2026-10-06"]),
+        index=pd.DatetimeIndex(
+    ["2026-10-05", "2026-10-06"],
+    name="Date",
+),
     )
 
     with patch("data.yahoo_adapter.yf.download", return_value=fake_data):
