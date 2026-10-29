@@ -41,3 +41,31 @@ def test_rejects_reversed_dates():
             "2026-10-01",
         )
       
+from unittest.mock import patch
+
+
+def test_validates_and_returns_yahoo_ohlcv_data():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [100.0, 105.0],
+            "High": [103.0, 108.0],
+            "Low": [99.0, 104.0],
+            "Close": [102.0, 107.0],
+            "Volume": [1000, 1200],
+        },
+        index=pd.to_datetime(["2026-10-05", "2026-10-06"]),
+    )
+
+    with patch("data.yahoo_adapter.yf.download", return_value=fake_data):
+        result = fetch_yahoo_history(
+            "HINDUNILVR",
+            "2026-10-01",
+            "2026-10-10",
+        )
+
+    assert list(result.columns) == [
+        "Date", "Open", "High", "Low", "Close", "Volume"
+    ]
+    assert len(result) == 2
+    assert result["Close"].tolist() == [102.0, 107.0]
+    
