@@ -1,4 +1,3 @@
-
 """Yahoo Finance historical market-data adapter."""
 
 import pandas as pd
@@ -33,8 +32,14 @@ def fetch_yahoo_history(
     if start > end:
         raise ValueError("Start date must not be after end date.")
 
-    suffix = ".NS" if exchange == "NSE" else ".BO"
-    ticker = symbol if symbol.endswith((".NS", ".BO")) else symbol + suffix
+    # Index symbols such as ^NSEI must not receive .NS or .BO.
+    if symbol.startswith("^"):
+        ticker = symbol
+    elif symbol.endswith((".NS", ".BO")):
+        ticker = symbol
+    else:
+        suffix = ".NS" if exchange == "NSE" else ".BO"
+        ticker = symbol + suffix
 
     # yfinance's end date is exclusive, so include the selected end date.
     data = yf.download(
@@ -92,4 +97,3 @@ def fetch_yahoo_history(
         raise ValueError("No valid OHLCV rows remain after validation.")
 
     return data
-  
