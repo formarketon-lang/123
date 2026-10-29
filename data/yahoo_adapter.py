@@ -34,12 +34,13 @@ def fetch_yahoo_history(
 
     suffix = ".NS" if exchange == "NSE" else ".BO"
 
-if symbol.startswith("^"):
-    ticker = symbol
-elif symbol.endswith((".NS", ".BO")):
-    ticker = symbol
-else:
-    ticker = symbol + suffix
+    # Yahoo index symbols such as ^NSEI must not receive an exchange suffix.
+    if symbol.startswith("^"):
+        ticker = symbol
+    elif symbol.endswith((".NS", ".BO")):
+        ticker = symbol
+    else:
+        ticker = symbol + suffix
 
     # yfinance's end date is exclusive, so include the selected end date.
     data = yf.download(
@@ -97,3 +98,4 @@ else:
         raise ValueError("No valid OHLCV rows remain after validation.")
 
     return data
+    
