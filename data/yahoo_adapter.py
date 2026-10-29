@@ -32,14 +32,14 @@ def fetch_yahoo_history(
     if start > end:
         raise ValueError("Start date must not be after end date.")
 
-    # Index symbols such as ^NSEI must not receive .NS or .BO.
-    if symbol.startswith("^"):
-        ticker = symbol
-    elif symbol.endswith((".NS", ".BO")):
-        ticker = symbol
-    else:
-        suffix = ".NS" if exchange == "NSE" else ".BO"
-        ticker = symbol + suffix
+    suffix = ".NS" if exchange == "NSE" else ".BO"
+
+if symbol.startswith("^"):
+    ticker = symbol
+elif symbol.endswith((".NS", ".BO")):
+    ticker = symbol
+else:
+    ticker = symbol + suffix
 
     # yfinance's end date is exclusive, so include the selected end date.
     data = yf.download(
