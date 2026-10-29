@@ -69,3 +69,13 @@ def test_validates_and_returns_yahoo_ohlcv_data():
     assert len(result) == 2
     assert result["Close"].tolist() == [102.0, 107.0]
     
+
+def test_raises_error_when_yahoo_returns_no_data():
+    with patch("data.yahoo_adapter.yf.download", return_value=pd.DataFrame()):
+        with pytest.raises(ValueError, match="No Yahoo Finance data"):
+            fetch_yahoo_history(
+                "HINDUNILVR",
+                "2026-10-01",
+                "2026-10-10",
+            )
+            
