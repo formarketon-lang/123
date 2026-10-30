@@ -8,9 +8,7 @@ from datetime import timedelta
 
 from data.yahoo_adapter import fetch_yahoo_history
 from data.universe import get_sector_symbols
-from data.benchmark_mapping import (
-    MAIN_BENCHMARKS,
-)
+from data.benchmark_mapping import MAIN_BENCHMARKS
 from core.rs_windows import build_windows
 from rs_engine import compare_on_common_dates
 
@@ -133,6 +131,7 @@ def execute_scanner(
 
                     window_start, window_end = dates
 
+                    # Stock vs Main Index
                     main_comparison = compare_on_common_dates(
                         stock_data=stock_data,
                         benchmark_data=main_benchmark_data,
@@ -159,6 +158,7 @@ def execute_scanner(
                         "End Date": main_comparison["end_date"],
                     })
 
+                    # Stock vs Sector Index
                     if sector_data is not None:
 
                         sector_comparison = compare_on_common_dates(
@@ -183,6 +183,8 @@ def execute_scanner(
                             "Common Sessions": (
                                 sector_comparison["common_trading_sessions"]
                             ),
+                            "Start Date": sector_comparison["start_date"],
+                            "End Date": sector_comparison["end_date"],
                         })
 
             except Exception as error:
@@ -204,3 +206,4 @@ def execute_scanner(
         "windows": list(windows.keys()),
         "symbols": symbols,
     }
+    
