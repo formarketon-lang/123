@@ -1,4 +1,3 @@
-
 """
 TradeLab Pro - Relative Strength Results
 
@@ -100,6 +99,15 @@ def display_results(result):
             ).reset_index(drop=True)
 
             view.insert(0, "Rank", range(1, len(view) + 1))
+
+            # Display comparison period
+            if "Start Date" in view.columns and "End Date" in view.columns:
+
+                st.caption(
+                    f"Comparison Period: "
+                    f"{view['Start Date'].iloc[0]} to "
+                    f"{view['End Date'].iloc[0]}"
+                )
 
             st.dataframe(
                 view,
