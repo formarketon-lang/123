@@ -1,3 +1,4 @@
+
 """
 TradeLab Pro - Relative Strength Page
 
@@ -90,12 +91,17 @@ def render_relative_strength_page():
         key="rs_main_benchmark",
     )
 
+    # Resolve sector benchmark
+    sector_benchmark_symbol = get_sector_benchmark(sector)
+
+    # Temporary diagnostic information
     st.write("DEBUG Sector:", repr(sector))
-st.write("DEBUG Benchmark:", repr(sector_benchmark_symbol))
+    st.write("DEBUG Benchmark:", repr(sector_benchmark_symbol))
 
     if sector_benchmark_symbol:
         st.success(
-            f"Verified Sector Benchmark: {sector}"
+            f"Verified Sector Benchmark: {sector} "
+            f"({sector_benchmark_symbol})"
         )
     else:
         st.warning(
@@ -197,5 +203,4 @@ st.write("DEBUG Benchmark:", repr(sector_benchmark_symbol))
         st.info(
             "Selection সম্পূর্ণ করে Run চাপুন। "
             "Analysis-এর ফলাফল এখানে দেখা যাবে।"
-    )
-    
+        )
