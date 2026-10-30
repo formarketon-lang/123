@@ -90,7 +90,8 @@ def render_relative_strength_page():
         key="rs_main_benchmark",
     )
 
-    sector_benchmark_symbol = get_sector_benchmark(sector)
+    st.write("DEBUG Sector:", repr(sector))
+st.write("DEBUG Benchmark:", repr(sector_benchmark_symbol))
 
     if sector_benchmark_symbol:
         st.success(
