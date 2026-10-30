@@ -15,7 +15,9 @@ MAIN_BENCHMARKS = {
 }
 
 # Add sector mappings only after verification.
-SECTOR_BENCHMARKS = {}
+SECTOR_BENCHMARKS = {
+    "FMCG": "^CNXFMCG",
+}
 
 
 def get_main_benchmarks():
