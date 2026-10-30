@@ -1,3 +1,4 @@
+
 """
 TradeLab Pro - Relative Strength Results
 
@@ -83,37 +84,70 @@ def display_results(result):
 
         sector_df = pd.DataFrame(sector_results)
 
-        for window_name in windows:
+        expected_columns = [
+            "Stock",
+            "Window",
+            "Stock Return (%)",
+            "Sector Return (%)",
+            "Sector Excess Return (%)",
+            "Common Sessions",
+            "Start Date",
+            "End Date",
+        ]
 
-            st.markdown(
-                f"**{window_name} Sector Ranking**"
+        missing_columns = [
+            column
+            for column in expected_columns
+            if column not in sector_df.columns
+        ]
+
+        if missing_columns:
+            st.error(
+                "Sector Results-এ প্রয়োজনীয় ডেটা পাওয়া যায়নি: "
+                + ", ".join(missing_columns)
             )
 
-            view = sector_df[
-                sector_df["Window"] == window_name
-            ].copy()
+            st.caption(
+                "প্রাপ্ত Data Columns: "
+                + ", ".join(sector_df.columns.astype(str))
+            )
 
-            view = view.sort_values(
-                "Sector Excess Return (%)",
-                ascending=False,
-            ).reset_index(drop=True)
+        else:
 
-            view.insert(0, "Rank", range(1, len(view) + 1))
+            for window_name in windows:
 
-            # Display comparison period
-            if "Start Date" in view.columns and "End Date" in view.columns:
-
-                st.caption(
-                    f"Comparison Period: "
-                    f"{view['Start Date'].iloc[0]} to "
-                    f"{view['End Date'].iloc[0]}"
+                st.markdown(
+                    f"**{window_name} Sector Ranking**"
                 )
 
-            st.dataframe(
-                view,
-                use_container_width=True,
-                hide_index=True,
-            )
+                view = sector_df[
+                    sector_df["Window"] == window_name
+                ].copy()
+
+                view = view.sort_values(
+                    "Sector Excess Return (%)",
+                    ascending=False,
+                ).reset_index(drop=True)
+
+                view.insert(
+                    0,
+                    "Rank",
+                    range(1, len(view) + 1),
+                )
+
+                if not view.empty:
+
+                    st.caption(
+                        f"Actual Comparison Period: "
+                        f"{view['Start Date'].iloc[0]} to "
+                        f"{view['End Date'].iloc[0]}"
+                    )
+
+                st.dataframe(
+                    view[["Rank"] + expected_columns],
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
         sector_csv = sector_df.to_csv(
             index=False
@@ -150,4 +184,3 @@ def display_results(result):
         "Excess Return = Stock Return − Benchmark Return. "
         "এটি percentage-point difference, ভবিষ্যৎ Return-এর পূর্বাভাস নয়।"
     )
-    
