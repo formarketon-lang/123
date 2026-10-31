@@ -1,10 +1,11 @@
+
 name: TradeLab Pro Data Integrity Audit
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   data-integrity-audit:
@@ -24,6 +25,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Run unit tests
+        run: |
+          python -m pytest -q
+
       - name: Download NSE data
         run: |
           python -m scripts.run_nse_live_check
@@ -36,7 +41,15 @@ jobs:
         run: |
           python -m scripts.run_data_integrity_audit
 
-      - name: Upload complete audit package
+      - name: Save historical reports to GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports/data_integrity/
+          git diff --cached --quiet || git commit -m "Store data integrity audit report"
+          git push
+
+      - name: Upload audit artifact
         uses: actions/upload-artifact@v4
         with:
           name: tradelab-data-integrity-audit
@@ -45,4 +58,3 @@ jobs:
             data/raw/yahoo/
             reports/data_integrity/
           if-no-files-found: error
-          
