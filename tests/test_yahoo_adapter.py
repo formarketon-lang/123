@@ -1,4 +1,3 @@
-
 import pandas as pd
 import pytest
 
@@ -8,8 +7,15 @@ from data.yahoo_adapter import (
     fetch_yahoo_history,
     resolve_yahoo_symbol,
     validate_intraday_date_range,
+    YahooDownloadError,
+    YahooDataUnavailableError,
+    YahooDataValidationError,
 )
 
+
+# ---------------------------------
+# Sample Data
+# ---------------------------------
 
 def sample_yahoo_data():
     return pd.DataFrame(
@@ -25,6 +31,36 @@ def sample_yahoo_data():
             name="Date",
         ),
     )
+
+
+def sample_intraday_data():
+    return pd.DataFrame(
+        {
+            "Open": [100.0, 101.0, 102.0],
+            "High": [101.0, 102.0, 103.0],
+            "Low": [99.0, 100.0, 101.0],
+            "Close": [100.5, 101.5, 102.5],
+            "Volume": [500, 600, 700],
+        },
+        index=pd.DatetimeIndex(
+            [
+                "2026-10-05 09:15:00",
+                "2026-10-05 09:20:00",
+                "2026-10-05 09:25:00",
+            ],
+            name="Datetime",
+        ),
+    )
+
+
+def assert_diagnostic(error, expected_code):
+    assert error.diagnostic["source"] == "yahoo"
+    assert error.diagnostic["code"] == expected_code
+    assert error.diagnostic["symbol"] == "HINDUNILVR"
+    assert error.diagnostic["ticker"] == "HINDUNILVR.NS"
+    assert error.diagnostic["exchange"] == "NSE"
+    assert error.diagnostic["message"]
+    assert error.diagnostic["suggested_action"]
 
 
 # ---------------------------------
@@ -57,7 +93,7 @@ def test_rejects_invalid_exchange_in_resolution():
 
 
 # ---------------------------------
-# Yahoo Adapter Validation Tests
+# Basic Adapter Validation Tests
 # ---------------------------------
 
 def test_rejects_empty_symbol():
@@ -93,6 +129,10 @@ def test_rejects_reversed_dates():
             "2026-10-01",
         )
 
+
+# ---------------------------------
+# Valid Yahoo Data Tests
+# ---------------------------------
 
 def test_validates_and_returns_yahoo_ohlcv_data():
     with patch(
@@ -147,7 +187,10 @@ def test_rejects_duplicate_dates():
         "data.yahoo_adapter.yf.download",
         return_value=fake_data,
     ):
-        with pytest.raises(ValueError, match="Duplicate dates"):
+        with pytest.raises(
+            YahooDataValidationError,
+            match="Duplicate dates",
+        ):
             fetch_yahoo_history(
                 "HINDUNILVR",
                 "2026-10-01",
@@ -163,7 +206,10 @@ def test_rejects_invalid_ohlc_candle():
         "data.yahoo_adapter.yf.download",
         return_value=fake_data,
     ):
-        with pytest.raises(ValueError, match="Inconsistent OHLC"):
+        with pytest.raises(
+            YahooDataValidationError,
+            match="Inconsistent OHLC",
+        ):
             fetch_yahoo_history(
                 "HINDUNILVR",
                 "2026-10-01",
@@ -214,11 +260,7 @@ def test_excludes_data_outside_requested_date_range():
             "Volume": [1000, 1200, 1400],
         },
         index=pd.DatetimeIndex(
-            [
-                "2026-09-30",
-                "2026-10-05",
-                "2026-10-11",
-            ],
+            ["2026-09-30", "2026-10-05", "2026-10-11"],
             name="Date",
         ),
     )
@@ -266,53 +308,18 @@ def test_end_date_is_inclusive_but_next_day_is_excluded():
     assert result["Date"].iloc[0] == pd.Timestamp("2026-10-06")
 
 
-def test_raises_error_when_yahoo_returns_no_data():
-    with patch(
-        "data.yahoo_adapter.yf.download",
-        return_value=pd.DataFrame(),
-    ):
-        with pytest.raises(ValueError, match="No Yahoo Finance data"):
-            fetch_yahoo_history(
-                "HINDUNILVR",
-                "2026-10-01",
-                "2026-10-10",
-            )
-
-
 # ---------------------------------
 # Intraday Data Handling Tests
 # ---------------------------------
-
-def sample_intraday_data():
-    return pd.DataFrame(
-        {
-            "Open": [100.0, 101.0, 102.0],
-            "High": [101.0, 102.0, 103.0],
-            "Low": [99.0, 100.0, 101.0],
-            "Close": [100.5, 101.5, 102.5],
-            "Volume": [500, 600, 700],
-        },
-        index=pd.DatetimeIndex(
-            [
-                "2026-10-05 09:15:00",
-                "2026-10-05 09:20:00",
-                "2026-10-05 09:25:00",
-            ],
-            name="Datetime",
-        ),
-    )
-
 
 @pytest.mark.parametrize(
     "interval",
     ["5m", "15m", "30m", "60m"],
 )
 def test_intraday_interval_is_passed_to_yahoo(interval):
-    fake_data = sample_intraday_data()
-
     with patch(
         "data.yahoo_adapter.yf.download",
-        return_value=fake_data,
+        return_value=sample_intraday_data(),
     ) as mock_download:
         result = fetch_yahoo_history(
             "RELIANCE",
@@ -326,11 +333,9 @@ def test_intraday_interval_is_passed_to_yahoo(interval):
 
 
 def test_intraday_datetime_is_preserved():
-    fake_data = sample_intraday_data()
-
     with patch(
         "data.yahoo_adapter.yf.download",
-        return_value=fake_data,
+        return_value=sample_intraday_data(),
     ):
         result = fetch_yahoo_history(
             "RELIANCE",
@@ -345,11 +350,9 @@ def test_intraday_datetime_is_preserved():
 
 
 def test_intraday_output_keeps_canonical_ohlcv_columns():
-    fake_data = sample_intraday_data()
-
     with patch(
         "data.yahoo_adapter.yf.download",
-        return_value=fake_data,
+        return_value=sample_intraday_data(),
     ):
         result = fetch_yahoo_history(
             "RELIANCE",
@@ -363,28 +366,8 @@ def test_intraday_output_keeps_canonical_ohlcv_columns():
     ]
 
 
-# ---------------------------------
-# Intraday Date-Time Integrity Tests
-# ---------------------------------
-
 def test_intraday_rows_are_sorted_chronologically():
-    fake_data = pd.DataFrame(
-        {
-            "Open": [102.0, 100.0, 101.0],
-            "High": [103.0, 101.0, 102.0],
-            "Low": [101.0, 99.0, 100.0],
-            "Close": [102.5, 100.5, 101.5],
-            "Volume": [700, 500, 600],
-        },
-        index=pd.DatetimeIndex(
-            [
-                "2026-10-05 09:25:00",
-                "2026-10-05 09:15:00",
-                "2026-10-05 09:20:00",
-            ],
-            name="Datetime",
-        ),
-    )
+    fake_data = sample_intraday_data().iloc[::-1]
 
     with patch(
         "data.yahoo_adapter.yf.download",
@@ -402,28 +385,20 @@ def test_intraday_rows_are_sorted_chronologically():
 
 
 def test_rejects_duplicate_intraday_timestamps():
-    fake_data = pd.DataFrame(
-        {
-            "Open": [100.0, 101.0],
-            "High": [101.0, 102.0],
-            "Low": [99.0, 100.0],
-            "Close": [100.5, 101.5],
-            "Volume": [500, 600],
-        },
-        index=pd.DatetimeIndex(
-            [
-                "2026-10-05 09:15:00",
-                "2026-10-05 09:15:00",
-            ],
-            name="Datetime",
-        ),
+    fake_data = sample_intraday_data().iloc[:2].copy()
+    fake_data.index = pd.DatetimeIndex(
+        ["2026-10-05 09:15:00", "2026-10-05 09:15:00"],
+        name="Datetime",
     )
 
     with patch(
         "data.yahoo_adapter.yf.download",
         return_value=fake_data,
     ):
-        with pytest.raises(ValueError, match="Duplicate dates"):
+        with pytest.raises(
+            YahooDataValidationError,
+            match="Duplicate dates",
+        ):
             fetch_yahoo_history(
                 "RELIANCE",
                 "2026-10-05",
@@ -466,7 +441,7 @@ def test_intraday_timezone_is_normalized_to_utc():
 
 
 # ---------------------------------
-# Intraday Historical Availability Tests
+# Intraday Availability Guard Tests
 # ---------------------------------
 
 @pytest.mark.parametrize(
@@ -482,14 +457,8 @@ def test_rejects_intraday_data_older_than_60_days(interval):
 
     old_start = today - pd.Timedelta(days=61)
 
-    with pytest.raises(
-        ValueError,
-        match="limited to the most recent 60 days",
-    ):
-        validate_intraday_date_range(
-            start=old_start,
-            interval=interval,
-        )
+    with pytest.raises(ValueError, match="configured 60-day window"):
+        validate_intraday_date_range(old_start, interval)
 
 
 @pytest.mark.parametrize(
@@ -505,10 +474,7 @@ def test_accepts_recent_intraday_date_range(interval):
 
     recent_start = today - pd.Timedelta(days=30)
 
-    validate_intraday_date_range(
-        start=recent_start,
-        interval=interval,
-    )
+    validate_intraday_date_range(recent_start, interval)
 
 
 @pytest.mark.parametrize(
@@ -516,11 +482,9 @@ def test_accepts_recent_intraday_date_range(interval):
     ["1d", "1wk", "1mo"],
 )
 def test_daily_and_higher_intervals_are_not_blocked(interval):
-    old_start = pd.Timestamp("2020-01-01")
-
     validate_intraday_date_range(
-        start=old_start,
-        interval=interval,
+        pd.Timestamp("2020-01-01"),
+        interval,
     )
 
 
@@ -537,8 +501,8 @@ def test_old_intraday_request_is_rejected_before_yahoo_download():
         "data.yahoo_adapter.yf.download"
     ) as mock_download:
         with pytest.raises(
-            ValueError,
-            match="limited to the most recent 60 days",
+            YahooDataUnavailableError,
+            match="INTRADAY_LOOKBACK_EXCEEDED",
         ):
             fetch_yahoo_history(
                 "RELIANCE",
@@ -548,3 +512,122 @@ def test_old_intraday_request_is_rejected_before_yahoo_download():
             )
 
     mock_download.assert_not_called()
+
+
+# ---------------------------------
+# Yahoo Diagnostics Tests
+# ---------------------------------
+
+def test_reports_yahoo_download_failure():
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        side_effect=Exception("Connection timeout"),
+    ):
+        with pytest.raises(YahooDownloadError) as exc_info:
+            fetch_yahoo_history(
+                "HINDUNILVR",
+                "2026-10-01",
+                "2026-10-10",
+            )
+
+    assert_diagnostic(
+        exc_info.value,
+        "YAHOO_DOWNLOAD_FAILED",
+    )
+    assert "Connection timeout" in exc_info.value.diagnostic["message"]
+
+
+def test_reports_empty_yahoo_response():
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=pd.DataFrame(),
+    ):
+        with pytest.raises(YahooDataUnavailableError) as exc_info:
+            fetch_yahoo_history(
+                "HINDUNILVR",
+                "2026-10-01",
+                "2026-10-10",
+            )
+
+    assert_diagnostic(
+        exc_info.value,
+        "NO_DATA_RETURNED",
+    )
+
+
+def test_reports_data_validation_failure():
+    fake_data = sample_yahoo_data()
+    fake_data.loc[fake_data.index[0], "High"] = 90.0
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        with pytest.raises(YahooDataValidationError) as exc_info:
+            fetch_yahoo_history(
+                "HINDUNILVR",
+                "2026-10-01",
+                "2026-10-10",
+            )
+
+    assert_diagnostic(
+        exc_info.value,
+        "DATA_VALIDATION_FAILED",
+    )
+
+
+def test_reports_duplicate_date_validation_failure():
+    fake_data = sample_yahoo_data()
+    fake_data.index = pd.DatetimeIndex(
+        ["2026-10-05", "2026-10-05"],
+        name="Date",
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        with pytest.raises(YahooDataValidationError) as exc_info:
+            fetch_yahoo_history(
+                "HINDUNILVR",
+                "2026-10-01",
+                "2026-10-10",
+            )
+
+    assert_diagnostic(
+        exc_info.value,
+        "DATA_VALIDATION_FAILED",
+    )
+
+
+def test_reports_no_valid_rows_in_requested_date_range():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [100.0],
+            "High": [103.0],
+            "Low": [99.0],
+            "Close": [102.0],
+            "Volume": [1000],
+        },
+        index=pd.DatetimeIndex(
+            ["2026-09-30"],
+            name="Date",
+        ),
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        with pytest.raises(YahooDataUnavailableError) as exc_info:
+            fetch_yahoo_history(
+                "HINDUNILVR",
+                "2026-10-01",
+                "2026-10-10",
+            )
+
+    assert_diagnostic(
+        exc_info.value,
+        "NO_VALID_ROWS_IN_DATE_RANGE",
+            )
+    
