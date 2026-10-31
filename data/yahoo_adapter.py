@@ -389,4 +389,5 @@ def fetch_yahoo_history(
     # 10. FINAL OUTPUT
 
     return result.reset_index(drop=True)
-        
+
+
