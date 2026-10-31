@@ -95,8 +95,7 @@ def render_relative_strength_page():
     sector_benchmark_symbol = get_sector_benchmark(sector)
 
     # Temporary diagnostic information
-    st.write("DEBUG Sector:", repr(sector))
-    st.write("DEBUG Benchmark:", repr(sector_benchmark_symbol))
+    
 
     if sector_benchmark_symbol:
         st.success(
