@@ -1,4 +1,6 @@
 
+# TradeLab Pro automated data integrity audit
+
 name: TradeLab Pro Data Integrity Audit
 
 on:
@@ -58,3 +60,4 @@ jobs:
             data/raw/yahoo/
             reports/data_integrity/
           if-no-files-found: error
+          
