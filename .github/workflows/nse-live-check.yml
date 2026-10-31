@@ -1,0 +1,40 @@
+
+name: NSE Live Data Check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nse-live-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run NSE live download check
+        run: |
+          python scripts/run_nse_live_check.py
+
+      - name: Upload downloaded NSE data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nse-live-data
+          path: data/raw/nse/
+          if-no-files-found: warn
+          retention-days: 30
+          
