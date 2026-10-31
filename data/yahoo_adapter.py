@@ -3,7 +3,10 @@
 import pandas as pd
 import yfinance as yf
 
-from data.schema import REQUIRED_COLUMNS
+from data.schema import (
+    REQUIRED_COLUMNS,
+    standardize_ohlcv,
+)
 
 
 SUPPORTED_INTERVALS = {
@@ -36,11 +39,9 @@ def resolve_yahoo_symbol(symbol: str, exchange: str) -> str:
     if exchange not in {"NSE", "BSE"}:
         raise ValueError("Exchange must be NSE or BSE.")
 
-    # Index symbols must remain unchanged.
     if symbol.startswith("^"):
         return symbol
 
-    # Already formatted symbols must not receive another suffix.
     if symbol.endswith((".NS", ".BO")):
         return symbol
 
@@ -52,19 +53,16 @@ def resolve_yahoo_symbol(symbol: str, exchange: str) -> str:
 def normalize_yahoo_columns(data: pd.DataFrame) -> pd.DataFrame:
     """Normalize Yahoo Finance single-level or MultiIndex columns."""
 
+    data = data.copy()
+
     if not isinstance(data.columns, pd.MultiIndex):
         return data
 
     for level in range(data.columns.nlevels):
-
-        level_values = set(
-            data.columns.get_level_values(level)
-        )
+        level_values = set(data.columns.get_level_values(level))
 
         if OHLCV_COLUMNS.issubset(level_values):
-
             data.columns = data.columns.get_level_values(level)
-
             return data
 
     raise ValueError(
@@ -83,16 +81,11 @@ def fetch_yahoo_history(
     """
     Fetch historical OHLCV data from Yahoo Finance.
 
-    Supported:
-        Daily:   1d
-        Weekly:  1wk
-        Monthly: 1mo
-        Intraday: 5m, 15m, 30m, 60m
+    Returns the six canonical columns:
+    Date, Open, High, Low, Close, Volume.
     """
 
-    # -----------------------------------------------------
-    # 1. INPUT VALIDATION
-    # -----------------------------------------------------
+    # 1. Input validation
 
     if not isinstance(symbol, str):
         raise ValueError("Symbol must be a string.")
@@ -114,7 +107,6 @@ def fetch_yahoo_history(
     try:
         start = pd.Timestamp(start_date)
         end = pd.Timestamp(end_date)
-
     except Exception as error:
         raise ValueError(
             f"Invalid date input: {error}"
@@ -124,28 +116,18 @@ def fetch_yahoo_history(
         raise ValueError("Start date and end date are required.")
 
     if start > end:
-        raise ValueError(
-            "Start date must not be after end date."
-        )
+        raise ValueError("Start date must not be after end date.")
 
-    # -----------------------------------------------------
-    # 2. SYMBOL RESOLUTION
-    # -----------------------------------------------------
+    # 2. Resolve Yahoo ticker
 
-    ticker = resolve_yahoo_symbol(
-        symbol=symbol,
-        exchange=exchange,
-    )
+    ticker = resolve_yahoo_symbol(symbol, exchange)
 
     # Yahoo Finance end date is exclusive.
     exclusive_end = end + pd.Timedelta(days=1)
 
-    # -----------------------------------------------------
-    # 3. FETCH MARKET DATA
-    # -----------------------------------------------------
+    # 3. Download data
 
     try:
-
         data = yf.download(
             ticker,
             start=start.strftime("%Y-%m-%d"),
@@ -155,26 +137,20 @@ def fetch_yahoo_history(
             progress=False,
             threads=False,
         )
-
     except Exception as error:
-
         raise RuntimeError(
             f"Yahoo Finance download failed for {ticker}: {error}"
         ) from error
 
     if data is None or data.empty:
-
         raise ValueError(
             f"No Yahoo Finance data returned for {ticker}. "
             "Check symbol, exchange, date range and interval."
         )
 
-    # -----------------------------------------------------
-    # 4. NORMALIZE DATA STRUCTURE
-    # -----------------------------------------------------
+    # 4. Normalize Yahoo response structure
 
     data = normalize_yahoo_columns(data)
-
     data = data.reset_index()
 
     data.columns = [
@@ -182,114 +158,40 @@ def fetch_yahoo_history(
     ]
 
     if "Datetime" in data.columns and "Date" not in data.columns:
-        data = data.rename(
-            columns={"Datetime": "Date"}
-        )
+        data = data.rename(columns={"Datetime": "Date"})
 
     if "Date" not in data.columns:
-
         raise ValueError(
             "Yahoo Finance response has no Date column."
         )
 
-    # -----------------------------------------------------
-    # 5. REQUIRED COLUMN VALIDATION
-    # -----------------------------------------------------
+    # 5. Use the common schema validator
 
-    missing = [
-        column
-        for column in REQUIRED_COLUMNS
-        if column not in data.columns
-    ]
-
-    if missing:
-
-        raise ValueError(
-            "Yahoo Finance response is missing columns: "
-            + ", ".join(missing)
-        )
-
-    data = data[REQUIRED_COLUMNS].copy()
-
-    # -----------------------------------------------------
-    # 6. DATA TYPE VALIDATION
-    # -----------------------------------------------------
-
-    data["Date"] = pd.to_datetime(
-        data["Date"],
-        errors="coerce",
+    standardized = standardize_ohlcv(
+        data=data,
+        symbol=symbol,
+        source="yahoo",
+        exchange=exchange,
+        timeframe=interval,
     )
 
-    # Remove timezone without changing local timestamp.
-    if data["Date"].dt.tz is not None:
+    # Keep the existing six-column interface.
+    result = standardized[REQUIRED_COLUMNS].copy()
 
-        data["Date"] = data["Date"].dt.tz_localize(None)
+    # 6. Ensure downloaded dates are within requested range.
 
-    numeric_columns = [
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Volume",
-    ]
+    result = result[
+        (result["Date"] >= start.tz_localize(None)
+         if start.tzinfo is not None else result["Date"] >= start)
+        &
+        (result["Date"] < exclusive_end.tz_localize(None)
+         if exclusive_end.tzinfo is not None else result["Date"] < exclusive_end)
+    ].copy()
 
-    for column in numeric_columns:
-
-        data[column] = pd.to_numeric(
-            data[column],
-            errors="coerce",
-        )
-
-    # -----------------------------------------------------
-    # 7. DATA CLEANING
-    # -----------------------------------------------------
-
-    data = data.dropna(
-        subset=REQUIRED_COLUMNS
-    )
-
-    data = data.drop_duplicates(
-        subset=["Date"],
-        keep="last",
-    )
-
-    data = data.sort_values(
-        "Date"
-    ).reset_index(drop=True)
-
-    if data.empty:
-
+    if result.empty:
         raise ValueError(
-            "No valid OHLCV rows remain after validation."
+            "No valid Yahoo Finance rows remain within the requested date range."
         )
 
-    # -----------------------------------------------------
-    # 8. FINAL VALIDATION
-    # -----------------------------------------------------
-
-    invalid_prices = (
-        (data["Open"] <= 0)
-        | (data["High"] <= 0)
-        | (data["Low"] <= 0)
-        | (data["Close"] <= 0)
-    )
-
-    if invalid_prices.any():
-
-        raise ValueError(
-            "Invalid non-positive OHLC prices detected."
-        )
-
-    if (data["Volume"] < 0).any():
-
-        raise ValueError(
-            "Negative Volume values detected."
-        )
-
-    if (data["High"] < data["Low"]).any():
-
-        raise ValueError(
-            "Invalid OHLC data: High is below Low."
-        )
-
-    return data
+    return result.reset_index(drop=True)
+    
