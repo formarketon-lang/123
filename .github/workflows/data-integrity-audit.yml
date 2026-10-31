@@ -1,0 +1,48 @@
+name: TradeLab Pro Data Integrity Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  data-integrity-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download NSE data
+        run: |
+          python -m scripts.run_nse_live_check
+
+      - name: Download Yahoo data
+        run: |
+          python -m scripts.run_yahoo_live_check
+
+      - name: Run Data Integrity Audit
+        run: |
+          python -m scripts.run_data_integrity_audit
+
+      - name: Upload complete audit package
+        uses: actions/upload-artifact@v4
+        with:
+          name: tradelab-data-integrity-audit
+          path: |
+            data/raw/nse/
+            data/raw/yahoo/
+            reports/data_integrity/
+          if-no-files-found: error
+          
