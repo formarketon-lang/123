@@ -7,6 +7,7 @@ from unittest.mock import patch
 from data.yahoo_adapter import (
     fetch_yahoo_history,
     resolve_yahoo_symbol,
+    validate_intraday_date_range,
 )
 
 
@@ -276,7 +277,8 @@ def test_raises_error_when_yahoo_returns_no_data():
                 "2026-10-01",
                 "2026-10-10",
             )
-            
+
+
 # ---------------------------------
 # Intraday Data Handling Tests
 # ---------------------------------
@@ -312,7 +314,6 @@ def test_intraday_interval_is_passed_to_yahoo(interval):
         "data.yahoo_adapter.yf.download",
         return_value=fake_data,
     ) as mock_download:
-
         result = fetch_yahoo_history(
             "RELIANCE",
             "2026-10-05",
@@ -360,7 +361,8 @@ def test_intraday_output_keeps_canonical_ohlcv_columns():
     assert list(result.columns) == [
         "Date", "Open", "High", "Low", "Close", "Volume"
     ]
-    
+
+
 # ---------------------------------
 # Intraday Date-Time Integrity Tests
 # ---------------------------------
@@ -461,4 +463,88 @@ def test_intraday_timezone_is_normalized_to_utc():
     assert result["Date"].iloc[0] == pd.Timestamp(
         "2026-10-05 03:45:00"
     )
-    
+
+
+# ---------------------------------
+# Intraday Historical Availability Tests
+# ---------------------------------
+
+@pytest.mark.parametrize(
+    "interval",
+    ["5m", "15m", "30m", "60m"],
+)
+def test_rejects_intraday_data_older_than_60_days(interval):
+    today = (
+        pd.Timestamp.now(tz="UTC")
+        .tz_localize(None)
+        .normalize()
+    )
+
+    old_start = today - pd.Timedelta(days=61)
+
+    with pytest.raises(
+        ValueError,
+        match="limited to the most recent 60 days",
+    ):
+        validate_intraday_date_range(
+            start=old_start,
+            interval=interval,
+        )
+
+
+@pytest.mark.parametrize(
+    "interval",
+    ["5m", "15m", "30m", "60m"],
+)
+def test_accepts_recent_intraday_date_range(interval):
+    today = (
+        pd.Timestamp.now(tz="UTC")
+        .tz_localize(None)
+        .normalize()
+    )
+
+    recent_start = today - pd.Timedelta(days=30)
+
+    validate_intraday_date_range(
+        start=recent_start,
+        interval=interval,
+    )
+
+
+@pytest.mark.parametrize(
+    "interval",
+    ["1d", "1wk", "1mo"],
+)
+def test_daily_and_higher_intervals_are_not_blocked(interval):
+    old_start = pd.Timestamp("2020-01-01")
+
+    validate_intraday_date_range(
+        start=old_start,
+        interval=interval,
+    )
+
+
+def test_old_intraday_request_is_rejected_before_yahoo_download():
+    today = (
+        pd.Timestamp.now(tz="UTC")
+        .tz_localize(None)
+        .normalize()
+    )
+
+    old_start = today - pd.Timedelta(days=61)
+
+    with patch(
+        "data.yahoo_adapter.yf.download"
+    ) as mock_download:
+        with pytest.raises(
+            ValueError,
+            match="limited to the most recent 60 days",
+        ):
+            fetch_yahoo_history(
+                "RELIANCE",
+                old_start,
+                today,
+                interval="5m",
+            )
+
+    mock_download.assert_not_called()
