@@ -24,11 +24,7 @@ def sample_yahoo_data():
 
 def test_rejects_empty_symbol():
     with pytest.raises(ValueError, match="Stock symbol"):
-        fetch_yahoo_history(
-            "",
-            "2026-10-01",
-            "2026-10-10",
-        )
+        fetch_yahoo_history("", "2026-10-01", "2026-10-10")
 
 
 def test_rejects_invalid_exchange():
@@ -61,11 +57,9 @@ def test_rejects_reversed_dates():
 
 
 def test_validates_and_returns_yahoo_ohlcv_data():
-    fake_data = sample_yahoo_data()
-
     with patch(
         "data.yahoo_adapter.yf.download",
-        return_value=fake_data,
+        return_value=sample_yahoo_data(),
     ):
         result = fetch_yahoo_history(
             "HINDUNILVR",
@@ -76,7 +70,6 @@ def test_validates_and_returns_yahoo_ohlcv_data():
     assert list(result.columns) == [
         "Date", "Open", "High", "Low", "Close", "Volume"
     ]
-
     assert len(result) == 2
     assert result["Close"].tolist() == [102.0, 107.0]
 
@@ -107,7 +100,6 @@ def test_normalizes_multiindex_yahoo_columns():
 
 def test_rejects_duplicate_dates():
     fake_data = sample_yahoo_data()
-
     fake_data.index = pd.DatetimeIndex(
         ["2026-10-05", "2026-10-05"],
         name="Date",
@@ -139,6 +131,101 @@ def test_rejects_invalid_ohlc_candle():
                 "2026-10-01",
                 "2026-10-10",
             )
+
+
+def test_accepts_timezone_aware_dates():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [100.0],
+            "High": [103.0],
+            "Low": [99.0],
+            "Close": [102.0],
+            "Volume": [1000],
+        },
+        index=pd.DatetimeIndex(
+            ["2026-10-05 00:00:00"],
+            tz="Asia/Kolkata",
+            name="Date",
+        ),
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        result = fetch_yahoo_history(
+            "HINDUNILVR",
+            "2026-10-05T00:00:00+05:30",
+            "2026-10-05T00:00:00+05:30",
+        )
+
+    assert len(result) == 1
+    assert result["Date"].dt.tz is None
+    assert result["Date"].iloc[0] == pd.Timestamp(
+        "2026-10-04 18:30:00"
+    )
+
+
+def test_excludes_data_outside_requested_date_range():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [100.0, 105.0, 110.0],
+            "High": [103.0, 108.0, 113.0],
+            "Low": [99.0, 104.0, 109.0],
+            "Close": [102.0, 107.0, 112.0],
+            "Volume": [1000, 1200, 1400],
+        },
+        index=pd.DatetimeIndex(
+            [
+                "2026-09-30",
+                "2026-10-05",
+                "2026-10-11",
+            ],
+            name="Date",
+        ),
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        result = fetch_yahoo_history(
+            "HINDUNILVR",
+            "2026-10-01",
+            "2026-10-10",
+        )
+
+    assert len(result) == 1
+    assert result["Date"].iloc[0] == pd.Timestamp("2026-10-05")
+
+
+def test_end_date_is_inclusive_but_next_day_is_excluded():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [100.0, 105.0],
+            "High": [103.0, 108.0],
+            "Low": [99.0, 104.0],
+            "Close": [102.0, 107.0],
+            "Volume": [1000, 1200],
+        },
+        index=pd.DatetimeIndex(
+            ["2026-10-06", "2026-10-07"],
+            name="Date",
+        ),
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        result = fetch_yahoo_history(
+            "HINDUNILVR",
+            "2026-10-01",
+            "2026-10-06",
+        )
+
+    assert len(result) == 1
+    assert result["Date"].iloc[0] == pd.Timestamp("2026-10-06")
 
 
 def test_raises_error_when_yahoo_returns_no_data():
