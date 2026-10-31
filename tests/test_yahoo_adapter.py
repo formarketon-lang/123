@@ -277,3 +277,87 @@ def test_raises_error_when_yahoo_returns_no_data():
                 "2026-10-10",
             )
             
+# ---------------------------------
+# Intraday Data Handling Tests
+# ---------------------------------
+
+def sample_intraday_data():
+    return pd.DataFrame(
+        {
+            "Open": [100.0, 101.0, 102.0],
+            "High": [101.0, 102.0, 103.0],
+            "Low": [99.0, 100.0, 101.0],
+            "Close": [100.5, 101.5, 102.5],
+            "Volume": [500, 600, 700],
+        },
+        index=pd.DatetimeIndex(
+            [
+                "2026-10-05 09:15:00",
+                "2026-10-05 09:20:00",
+                "2026-10-05 09:25:00",
+            ],
+            name="Datetime",
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "interval",
+    ["5m", "15m", "30m", "60m"],
+)
+def test_intraday_interval_is_passed_to_yahoo(interval):
+    fake_data = sample_intraday_data()
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ) as mock_download:
+
+        result = fetch_yahoo_history(
+            "RELIANCE",
+            "2026-10-05",
+            "2026-10-05",
+            interval=interval,
+        )
+
+    assert mock_download.call_args.kwargs["interval"] == interval
+    assert len(result) == 3
+
+
+def test_intraday_datetime_is_preserved():
+    fake_data = sample_intraday_data()
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        result = fetch_yahoo_history(
+            "RELIANCE",
+            "2026-10-05",
+            "2026-10-05",
+            interval="5m",
+        )
+
+    assert "Date" in result.columns
+    assert result["Date"].dt.hour.tolist() == [9, 9, 9]
+    assert result["Date"].dt.minute.tolist() == [15, 20, 25]
+
+
+def test_intraday_output_keeps_canonical_ohlcv_columns():
+    fake_data = sample_intraday_data()
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        result = fetch_yahoo_history(
+            "RELIANCE",
+            "2026-10-05",
+            "2026-10-05",
+            interval="15m",
+        )
+
+    assert list(result.columns) == [
+        "Date", "Open", "High", "Low", "Close", "Volume"
+    ]
+    
