@@ -1,3 +1,4 @@
+
 """Yahoo Finance historical market-data adapter."""
 
 import pandas as pd
@@ -85,7 +86,7 @@ def fetch_yahoo_history(
     Date, Open, High, Low, Close, Volume.
     """
 
-    # 1. Input validation
+    # 1. INPUT VALIDATION
 
     if not isinstance(symbol, str):
         raise ValueError("Symbol must be a string.")
@@ -107,6 +108,7 @@ def fetch_yahoo_history(
     try:
         start = pd.Timestamp(start_date)
         end = pd.Timestamp(end_date)
+
     except Exception as error:
         raise ValueError(
             f"Invalid date input: {error}"
@@ -115,17 +117,31 @@ def fetch_yahoo_history(
     if pd.isna(start) or pd.isna(end):
         raise ValueError("Start date and end date are required.")
 
+    # 2. TIMEZONE NORMALIZATION
+    # Convert timezone-aware inputs to UTC-naive timestamps.
+
+    if start.tzinfo is not None:
+        start = start.tz_convert("UTC").tz_localize(None)
+
+    if end.tzinfo is not None:
+        end = end.tz_convert("UTC").tz_localize(None)
+
     if start > end:
-        raise ValueError("Start date must not be after end date.")
-
-    # 2. Resolve Yahoo ticker
-
-    ticker = resolve_yahoo_symbol(symbol, exchange)
+        raise ValueError(
+            "Start date must not be after end date."
+        )
 
     # Yahoo Finance end date is exclusive.
     exclusive_end = end + pd.Timedelta(days=1)
 
-    # 3. Download data
+    # 3. SYMBOL RESOLUTION
+
+    ticker = resolve_yahoo_symbol(
+        symbol=symbol,
+        exchange=exchange,
+    )
+
+    # 4. FETCH MARKET DATA
 
     try:
         data = yf.download(
@@ -137,6 +153,7 @@ def fetch_yahoo_history(
             progress=False,
             threads=False,
         )
+
     except Exception as error:
         raise RuntimeError(
             f"Yahoo Finance download failed for {ticker}: {error}"
@@ -148,9 +165,10 @@ def fetch_yahoo_history(
             "Check symbol, exchange, date range and interval."
         )
 
-    # 4. Normalize Yahoo response structure
+    # 5. NORMALIZE YAHOO RESPONSE
 
     data = normalize_yahoo_columns(data)
+
     data = data.reset_index()
 
     data.columns = [
@@ -158,14 +176,16 @@ def fetch_yahoo_history(
     ]
 
     if "Datetime" in data.columns and "Date" not in data.columns:
-        data = data.rename(columns={"Datetime": "Date"})
+        data = data.rename(
+            columns={"Datetime": "Date"}
+        )
 
     if "Date" not in data.columns:
         raise ValueError(
             "Yahoo Finance response has no Date column."
         )
 
-    # 5. Use the common schema validator
+    # 6. COMMON DATA VALIDATION
 
     standardized = standardize_ohlcv(
         data=data,
@@ -175,23 +195,22 @@ def fetch_yahoo_history(
         timeframe=interval,
     )
 
-    # Keep the existing six-column interface.
+    # Preserve the existing six-column interface.
     result = standardized[REQUIRED_COLUMNS].copy()
 
-    # 6. Ensure downloaded dates are within requested range.
+    # 7. REQUESTED DATE RANGE VALIDATION
 
     result = result[
-        (result["Date"] >= start.tz_localize(None)
-         if start.tzinfo is not None else result["Date"] >= start)
-        &
-        (result["Date"] < exclusive_end.tz_localize(None)
-         if exclusive_end.tzinfo is not None else result["Date"] < exclusive_end)
+        (result["Date"] >= start)
+        & (result["Date"] < exclusive_end)
     ].copy()
 
     if result.empty:
         raise ValueError(
-            "No valid Yahoo Finance rows remain within the requested date range."
+            "No valid Yahoo Finance rows remain "
+            "within the requested date range."
         )
 
+    # 8. FINAL OUTPUT
+
     return result.reset_index(drop=True)
-    
