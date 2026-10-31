@@ -1,4 +1,3 @@
-
 """Yahoo Finance historical market-data adapter."""
 
 import pandas as pd
@@ -11,31 +10,65 @@ from data.schema import (
 
 
 SUPPORTED_INTERVALS = {
-    "1d",
-    "1wk",
-    "1mo",
-    "5m",
-    "15m",
-    "30m",
-    "60m",
+    "1d", "1wk", "1mo",
+    "5m", "15m", "30m", "60m",
 }
 
 INTRADAY_INTERVALS = {
-    "5m",
-    "15m",
-    "30m",
-    "60m",
+    "5m", "15m", "30m", "60m",
 }
 
 MAX_INTRADAY_LOOKBACK_DAYS = 60
 
 OHLCV_COLUMNS = {
-    "Open",
-    "High",
-    "Low",
-    "Close",
-    "Volume",
+    "Open", "High", "Low", "Close", "Volume",
 }
+
+
+class YahooDiagnosticMixin:
+    """Attach structured diagnostic information to Yahoo errors."""
+
+    def set_diagnostic(
+        self,
+        code,
+        symbol,
+        ticker,
+        exchange,
+        interval,
+        start_date,
+        end_date,
+        message,
+        suggested_action,
+    ):
+        self.diagnostic = {
+            "source": "yahoo",
+            "code": code,
+            "symbol": symbol,
+            "ticker": ticker,
+            "exchange": exchange,
+            "interval": interval,
+            "start_date": str(start_date),
+            "end_date": str(end_date),
+            "message": message,
+            "suggested_action": suggested_action,
+        }
+
+        super().__init__(
+            f"[{code}] {message} "
+            f"Suggested action: {suggested_action}"
+        )
+
+
+class YahooDataUnavailableError(YahooDiagnosticMixin, ValueError):
+    """Yahoo returned no usable market data."""
+
+
+class YahooDownloadError(YahooDiagnosticMixin, RuntimeError):
+    """Yahoo download request failed."""
+
+
+class YahooDataValidationError(YahooDiagnosticMixin, ValueError):
+    """Yahoo response failed data validation."""
 
 
 def resolve_yahoo_symbol(symbol: str, exchange: str) -> str:
@@ -59,7 +92,6 @@ def resolve_yahoo_symbol(symbol: str, exchange: str) -> str:
         return symbol
 
     suffix = ".NS" if exchange == "NSE" else ".BO"
-
     return symbol + suffix
 
 
@@ -88,10 +120,7 @@ def validate_intraday_date_range(
     start: pd.Timestamp,
     interval: str,
 ) -> None:
-    """
-    Reject intraday requests starting outside the
-    configured 60-day historical window.
-    """
+    """Reject intraday requests outside the configured 60-day window."""
 
     if interval not in INTRADAY_INTERVALS:
         return
@@ -109,10 +138,41 @@ def validate_intraday_date_range(
     if start.normalize() < earliest_allowed:
         raise ValueError(
             f"Yahoo Finance {interval} data is limited to the "
-            f"most recent {MAX_INTRADAY_LOOKBACK_DAYS} days. "
+            f"configured {MAX_INTRADAY_LOOKBACK_DAYS}-day window. "
             f"Requested start date: {start.date()}. "
             f"Earliest allowed date: {earliest_allowed.date()}."
         )
+
+
+def _raise_diagnostic(
+    error_class,
+    code,
+    symbol,
+    ticker,
+    exchange,
+    interval,
+    start,
+    end,
+    message,
+    suggested_action,
+):
+    """Raise a structured Yahoo diagnostic error."""
+
+    error = error_class()
+
+    error.set_diagnostic(
+        code=code,
+        symbol=symbol,
+        ticker=ticker,
+        exchange=exchange,
+        interval=interval,
+        start_date=start,
+        end_date=end,
+        message=message,
+        suggested_action=suggested_action,
+    )
+
+    raise error
 
 
 def fetch_yahoo_history(
@@ -125,8 +185,8 @@ def fetch_yahoo_history(
     """
     Fetch historical OHLCV data from Yahoo Finance.
 
-    Returns the six canonical columns:
-    Date, Open, High, Low, Close, Volume.
+    Returns:
+    Date, Open, High, Low, Close, Volume
     """
 
     # 1. INPUT VALIDATION
@@ -151,7 +211,6 @@ def fetch_yahoo_history(
     try:
         start = pd.Timestamp(start_date)
         end = pd.Timestamp(end_date)
-
     except Exception as error:
         raise ValueError(
             f"Invalid date input: {error}"
@@ -173,24 +232,39 @@ def fetch_yahoo_history(
             "Start date must not be after end date."
         )
 
-    # 3. INTRADAY HISTORICAL AVAILABILITY CHECK
-
-    validate_intraday_date_range(
-        start=start,
-        interval=interval,
-    )
-
-    # Yahoo Finance end date is exclusive.
-    exclusive_end = end + pd.Timedelta(days=1)
-
-    # 4. SYMBOL RESOLUTION
+    # 3. SYMBOL RESOLUTION
 
     ticker = resolve_yahoo_symbol(
         symbol=symbol,
         exchange=exchange,
     )
 
-    # 5. FETCH MARKET DATA
+    # 4. INTRADAY AVAILABILITY CHECK
+
+    try:
+        validate_intraday_date_range(
+            start=start,
+            interval=interval,
+        )
+    except ValueError as error:
+        _raise_diagnostic(
+            error_class=YahooDataUnavailableError,
+            code="INTRADAY_LOOKBACK_EXCEEDED",
+            symbol=symbol,
+            ticker=ticker,
+            exchange=exchange,
+            interval=interval,
+            start=start,
+            end=end,
+            message=str(error),
+            suggested_action=(
+                "Choose a more recent start date or use a daily interval."
+            ),
+        )
+
+    exclusive_end = end + pd.Timedelta(days=1)
+
+    # 5. DOWNLOAD
 
     try:
         data = yf.download(
@@ -202,51 +276,90 @@ def fetch_yahoo_history(
             progress=False,
             threads=False,
         )
-
     except Exception as error:
-        raise RuntimeError(
-            f"Yahoo Finance download failed for {ticker}: {error}"
-        ) from error
+        _raise_diagnostic(
+            error_class=YahooDownloadError,
+            code="YAHOO_DOWNLOAD_FAILED",
+            symbol=symbol,
+            ticker=ticker,
+            exchange=exchange,
+            interval=interval,
+            start=start,
+            end=end,
+            message=f"Yahoo Finance download failed: {error}",
+            suggested_action=(
+                "Check internet access, Yahoo availability, "
+                "symbol and requested interval. Retry later if needed."
+            ),
+        )
+
+    # 6. EMPTY RESPONSE CHECK
 
     if data is None or data.empty:
-        raise ValueError(
-            f"No Yahoo Finance data returned for {ticker}. "
-            "Check symbol, exchange, date range and interval."
+        _raise_diagnostic(
+            error_class=YahooDataUnavailableError,
+            code="NO_DATA_RETURNED",
+            symbol=symbol,
+            ticker=ticker,
+            exchange=exchange,
+            interval=interval,
+            start=start,
+            end=end,
+            message=f"No Yahoo Finance data returned for {ticker}.",
+            suggested_action=(
+                "Verify the ticker, exchange, date range and interval. "
+                "The requested historical data may not be available."
+            ),
         )
 
-    # 6. NORMALIZE YAHOO RESPONSE
+    # 7. RESPONSE NORMALIZATION
 
-    data = normalize_yahoo_columns(data)
-    data = data.reset_index()
+    try:
+        data = normalize_yahoo_columns(data)
+        data = data.reset_index()
 
-    data.columns = [
-        str(column) for column in data.columns
-    ]
+        data.columns = [
+            str(column) for column in data.columns
+        ]
 
-    if "Datetime" in data.columns and "Date" not in data.columns:
-        data = data.rename(
-            columns={"Datetime": "Date"}
+        if "Datetime" in data.columns and "Date" not in data.columns:
+            data = data.rename(columns={"Datetime": "Date"})
+
+        if "Date" not in data.columns:
+            raise ValueError(
+                "Yahoo Finance response has no Date column."
+            )
+
+        # 8. COMMON DATA VALIDATION
+
+        standardized = standardize_ohlcv(
+            data=data,
+            symbol=symbol,
+            source="yahoo",
+            exchange=exchange,
+            timeframe=interval,
         )
 
-    if "Date" not in data.columns:
-        raise ValueError(
-            "Yahoo Finance response has no Date column."
+    except Exception as error:
+        _raise_diagnostic(
+            error_class=YahooDataValidationError,
+            code="DATA_VALIDATION_FAILED",
+            symbol=symbol,
+            ticker=ticker,
+            exchange=exchange,
+            interval=interval,
+            start=start,
+            end=end,
+            message=f"Yahoo response validation failed: {error}",
+            suggested_action=(
+                "Inspect the returned OHLCV columns, dates, "
+                "duplicate rows and price consistency."
+            ),
         )
 
-    # 7. COMMON DATA VALIDATION
+    # 9. PRESERVE EXISTING RS ENGINE INTERFACE
 
-    standardized = standardize_ohlcv(
-        data=data,
-        symbol=symbol,
-        source="yahoo",
-        exchange=exchange,
-        timeframe=interval,
-    )
-
-    # Preserve the existing six-column interface.
     result = standardized[REQUIRED_COLUMNS].copy()
-
-    # 8. REQUESTED DATE RANGE VALIDATION
 
     result = result[
         (result["Date"] >= start)
@@ -254,11 +367,26 @@ def fetch_yahoo_history(
     ].copy()
 
     if result.empty:
-        raise ValueError(
-            "No valid Yahoo Finance rows remain "
-            "within the requested date range."
+        _raise_diagnostic(
+            error_class=YahooDataUnavailableError,
+            code="NO_VALID_ROWS_IN_DATE_RANGE",
+            symbol=symbol,
+            ticker=ticker,
+            exchange=exchange,
+            interval=interval,
+            start=start,
+            end=end,
+            message=(
+                "No valid Yahoo Finance rows remain "
+                "within the requested date range."
+            ),
+            suggested_action=(
+                "Try a wider date range or verify data availability "
+                "for this symbol and interval."
+            ),
         )
 
-    # 9. FINAL OUTPUT
+    # 10. FINAL OUTPUT
 
     return result.reset_index(drop=True)
+        
