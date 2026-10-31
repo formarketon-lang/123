@@ -20,6 +20,15 @@ SUPPORTED_INTERVALS = {
     "60m",
 }
 
+INTRADAY_INTERVALS = {
+    "5m",
+    "15m",
+    "30m",
+    "60m",
+}
+
+MAX_INTRADAY_LOOKBACK_DAYS = 60
+
 OHLCV_COLUMNS = {
     "Open",
     "High",
@@ -31,6 +40,9 @@ OHLCV_COLUMNS = {
 
 def resolve_yahoo_symbol(symbol: str, exchange: str) -> str:
     """Convert NSE/BSE symbols into Yahoo Finance ticker format."""
+
+    if not isinstance(symbol, str):
+        raise ValueError("Stock symbol must be a string.")
 
     symbol = symbol.strip().upper()
 
@@ -70,6 +82,37 @@ def normalize_yahoo_columns(data: pd.DataFrame) -> pd.DataFrame:
         "Unable to identify OHLCV columns "
         "in Yahoo Finance MultiIndex response."
     )
+
+
+def validate_intraday_date_range(
+    start: pd.Timestamp,
+    interval: str,
+) -> None:
+    """
+    Reject intraday requests starting outside the
+    configured 60-day historical window.
+    """
+
+    if interval not in INTRADAY_INTERVALS:
+        return
+
+    today = (
+        pd.Timestamp.now(tz="UTC")
+        .tz_localize(None)
+        .normalize()
+    )
+
+    earliest_allowed = today - pd.Timedelta(
+        days=MAX_INTRADAY_LOOKBACK_DAYS
+    )
+
+    if start.normalize() < earliest_allowed:
+        raise ValueError(
+            f"Yahoo Finance {interval} data is limited to the "
+            f"most recent {MAX_INTRADAY_LOOKBACK_DAYS} days. "
+            f"Requested start date: {start.date()}. "
+            f"Earliest allowed date: {earliest_allowed.date()}."
+        )
 
 
 def fetch_yahoo_history(
@@ -118,7 +161,6 @@ def fetch_yahoo_history(
         raise ValueError("Start date and end date are required.")
 
     # 2. TIMEZONE NORMALIZATION
-    # Convert timezone-aware inputs to UTC-naive timestamps.
 
     if start.tzinfo is not None:
         start = start.tz_convert("UTC").tz_localize(None)
@@ -131,17 +173,24 @@ def fetch_yahoo_history(
             "Start date must not be after end date."
         )
 
+    # 3. INTRADAY HISTORICAL AVAILABILITY CHECK
+
+    validate_intraday_date_range(
+        start=start,
+        interval=interval,
+    )
+
     # Yahoo Finance end date is exclusive.
     exclusive_end = end + pd.Timedelta(days=1)
 
-    # 3. SYMBOL RESOLUTION
+    # 4. SYMBOL RESOLUTION
 
     ticker = resolve_yahoo_symbol(
         symbol=symbol,
         exchange=exchange,
     )
 
-    # 4. FETCH MARKET DATA
+    # 5. FETCH MARKET DATA
 
     try:
         data = yf.download(
@@ -165,10 +214,9 @@ def fetch_yahoo_history(
             "Check symbol, exchange, date range and interval."
         )
 
-    # 5. NORMALIZE YAHOO RESPONSE
+    # 6. NORMALIZE YAHOO RESPONSE
 
     data = normalize_yahoo_columns(data)
-
     data = data.reset_index()
 
     data.columns = [
@@ -185,7 +233,7 @@ def fetch_yahoo_history(
             "Yahoo Finance response has no Date column."
         )
 
-    # 6. COMMON DATA VALIDATION
+    # 7. COMMON DATA VALIDATION
 
     standardized = standardize_ohlcv(
         data=data,
@@ -198,7 +246,7 @@ def fetch_yahoo_history(
     # Preserve the existing six-column interface.
     result = standardized[REQUIRED_COLUMNS].copy()
 
-    # 7. REQUESTED DATE RANGE VALIDATION
+    # 8. REQUESTED DATE RANGE VALIDATION
 
     result = result[
         (result["Date"] >= start)
@@ -211,6 +259,6 @@ def fetch_yahoo_history(
             "within the requested date range."
         )
 
-    # 8. FINAL OUTPUT
+    # 9. FINAL OUTPUT
 
     return result.reset_index(drop=True)
