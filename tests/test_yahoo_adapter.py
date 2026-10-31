@@ -361,3 +361,104 @@ def test_intraday_output_keeps_canonical_ohlcv_columns():
         "Date", "Open", "High", "Low", "Close", "Volume"
     ]
     
+# ---------------------------------
+# Intraday Date-Time Integrity Tests
+# ---------------------------------
+
+def test_intraday_rows_are_sorted_chronologically():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [102.0, 100.0, 101.0],
+            "High": [103.0, 101.0, 102.0],
+            "Low": [101.0, 99.0, 100.0],
+            "Close": [102.5, 100.5, 101.5],
+            "Volume": [700, 500, 600],
+        },
+        index=pd.DatetimeIndex(
+            [
+                "2026-10-05 09:25:00",
+                "2026-10-05 09:15:00",
+                "2026-10-05 09:20:00",
+            ],
+            name="Datetime",
+        ),
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        result = fetch_yahoo_history(
+            "RELIANCE",
+            "2026-10-05",
+            "2026-10-05",
+            interval="5m",
+        )
+
+    assert result["Date"].is_monotonic_increasing
+    assert result["Close"].tolist() == [100.5, 101.5, 102.5]
+
+
+def test_rejects_duplicate_intraday_timestamps():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [100.0, 101.0],
+            "High": [101.0, 102.0],
+            "Low": [99.0, 100.0],
+            "Close": [100.5, 101.5],
+            "Volume": [500, 600],
+        },
+        index=pd.DatetimeIndex(
+            [
+                "2026-10-05 09:15:00",
+                "2026-10-05 09:15:00",
+            ],
+            name="Datetime",
+        ),
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        with pytest.raises(ValueError, match="Duplicate dates"):
+            fetch_yahoo_history(
+                "RELIANCE",
+                "2026-10-05",
+                "2026-10-05",
+                interval="5m",
+            )
+
+
+def test_intraday_timezone_is_normalized_to_utc():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [100.0],
+            "High": [101.0],
+            "Low": [99.0],
+            "Close": [100.5],
+            "Volume": [500],
+        },
+        index=pd.DatetimeIndex(
+            ["2026-10-05 09:15:00"],
+            tz="Asia/Kolkata",
+            name="Datetime",
+        ),
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        result = fetch_yahoo_history(
+            "RELIANCE",
+            "2026-10-05",
+            "2026-10-05",
+            interval="5m",
+        )
+
+    assert result["Date"].dt.tz is None
+    assert result["Date"].iloc[0] == pd.Timestamp(
+        "2026-10-05 03:45:00"
+    )
+    
