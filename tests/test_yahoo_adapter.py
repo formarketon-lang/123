@@ -1,9 +1,13 @@
+
 import pandas as pd
 import pytest
 
 from unittest.mock import patch
 
-from data.yahoo_adapter import fetch_yahoo_history
+from data.yahoo_adapter import (
+    fetch_yahoo_history,
+    resolve_yahoo_symbol,
+)
 
 
 def sample_yahoo_data():
@@ -21,6 +25,39 @@ def sample_yahoo_data():
         ),
     )
 
+
+# ---------------------------------
+# Symbol Resolution Tests
+# ---------------------------------
+
+@pytest.mark.parametrize(
+    "symbol, exchange, expected",
+    [
+        ("RELIANCE", "NSE", "RELIANCE.NS"),
+        ("HINDUNILVR", "NSE", "HINDUNILVR.NS"),
+        ("RELIANCE", "BSE", "RELIANCE.BO"),
+        ("RELIANCE.NS", "NSE", "RELIANCE.NS"),
+        ("RELIANCE.BO", "BSE", "RELIANCE.BO"),
+        ("^NSEI", "NSE", "^NSEI"),
+    ],
+)
+def test_resolves_yahoo_symbols(symbol, exchange, expected):
+    assert resolve_yahoo_symbol(symbol, exchange) == expected
+
+
+def test_rejects_empty_symbol_in_resolution():
+    with pytest.raises(ValueError):
+        resolve_yahoo_symbol("", "NSE")
+
+
+def test_rejects_invalid_exchange_in_resolution():
+    with pytest.raises(ValueError):
+        resolve_yahoo_symbol("RELIANCE", "Both")
+
+
+# ---------------------------------
+# Yahoo Adapter Validation Tests
+# ---------------------------------
 
 def test_rejects_empty_symbol():
     with pytest.raises(ValueError, match="Stock symbol"):
