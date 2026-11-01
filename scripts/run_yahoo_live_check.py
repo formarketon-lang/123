@@ -2,6 +2,7 @@
 from pathlib import Path
 import sys
 
+# Add project root to Python import path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -13,13 +14,23 @@ from data.yahoo_adapter import fetch_yahoo_history
 START_DATE = "2025-10-31"
 END_DATE = "2026-10-29"
 
-# NIFTY FMCG: Yahoo Finance verified ticker
+# Verified Yahoo Finance tickers
 INSTRUMENTS = [
+    {
+        "name": "MARICO",
+        "symbol": "MARICO.NS",
+        "exchange": "NSE",
+    },
+    {
+        "name": "NIFTY_50",
+        "symbol": "^NSEI",
+        "exchange": "NSE",
+    },
     {
         "name": "NIFTY_FMCG",
         "symbol": "^CNXFMCG",
         "exchange": "NSE",
-    }
+    },
 ]
 
 
@@ -50,6 +61,25 @@ def main():
             if df.empty:
                 raise ValueError("Downloaded dataset is empty.")
 
+            required_columns = [
+                "Date",
+                "Open",
+                "High",
+                "Low",
+                "Close",
+                "Volume",
+            ]
+
+            missing = [
+                column for column in required_columns
+                if column not in df.columns
+            ]
+
+            if missing:
+                raise ValueError(
+                    f"Required columns missing: {missing}"
+                )
+
             file_path = output_dir / f"{name}_yahoo.csv"
             df.to_csv(file_path, index=False)
 
@@ -76,15 +106,22 @@ def main():
             failed.append(error_result)
             print("FAIL:", error_result)
 
-    print("\n========== NIFTY FMCG YAHOO CHECK ==========")
+    print("\n========== COMBINED YAHOO CHECK ==========")
     print("Successful:", len(successful))
     print("Failed:", len(failed))
 
+    print("\nSuccessful instruments:")
+    for item in successful:
+        print(item)
+
     if failed:
-        print("Failures:", failed)
+        print("\nFailures:")
+        for item in failed:
+            print(item)
+
         raise SystemExit(1)
 
-    print("\nAll NIFTY FMCG checks completed successfully.")
+    print("\nALL THREE YAHOO CHECKS PASSED.")
 
 
 if __name__ == "__main__":
