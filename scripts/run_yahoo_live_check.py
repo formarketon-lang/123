@@ -1,46 +1,54 @@
-from pathlib import Path
 
-from data.providers.yahoo_downloader import (
-    download_yahoo_history,
-    save_yahoo_csv,
-)
+from pathlib import Path
+import sys
+
+# Add project root to Python import path
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from data.yahoo_adapter import fetch_yahoo_history
 
 
 START_DATE = "2025-10-31"
 END_DATE = "2026-10-29"
 
-INSTRUMENTS = [
-    "MARICO",
-    "NIFTY 50",
-    "NIFTY FMCG",
-]
+# First verification: NSE equity only
+INSTRUMENTS = ["MARICO"]
 
 
 def main():
     successful = []
     failed = []
 
-    for name in INSTRUMENTS:
-        print(f"\nChecking Yahoo data: {name}")
+    output_dir = PROJECT_ROOT / "data" / "raw" / "yahoo"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for symbol in INSTRUMENTS:
+        print(f"\nChecking Yahoo data: {symbol}")
 
         try:
-            df = download_yahoo_history(
-                name,
-                START_DATE,
-                END_DATE,
+            df = fetch_yahoo_history(
+                symbol=symbol,
+                start_date=START_DATE,
+                end_date=END_DATE,
+                interval="1d",
+                exchange="NSE",
             )
 
             if df.empty:
                 raise ValueError("Downloaded dataset is empty.")
 
-            file_path = save_yahoo_csv(df, name)
+            file_path = output_dir / f"{symbol}_yahoo.csv"
+            df.to_csv(file_path, index=False)
 
             result = {
-                "instrument": name,
+                "symbol": symbol,
                 "rows": len(df),
                 "first_date": str(df["Date"].min().date()),
                 "last_date": str(df["Date"].max().date()),
-                "file": file_path,
+                "file": str(file_path),
             }
 
             successful.append(result)
@@ -48,17 +56,17 @@ def main():
 
         except Exception as exc:
             failed.append({
-                "instrument": name,
+                "symbol": symbol,
                 "error": str(exc),
             })
-            print("FAIL:", name, str(exc))
+            print("FAIL:", symbol, str(exc))
 
     print("\n========== YAHOO LIVE CHECK ==========")
     print("Successful:", len(successful))
     print("Failed:", len(failed))
 
     if failed:
-        print("\nFailures:", failed)
+        print("Failures:", failed)
         raise SystemExit(1)
 
     print("\nAll Yahoo downloads completed successfully.")
@@ -66,4 +74,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
