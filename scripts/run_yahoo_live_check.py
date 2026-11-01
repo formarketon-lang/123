@@ -2,7 +2,6 @@
 from pathlib import Path
 import sys
 
-# Add project root to Python import path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -14,11 +13,11 @@ from data.yahoo_adapter import fetch_yahoo_history
 START_DATE = "2025-10-31"
 END_DATE = "2026-10-29"
 
-# NIFTY 50: verified Yahoo Finance ticker
+# NIFTY FMCG: Yahoo Finance verified ticker
 INSTRUMENTS = [
     {
-        "name": "NIFTY_50",
-        "symbol": "^NSEI",
+        "name": "NIFTY_FMCG",
+        "symbol": "^CNXFMCG",
         "exchange": "NSE",
     }
 ]
@@ -77,7 +76,7 @@ def main():
             failed.append(error_result)
             print("FAIL:", error_result)
 
-    print("\n========== NIFTY 50 YAHOO CHECK ==========")
+    print("\n========== NIFTY FMCG YAHOO CHECK ==========")
     print("Successful:", len(successful))
     print("Failed:", len(failed))
 
@@ -85,7 +84,7 @@ def main():
         print("Failures:", failed)
         raise SystemExit(1)
 
-    print("\nAll NIFTY 50 checks completed successfully.")
+    print("\nAll NIFTY FMCG checks completed successfully.")
 
 
 if __name__ == "__main__":
