@@ -1,3 +1,4 @@
+
 import pandas as pd
 
 from scripts.run_data_integrity_audit import (
@@ -91,4 +92,33 @@ def test_normalize_csv(tmp_path):
         "Date", "Open", "High", "Low", "Close", "Volume"
     ]
     assert len(result) == 1
-  
+
+
+def test_normalize_nse_security_archive_format(tmp_path):
+    file_path = tmp_path / "marico_nse.csv"
+
+    pd.DataFrame({
+        "Symbol  ": ["MARICO"],
+        "Series  ": ["EQ"],
+        "Date  ": ["29-Oct-2026"],
+        "Prev Close  ": ["769.65"],
+        "Open Price  ": ["769.00"],
+        "High Price  ": ["804.75"],
+        "Low Price  ": ["764.70"],
+        "Close Price  ": ["802.90"],
+        "Total Traded Quantity  ": ["33,93,736"],
+    }).to_csv(file_path, index=False)
+
+    result = load_and_normalize(file_path)
+
+    assert list(result.columns) == [
+        "Date", "Open", "High", "Low", "Close", "Volume"
+    ]
+
+    assert len(result) == 1
+    assert result.loc[0, "Date"] == pd.Timestamp("2026-10-29")
+    assert result.loc[0, "Open"] == 769.00
+    assert result.loc[0, "High"] == 804.75
+    assert result.loc[0, "Low"] == 764.70
+    assert result.loc[0, "Close"] == 802.90
+    assert result.loc[0, "Volume"] == 3393736
