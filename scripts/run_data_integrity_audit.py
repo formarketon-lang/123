@@ -25,18 +25,21 @@ def load_and_normalize(path):
     df = pd.read_csv(path)
 
     # Normalize column names.
-    aliases = {
-        "trading date": "Date",
+    aliases = {        "trading date": "Date",
         "timestamp": "Date",
         "ch_timestamp": "Date",
+        "open price": "Open",
+        "high price": "High",
+        "low price": "Low",
+        "close price": "Close",
+        "total traded quantity": "Volume",
         "tottrdqty": "Volume",
         "tot_traded_qty": "Volume",
         "ch_tot_traded_qty": "Volume",
         "ch_opening_price": "Open",
         "ch_trade_high_price": "High",
         "ch_trade_low_price": "Low",
-        "ch_closing_price": "Close",
-    }
+        "ch_closing_price": "Close",}
 
     rename = {}
     for column in df.columns:
