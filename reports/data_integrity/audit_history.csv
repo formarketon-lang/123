@@ -1,0 +1,4 @@
+instrument,nse_rows,yahoo_rows,common_sessions,nse_only_sessions,yahoo_only_sessions,ohlc_mismatch_sessions,volume_mismatch_sessions,nse_first_date,nse_last_date,yahoo_first_date,yahoo_last_date,status,audit_id,audit_time_utc
+MARICO,246,246,245,1,1,0,0,2025-10-31,2026-10-29,2025-10-31,2026-10-29,REVIEW,20261102_041257,2026-11-02T04:12:57.201961+00:00
+NIFTY 50,247,245,245,2,0,1,0,2025-10-30,2026-10-29,2025-10-31,2026-10-29,REVIEW,20261102_041257,2026-11-02T04:12:57.201961+00:00
+NIFTY FMCG,247,244,244,3,0,0,0,2025-10-30,2026-10-29,2025-10-31,2026-10-29,REVIEW,20261102_041257,2026-11-02T04:12:57.201961+00:00

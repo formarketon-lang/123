@@ -1,0 +1,53 @@
+[
+  {
+    "instrument": "MARICO",
+    "nse_rows": 246,
+    "yahoo_rows": 246,
+    "common_sessions": 245,
+    "nse_only_sessions": 1,
+    "yahoo_only_sessions": 1,
+    "ohlc_mismatch_sessions": 0,
+    "volume_mismatch_sessions": 0,
+    "nse_first_date": "2025-10-31",
+    "nse_last_date": "2026-10-29",
+    "yahoo_first_date": "2025-10-31",
+    "yahoo_last_date": "2026-10-29",
+    "status": "REVIEW",
+    "audit_id": "20261102_041257",
+    "audit_time_utc": "2026-11-02T04:12:57.201961+00:00"
+  },
+  {
+    "instrument": "NIFTY 50",
+    "nse_rows": 247,
+    "yahoo_rows": 245,
+    "common_sessions": 245,
+    "nse_only_sessions": 2,
+    "yahoo_only_sessions": 0,
+    "ohlc_mismatch_sessions": 1,
+    "volume_mismatch_sessions": 0,
+    "nse_first_date": "2025-10-30",
+    "nse_last_date": "2026-10-29",
+    "yahoo_first_date": "2025-10-31",
+    "yahoo_last_date": "2026-10-29",
+    "status": "REVIEW",
+    "audit_id": "20261102_041257",
+    "audit_time_utc": "2026-11-02T04:12:57.201961+00:00"
+  },
+  {
+    "instrument": "NIFTY FMCG",
+    "nse_rows": 247,
+    "yahoo_rows": 244,
+    "common_sessions": 244,
+    "nse_only_sessions": 3,
+    "yahoo_only_sessions": 0,
+    "ohlc_mismatch_sessions": 0,
+    "volume_mismatch_sessions": 0,
+    "nse_first_date": "2025-10-30",
+    "nse_last_date": "2026-10-29",
+    "yahoo_first_date": "2025-10-31",
+    "yahoo_last_date": "2026-10-29",
+    "status": "REVIEW",
+    "audit_id": "20261102_041257",
+    "audit_time_utc": "2026-11-02T04:12:57.201961+00:00"
+  }
+]
