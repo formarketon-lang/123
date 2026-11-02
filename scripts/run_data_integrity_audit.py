@@ -24,30 +24,38 @@ def load_and_normalize(path):
 
     df = pd.read_csv(path)
 
-    # Normalize column names.
-    aliases = {        "trading date": "Date",
+    aliases = {
+        "trading date": "Date",
         "timestamp": "Date",
         "ch_timestamp": "Date",
+
+        # NSE Security-wise archive format
         "open price": "Open",
         "high price": "High",
         "low price": "Low",
         "close price": "Close",
         "total traded quantity": "Volume",
+
+        # Existing NSE provider formats
         "tottrdqty": "Volume",
         "tot_traded_qty": "Volume",
         "ch_tot_traded_qty": "Volume",
         "ch_opening_price": "Open",
         "ch_trade_high_price": "High",
         "ch_trade_low_price": "Low",
-        "ch_closing_price": "Close",}
+        "ch_closing_price": "Close",
+    }
 
     rename = {}
+
     for column in df.columns:
         key = str(column).strip().lower()
+
         if key in aliases:
             rename[column] = aliases[key]
         else:
             standard = str(column).strip().title()
+
             if standard in ["Date"] + OHLCV:
                 rename[column] = standard
 
@@ -56,6 +64,21 @@ def load_and_normalize(path):
     if "Date" not in df.columns:
         raise ValueError(f"Date column missing in {path}")
 
+    required_prices = ["Open", "High", "Low", "Close"]
+
+    missing_prices = [
+        column for column in required_prices
+        if column not in df.columns
+    ]
+
+    if missing_prices:
+        raise ValueError(
+            f"Missing price columns in {path}: {missing_prices}"
+        )
+
+    if "Volume" not in df.columns:
+        df["Volume"] = pd.NA
+
     df["Date"] = pd.to_datetime(
         df["Date"],
         errors="coerce",
@@ -63,17 +86,22 @@ def load_and_normalize(path):
     )
 
     for column in OHLCV:
-        if column not in df.columns:
-            df[column] = pd.NA
-
         df[column] = pd.to_numeric(
-            df[column].astype(str).str.replace(",", "", regex=False),
+            df[column].astype("string").str.replace(
+                ",", "", regex=False
+            ),
             errors="coerce",
         )
 
     df = df.dropna(subset=["Date"])
     df = df.sort_values("Date")
-    df = df.drop_duplicates("Date", keep="last")
+
+    duplicate_count = int(df["Date"].duplicated().sum())
+
+    if duplicate_count:
+        raise ValueError(
+            f"Duplicate dates found in {path}: {duplicate_count}"
+        )
 
     return df[["Date"] + OHLCV].reset_index(drop=True)
 
@@ -105,6 +133,7 @@ def compare_sources(nse, yahoo, instrument):
 
     for column in PRICE_COLUMNS:
         difference = merged[f"{column}_Difference"].abs()
+
         price_mismatch |= (
             (merged["_merge"] == "both")
             & difference.notna()
@@ -134,12 +163,28 @@ def compare_sources(nse, yahoo, instrument):
         "common_sessions": common,
         "nse_only_sessions": nse_only,
         "yahoo_only_sessions": yahoo_only,
-        "ohlc_mismatch_sessions": int(merged["OHLC_Mismatch"].sum()),
-        "volume_mismatch_sessions": int(merged["Volume_Mismatch"].sum()),
-        "nse_first_date": str(nse["Date"].min().date()) if not nse.empty else None,
-        "nse_last_date": str(nse["Date"].max().date()) if not nse.empty else None,
-        "yahoo_first_date": str(yahoo["Date"].min().date()) if not yahoo.empty else None,
-        "yahoo_last_date": str(yahoo["Date"].max().date()) if not yahoo.empty else None,
+        "ohlc_mismatch_sessions": int(
+            merged["OHLC_Mismatch"].sum()
+        ),
+        "volume_mismatch_sessions": int(
+            merged["Volume_Mismatch"].sum()
+        ),
+        "nse_first_date": (
+            str(nse["Date"].min().date())
+            if not nse.empty else None
+        ),
+        "nse_last_date": (
+            str(nse["Date"].max().date())
+            if not nse.empty else None
+        ),
+        "yahoo_first_date": (
+            str(yahoo["Date"].min().date())
+            if not yahoo.empty else None
+        ),
+        "yahoo_last_date": (
+            str(yahoo["Date"].max().date())
+            if not yahoo.empty else None
+        ),
     }
 
     summary["status"] = (
@@ -196,10 +241,8 @@ def main():
     summary_df = pd.DataFrame(summaries)
     detail_df = pd.concat(details, ignore_index=True)
 
-    # Compare this audit with the previous audit.
     if HISTORY_FILE.exists():
         previous = pd.read_csv(HISTORY_FILE)
-
         previous = previous.sort_values("audit_time_utc")
 
         for index, row in summary_df.iterrows():
@@ -210,16 +253,20 @@ def main():
             if not old.empty:
                 previous_row = old.iloc[-1]
 
-                summary_df.loc[index, "previous_common_sessions"] = (
-                    previous_row["common_sessions"]
-                )
-                summary_df.loc[index, "change_in_common_sessions"] = (
+                summary_df.loc[
+                    index, "previous_common_sessions"
+                ] = previous_row["common_sessions"]
+
+                summary_df.loc[
+                    index, "change_in_common_sessions"
+                ] = (
                     row["common_sessions"]
                     - previous_row["common_sessions"]
                 )
-                summary_df.loc[index, "previous_ohlc_mismatches"] = (
-                    previous_row["ohlc_mismatch_sessions"]
-                )
+
+                summary_df.loc[
+                    index, "previous_ohlc_mismatches"
+                ] = previous_row["ohlc_mismatch_sessions"]
 
     summary_path = report_dir / "summary.csv"
     detail_path = report_dir / "daily_comparison.csv"
@@ -236,11 +283,11 @@ def main():
             default=str,
         )
 
-    # Append this audit to the permanent history.
     REPORT_ROOT.mkdir(parents=True, exist_ok=True)
 
     if HISTORY_FILE.exists():
         old_history = pd.read_csv(HISTORY_FILE)
+
         history = pd.concat(
             [old_history, summary_df],
             ignore_index=True,
@@ -259,4 +306,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-  
