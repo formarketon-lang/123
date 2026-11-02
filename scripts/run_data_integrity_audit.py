@@ -1,8 +1,8 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
-
 import json
+
 import pandas as pd
 
 
@@ -16,6 +16,17 @@ NSE_DIR = Path("data/raw/nse")
 YAHOO_DIR = Path("data/raw/yahoo")
 REPORT_ROOT = Path("reports/data_integrity")
 HISTORY_FILE = REPORT_ROOT / "audit_history.csv"
+
+# Explicitly verified calendar references.
+# This is NOT a complete NSE holiday calendar.
+KNOWN_NSE_HOLIDAYS = {
+    "2026-01-15",
+}
+
+# NSE conducted a special live trading session on this Sunday.
+KNOWN_NSE_SPECIAL_SESSIONS = {
+    "2026-02-01",
+}
 
 
 def load_and_normalize(path):
@@ -76,6 +87,8 @@ def load_and_normalize(path):
             f"Missing price columns in {path}: {missing_prices}"
         )
 
+    # Index historical files may not contain Volume.
+    # Keep it missing; never replace missing Volume with zero.
     if "Volume" not in df.columns:
         df["Volume"] = pd.NA
 
@@ -106,6 +119,69 @@ def load_and_normalize(path):
     return df[["Date"] + OHLCV].reset_index(drop=True)
 
 
+def classify_session(row):
+    date_key = row["Date"].strftime("%Y-%m-%d")
+    source_status = row["Session_Status"]
+
+    if source_status == "NSE_ONLY":
+        if date_key in KNOWN_NSE_SPECIAL_SESSIONS:
+            return (
+                "SPECIAL_NSE_SESSION_YAHOO_MISSING",
+                "Verified special NSE trading session; Yahoo record is absent.",
+            )
+
+        return (
+            "NSE_SESSION_YAHOO_MISSING_UNVERIFIED",
+            "NSE file contains this date; Yahoo file does not. "
+            "Calendar status has not been independently verified.",
+        )
+
+    if source_status == "YAHOO_ONLY":
+        if date_key in KNOWN_NSE_HOLIDAYS:
+            return (
+                "YAHOO_RECORD_ON_KNOWN_NSE_HOLIDAY",
+                "Yahoo contains a record on a verified NSE market holiday. "
+                "Review this record; do not treat it as an NSE trading session.",
+            )
+
+        return (
+            "YAHOO_ONLY_SESSION_UNVERIFIED",
+            "Yahoo file contains this date; NSE file does not. "
+            "Calendar status has not been independently verified.",
+        )
+
+    if bool(row["OHLC_Mismatch"]):
+        return (
+            "OHLC_PRICE_DIFFERENCE",
+            "Both sources contain this date, but at least one OHLC value "
+            f"differs by more than {PRICE_TOLERANCE}.",
+        )
+
+    if date_key in KNOWN_NSE_SPECIAL_SESSIONS:
+        return (
+            "SPECIAL_NSE_SESSION_MATCHED",
+            "Verified special NSE trading session is present in both sources.",
+        )
+
+    if row["Volume_Status"] == "NOT_COMPARABLE":
+        return (
+            "OHLC_MATCH_VOLUME_NOT_AVAILABLE",
+            "OHLC values are within tolerance. Volume is missing in one "
+            "or both sources and cannot be compared.",
+        )
+
+    if bool(row["Volume_Mismatch"]):
+        return (
+            "VOLUME_DIFFERENCE",
+            "Both sources contain this date, but Volume values differ.",
+        )
+
+    return (
+        "VERIFIED_MATCH",
+        "Both sources contain this date; OHLC and comparable Volume match.",
+    )
+
+
 def compare_sources(nse, yahoo, instrument):
     merged = nse.merge(
         yahoo,
@@ -113,7 +189,7 @@ def compare_sources(nse, yahoo, instrument):
         how="outer",
         suffixes=("_NSE", "_Yahoo"),
         indicator=True,
-    ).sort_values("Date")
+    ).sort_values("Date").reset_index(drop=True)
 
     merged["Session_Status"] = merged["_merge"].map({
         "both": "COMMON",
@@ -142,15 +218,47 @@ def compare_sources(nse, yahoo, instrument):
 
     merged["OHLC_Mismatch"] = price_mismatch
 
-    volume_difference = (
-        merged["Volume_NSE"] - merged["Volume_Yahoo"]
+    nse_volume = merged["Volume_NSE"]
+    yahoo_volume = merged["Volume_Yahoo"]
+
+    both_volumes_available = (
+        nse_volume.notna() & yahoo_volume.notna()
     )
 
     merged["Volume_Mismatch"] = (
         (merged["_merge"] == "both")
-        & volume_difference.notna()
-        & (volume_difference != 0)
+        & both_volumes_available
+        & (nse_volume != yahoo_volume)
     )
+
+    merged["Volume_Status"] = "NO_COUNTERPART"
+
+    common_rows = merged["_merge"] == "both"
+
+    merged.loc[
+        common_rows & ~both_volumes_available,
+        "Volume_Status",
+    ] = "NOT_COMPARABLE"
+
+    merged.loc[
+        common_rows & both_volumes_available & merged["Volume_Mismatch"],
+        "Volume_Status",
+    ] = "MISMATCH"
+
+    merged.loc[
+        common_rows & both_volumes_available & ~merged["Volume_Mismatch"],
+        "Volume_Status",
+    ] = "MATCH"
+
+    classifications = merged.apply(classify_session, axis=1)
+
+    merged["Session_Classification"] = [
+        item[0] for item in classifications
+    ]
+
+    merged["Classification_Reason"] = [
+        item[1] for item in classifications
+    ]
 
     common = int((merged["_merge"] == "both").sum())
     nse_only = int((merged["_merge"] == "left_only").sum())
@@ -168,6 +276,24 @@ def compare_sources(nse, yahoo, instrument):
         ),
         "volume_mismatch_sessions": int(
             merged["Volume_Mismatch"].sum()
+        ),
+        "volume_not_comparable_sessions": int(
+            (
+                (merged["_merge"] == "both")
+                & (merged["Volume_Status"] == "NOT_COMPARABLE")
+            ).sum()
+        ),
+        "known_nse_holiday_yahoo_records": int(
+            (
+                merged["Session_Classification"]
+                == "YAHOO_RECORD_ON_KNOWN_NSE_HOLIDAY"
+            ).sum()
+        ),
+        "known_special_session_yahoo_missing": int(
+            (
+                merged["Session_Classification"]
+                == "SPECIAL_NSE_SESSION_YAHOO_MISSING"
+            ).sum()
         ),
         "nse_first_date": (
             str(nse["Date"].min().date())
@@ -187,6 +313,9 @@ def compare_sources(nse, yahoo, instrument):
         ),
     }
 
+    # Keep the original strict MATCH/REVIEW rule.
+    # Classification explains differences; it does not silently
+    # convert missing sessions or price differences into MATCH.
     summary["status"] = (
         "MATCH"
         if nse_only == 0
@@ -237,6 +366,13 @@ def main():
         details.append(detail)
 
         print(summary)
+
+        print("\nClassification counts:")
+        print(
+            detail["Session_Classification"]
+            .value_counts(dropna=False)
+            .to_string()
+        )
 
     summary_df = pd.DataFrame(summaries)
     detail_df = pd.concat(details, ignore_index=True)
