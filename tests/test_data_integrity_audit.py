@@ -44,6 +44,7 @@ def test_matching_data():
     assert summary["status"] == "MATCH"
     assert summary["common_sessions"] == 2
     assert summary["ohlc_mismatch_sessions"] == 0
+    assert summary["ohlc_missing_sessions"] == 0
 
 
 def test_close_price_mismatch():
@@ -72,6 +73,56 @@ def test_missing_session_detection():
 
     assert summary["common_sessions"] == 1
     assert summary["nse_only_sessions"] == 1
+    assert summary["status"] == "REVIEW"
+
+
+def test_common_session_missing_ohlc_value():
+    nse, yahoo = sample_data()
+
+    # One required OHLC value is missing in Yahoo.
+    yahoo.loc[0, "High"] = float("nan")
+
+    summary, detail = compare_sources(
+        nse,
+        yahoo,
+        "MARICO",
+    )
+
+    row = detail[
+        detail["Date"] == pd.Timestamp("2026-10-28")
+    ].iloc[0]
+
+    assert summary["status"] == "REVIEW"
+    assert summary["ohlc_missing_sessions"] == 1
+    assert row["OHLC_Missing"]
+    assert row["Session_Classification"] == "OHLC_DATA_MISSING"
+    assert row["Session_Classification"] != "VERIFIED_MATCH"
+
+
+def test_special_session_volume_mismatch_is_not_hidden():
+    nse, yahoo = sample_data()
+
+    special_date = pd.Timestamp("2026-02-01")
+
+    nse.loc[0, "Date"] = special_date
+    yahoo.loc[0, "Date"] = special_date
+
+    # OHLC values remain equal, but Volume differs.
+    yahoo.loc[0, "Volume"] = 9999
+
+    summary, detail = compare_sources(
+        nse,
+        yahoo,
+        "MARICO",
+    )
+
+    row = detail[
+        detail["Date"] == special_date
+    ].iloc[0]
+
+    assert summary["status"] == "REVIEW"
+    assert summary["volume_mismatch_sessions"] == 1
+    assert row["Session_Classification"] == "VOLUME_DIFFERENCE"
 
 
 def test_normalize_csv(tmp_path):
