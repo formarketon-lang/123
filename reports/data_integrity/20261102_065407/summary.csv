@@ -1,0 +1,4 @@
+instrument,nse_rows,yahoo_rows,common_sessions,nse_only_sessions,yahoo_only_sessions,ohlc_missing_sessions,ohlc_mismatch_sessions,volume_mismatch_sessions,volume_not_comparable_sessions,known_nse_holiday_yahoo_records,known_special_session_yahoo_missing,nse_first_date,nse_last_date,yahoo_first_date,yahoo_last_date,status,audit_id,audit_time_utc,previous_common_sessions,change_in_common_sessions,previous_ohlc_mismatches
+MARICO,246,246,245,1,1,0,0,0,0,1,1,2025-10-31,2026-10-29,2025-10-31,2026-10-29,REVIEW,20261102_065407,2026-11-02T06:54:07.266966+00:00,245.0,0.0,0.0
+NIFTY 50,247,245,245,2,0,0,1,0,245,0,1,2025-10-30,2026-10-29,2025-10-31,2026-10-29,REVIEW,20261102_065407,2026-11-02T06:54:07.266966+00:00,245.0,0.0,1.0
+NIFTY FMCG,247,244,244,3,0,0,0,0,244,0,1,2025-10-30,2026-10-29,2025-10-31,2026-10-29,REVIEW,20261102_065407,2026-11-02T06:54:07.266966+00:00,244.0,0.0,0.0
