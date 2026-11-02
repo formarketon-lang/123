@@ -31,9 +31,38 @@ jobs:
         run: |
           python -m pytest -q
 
-      - name: Download NSE data
+      - name: Prepare NSE data directory
         run: |
-          python -m scripts.run_nse_live_check
+          mkdir -p data/raw/nse
+
+      - name: Download MARICO NSE data
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/formarketon-lang/TLP-Research-Data/main/31-10-2025-TO-29-10-2026-MARICO-EQ-N-1.csv" \
+            --output data/raw/nse/MARICO_nse.csv
+
+      - name: Download NIFTY 50 NSE data
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/formarketon-lang/TLP-Research-Data/main/NIFTY%2050_Historical_PR_30102025to29102026.csv" \
+            --output data/raw/nse/NIFTY_50_nse.csv
+
+      - name: Download NIFTY FMCG NSE data
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://raw.githubusercontent.com/formarketon-lang/TLP-Research-Data/main/NIFTY%20FMCG_Historical_PR_30102025to29102026.csv" \
+            --output data/raw/nse/NIFTY_FMCG_nse.csv
+
+      - name: Verify NSE files
+        run: |
+          echo "========== NSE DATA FILES =========="
+          ls -lh data/raw/nse/
+
+          test -s data/raw/nse/MARICO_nse.csv
+          test -s data/raw/nse/NIFTY_50_nse.csv
+          test -s data/raw/nse/NIFTY_FMCG_nse.csv
+
+          echo "All three NSE files downloaded successfully."
 
       - name: Download Yahoo data
         run: |
@@ -47,8 +76,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add reports/data_integrity/
-          git diff --cached --quiet || git commit -m "Store data integrity audit report"
+
+          git diff --cached --quiet || \
+            git commit -m "Store data integrity audit report"
+
           git push
 
       - name: Upload audit artifact
@@ -60,4 +93,3 @@ jobs:
             data/raw/yahoo/
             reports/data_integrity/
           if-no-files-found: error
-          
