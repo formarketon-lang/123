@@ -11,7 +11,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from data.yahoo_adapter import fetch_yahoo_history
 
 
-START_DATE = "2025-10-31"
+# Match the NSE research dataset start date.
+START_DATE = "2025-10-30"
 END_DATE = "2026-10-29"
 
 # Verified Yahoo Finance tickers
@@ -48,6 +49,7 @@ def main():
 
         print(f"\nChecking: {name}")
         print(f"Yahoo ticker: {symbol}")
+        print(f"Date range: {START_DATE} to {END_DATE}")
 
         try:
             df = fetch_yahoo_history(
