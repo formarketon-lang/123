@@ -1,8 +1,6 @@
-
 from pathlib import Path
 import sys
 
-# Add project root to Python import path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -11,26 +9,26 @@ if str(PROJECT_ROOT) not in sys.path:
 from data.yahoo_adapter import fetch_yahoo_history
 
 
-# Match the NSE research dataset start date.
-START_DATE = "2025-10-30"
 END_DATE = "2026-10-29"
 
-# Verified Yahoo Finance tickers
 INSTRUMENTS = [
     {
         "name": "MARICO",
         "symbol": "MARICO.NS",
         "exchange": "NSE",
+        "start_date": "2025-10-31",
     },
     {
         "name": "NIFTY_50",
         "symbol": "^NSEI",
         "exchange": "NSE",
+        "start_date": "2025-10-30",
     },
     {
         "name": "NIFTY_FMCG",
         "symbol": "^CNXFMCG",
         "exchange": "NSE",
+        "start_date": "2025-10-30",
     },
 ]
 
@@ -46,15 +44,16 @@ def main():
         name = instrument["name"]
         symbol = instrument["symbol"]
         exchange = instrument["exchange"]
+        start_date = instrument["start_date"]
 
         print(f"\nChecking: {name}")
         print(f"Yahoo ticker: {symbol}")
-        print(f"Date range: {START_DATE} to {END_DATE}")
+        print(f"Date range: {start_date} to {END_DATE}")
 
         try:
             df = fetch_yahoo_history(
                 symbol=symbol,
-                start_date=START_DATE,
+                start_date=start_date,
                 end_date=END_DATE,
                 interval="1d",
                 exchange=exchange,
