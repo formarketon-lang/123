@@ -1,4 +1,3 @@
-
 from datetime import datetime, timezone
 from pathlib import Path
 import json
@@ -26,6 +25,14 @@ KNOWN_NSE_HOLIDAYS = {
 # Verified special NSE trading session.
 KNOWN_NSE_SPECIAL_SESSIONS = {
     "2026-02-01",
+}
+
+# Official NSE holiday calendars show these weekdays
+# as regular equity trading sessions.
+# This is a curated set, NOT a complete NSE trading calendar.
+KNOWN_NSE_REGULAR_SESSIONS = {
+    "2025-10-30",
+    "2026-01-01",
 }
 
 
@@ -119,6 +126,12 @@ def classify_session(row):
             return (
                 "SPECIAL_NSE_SESSION_YAHOO_MISSING",
                 "Verified special NSE trading session; Yahoo record is absent.",
+            )
+
+        if date_key in KNOWN_NSE_REGULAR_SESSIONS:
+            return (
+                "NSE_REGULAR_SESSION_YAHOO_MISSING",
+                "Verified regular NSE equity trading session; Yahoo record is absent.",
             )
 
         return (
@@ -309,6 +322,12 @@ def compare_sources(nse, yahoo, instrument):
             (
                 merged["Session_Classification"]
                 == "SPECIAL_NSE_SESSION_YAHOO_MISSING"
+            ).sum()
+        ),
+        "known_regular_session_yahoo_missing": int(
+            (
+                merged["Session_Classification"]
+                == "NSE_REGULAR_SESSION_YAHOO_MISSING"
             ).sum()
         ),
         "nse_first_date": (
