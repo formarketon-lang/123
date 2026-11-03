@@ -1,0 +1,86 @@
+name: TLP NSE Index Raw Diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-nse-response:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: Fetch original NSE API record
+        run: |
+          python - <<'PY'
+          import json
+          import requests
+
+          base = "https://www.nseindia.com"
+          endpoint = f"{base}/api/historical/indicesHistory"
+
+          session = requests.Session()
+          session.headers.update({
+              "User-Agent": (
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 Chrome/120.0.0.0 "
+                  "Safari/537.36"
+              ),
+              "Accept": "application/json, text/plain, */*",
+              "Referer": "https://www.nseindia.com/",
+          })
+
+          home = session.get(base, timeout=20)
+          home.raise_for_status()
+
+          params = {
+              "indexType": "NIFTY 50",
+              "from": "06-03-2026",
+              "to": "06-03-2026",
+          }
+
+          response = session.get(
+              endpoint,
+              params=params,
+              timeout=30,
+          )
+          response.raise_for_status()
+
+          payload = response.json()
+          records = payload.get("data", [])
+
+          print("Returned records:", len(records))
+
+          if not records:
+              raise SystemExit("No NSE record returned.")
+
+          for record in records:
+              print(json.dumps(record, indent=2))
+
+              print("DATE:", record.get("EOD_TIMESTAMP"))
+              print("EOD_HIGH_INDEX_VAL:",
+                    record.get("EOD_HIGH_INDEX_VAL"))
+              print("HIGH_INDEX_VAL:",
+                    record.get("HIGH_INDEX_VAL"))
+
+          with open("nse_raw_response.json", "w") as f:
+              json.dump(payload, f, indent=2)
+
+          print("Raw response saved.")
+          PY
+
+      - name: Upload raw response
+        uses: actions/upload-artifact@v4
+        with:
+          name: nse-index-raw-response
+          path: nse_raw_response.json
+          
