@@ -1,4 +1,3 @@
-
 import pandas as pd
 
 from scripts.run_data_integrity_audit import (
@@ -123,6 +122,39 @@ def test_special_session_volume_mismatch_is_not_hidden():
     assert summary["status"] == "REVIEW"
     assert summary["volume_mismatch_sessions"] == 1
     assert row["Session_Classification"] == "VOLUME_DIFFERENCE"
+
+
+def test_verified_regular_session_missing_from_yahoo():
+    verified_dates = [
+        "2025-10-30",
+        "2026-01-01",
+    ]
+
+    for date in verified_dates:
+        nse, yahoo = sample_data()
+
+        # Keep one NSE record and remove all Yahoo records.
+        nse = nse.iloc[:1].copy()
+        nse.loc[nse.index[0], "Date"] = pd.Timestamp(date)
+
+        yahoo = yahoo.iloc[:0].copy()
+
+        summary, detail = compare_sources(
+            nse,
+            yahoo,
+            "NIFTY 50",
+        )
+
+        row = detail.iloc[0]
+
+        assert summary["status"] == "REVIEW"
+        assert summary["nse_only_sessions"] == 1
+        assert summary["known_regular_session_yahoo_missing"] == 1
+
+        assert (
+            row["Session_Classification"]
+            == "NSE_REGULAR_SESSION_YAHOO_MISSING"
+        )
 
 
 def test_normalize_csv(tmp_path):
