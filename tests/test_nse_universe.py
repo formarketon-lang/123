@@ -411,3 +411,4 @@ def test_fetcher_falls_back_to_legacy_master_when_mii_fails():
 
     assert session.urls[-1] == NSE_EQUITY_MASTER_URL
         
+
