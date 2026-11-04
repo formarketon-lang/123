@@ -1,0 +1,39 @@
+
+name: NSE MII Universe Live Verification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nse-mii-live-verification:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run NSE MII live verification
+        run: |
+          python scripts/run_nse_universe_live_check.py
+
+      - name: Upload NSE universe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nse-mii-live-universe-report
+          path: reports/nse_universe_live/
+          if-no-files-found: warn
+          retention-days: 30
