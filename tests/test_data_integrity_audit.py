@@ -10,19 +10,19 @@ from scripts.run_data_integrity_audit import (
 def sample_data():
     nse = pd.DataFrame({
         "Date": ["2026-10-28", "2026-10-29"],
-        "Open": [100, 102],
-        "High": [105, 107],
-        "Low": [99, 101],
-        "Close": [104, 106],
+        "Open": [100.0, 102.0],
+        "High": [105.0, 107.0],
+        "Low": [99.0, 101.0],
+        "Close": [104.0, 106.0],
         "Volume": [1000, 1200],
     })
 
     yahoo = pd.DataFrame({
         "Date": ["2026-10-28", "2026-10-29"],
-        "Open": [100, 102],
-        "High": [105, 107],
-        "Low": [99, 101],
-        "Close": [104, 106],
+        "Open": [100.0, 102.0],
+        "High": [105.0, 107.0],
+        "Low": [99.0, 101.0],
+        "Close": [104.0, 106.0],
         "Volume": [1000, 1200],
     })
 
@@ -45,7 +45,7 @@ def test_matching_data():
 
 def test_close_price_mismatch():
     nse, yahoo = sample_data()
-    yahoo.loc[1, "Close"] = 110
+    yahoo.loc[1, "Close"] = 110.0
 
     summary, detail = compare_sources(nse, yahoo, "MARICO")
 
@@ -190,6 +190,11 @@ def test_known_nifty50_secondary_price_variance_is_accepted():
 
     nse = nse.iloc[:1].copy()
     yahoo = yahoo.iloc[:1].copy()
+
+    # Explicitly use float columns for decimal price values.
+    for column in ["Open", "High", "Low", "Close"]:
+        nse[column] = nse[column].astype(float)
+        yahoo[column] = yahoo[column].astype(float)
 
     variance_date = pd.Timestamp("2026-03-06")
 
