@@ -17,18 +17,14 @@ YAHOO_DIR = Path("data/raw/yahoo")
 REPORT_ROOT = Path("reports/data_integrity")
 HISTORY_FILE = REPORT_ROOT / "audit_history.csv"
 
-# Verified NSE holiday reference.
 KNOWN_NSE_HOLIDAYS = {
     "2026-01-15",
 }
 
-# Verified special NSE trading sessions.
 KNOWN_NSE_SPECIAL_SESSIONS = {
     "2026-02-01",
 }
 
-# Curated regular NSE trading dates.
-# This is NOT a complete NSE trading calendar.
 KNOWN_NSE_REGULAR_SESSIONS = {
     "2025-10-30",
     "2026-01-01",
@@ -86,8 +82,6 @@ def load_and_normalize(path):
             f"Missing price columns in {path}: {missing_prices}"
         )
 
-    # Missing Volume remains missing.
-    # Never replace missing Volume with zero.
     if "Volume" not in df.columns:
         df["Volume"] = pd.NA
 
@@ -395,30 +389,64 @@ def compare_sources(nse, yahoo, instrument):
         ),
     }
 
-    # An exception is accepted only when every unmatched
-    # session is accounted for by a verified exception.
-    # Regular-session missing data and unverified dates
-    # remain REVIEW conditions.
-    all_unmatched_are_expected = (
-        nse_only + yahoo_only == expected_exceptions
-        and regular_missing == 0
-        and unverified_nse_missing == 0
-        and unverified_yahoo_only == 0
+    # NSE is the authoritative primary source.
+    # Yahoo differences remain visible as secondary-source warnings.
+    nse_ohlc_missing_mask = nse[PRICE_COLUMNS].isna().any(axis=1)
+
+    nse_ohlc_invalid_mask = (
+        (nse["High"] < nse[["Open", "Close"]].max(axis=1))
+        | (nse["Low"] > nse[["Open", "Close"]].min(axis=1))
+        | (nse["High"] < nse["Low"])
+        | (nse[PRICE_COLUMNS] <= 0).any(axis=1)
+    ).fillna(False)
+
+    primary_missing = int(nse_ohlc_missing_mask.sum())
+    primary_invalid = int(nse_ohlc_invalid_mask.sum())
+
+    summary["primary_nse_ohlc_missing_sessions"] = primary_missing
+    summary["primary_nse_invalid_ohlc_sessions"] = primary_invalid
+
+    yahoo_ohlc_missing_mask = (
+        merged[[f"{column}_Yahoo" for column in PRICE_COLUMNS]]
+        .isna()
+        .any(axis=1)
     )
 
-    no_price_or_volume_errors = (
-        summary["ohlc_missing_sessions"] == 0
-        and summary["ohlc_mismatch_sessions"] == 0
-        and summary["volume_mismatch_sessions"] == 0
+    nse_ohlc_present_mask = (
+        merged[[f"{column}_NSE" for column in PRICE_COLUMNS]]
+        .notna()
+        .all(axis=1)
     )
 
-    if all_unmatched_are_expected and no_price_or_volume_errors:
-        if expected_exceptions > 0:
-            summary["status"] = "PASS_WITH_EXPECTED_EXCEPTIONS"
-        else:
-            summary["status"] = "MATCH"
-    else:
+    secondary_ohlc_missing = int(
+        (common_rows & nse_ohlc_present_mask & yahoo_ohlc_missing_mask).sum()
+    )
+
+    summary["secondary_yahoo_ohlc_missing_sessions"] = (
+        secondary_ohlc_missing
+    )
+
+    primary_data_is_valid = (
+        not nse.empty
+        and primary_missing == 0
+        and primary_invalid == 0
+    )
+
+    has_secondary_findings = (
+        (nse_only + yahoo_only) > expected_exceptions
+        or summary["ohlc_mismatch_sessions"] > 0
+        or summary["volume_mismatch_sessions"] > 0
+        or secondary_ohlc_missing > 0
+    )
+
+    if not primary_data_is_valid:
         summary["status"] = "REVIEW"
+    elif has_secondary_findings:
+        summary["status"] = "PASS_WITH_SECONDARY_WARNINGS"
+    elif expected_exceptions > 0:
+        summary["status"] = "PASS_WITH_EXPECTED_EXCEPTIONS"
+    else:
+        summary["status"] = "MATCH"
 
     detail = merged.drop(columns=["_merge"])
 
@@ -536,4 +564,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+            
