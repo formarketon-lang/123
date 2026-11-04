@@ -1,12 +1,16 @@
 
 """NSE cash-equity universe provider.
 
-Supports the legacy NSE EQUITY_L.csv and NSE MII security-master formats.
+Primary source: NSE MII CM security master.
+Fallback source: Legacy NSE EQUITY_L.csv.
 """
 
 from __future__ import annotations
 
+import gzip
+from datetime import date, datetime, timedelta
 from io import BytesIO
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
@@ -14,6 +18,11 @@ import requests
 
 NSE_EQUITY_MASTER_URL = (
     "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
+)
+
+NSE_MII_SECURITY_URL_TEMPLATE = (
+    "https://nsearchives.nseindia.com/content/cm/"
+    "NSE_CM_security_{date}.csv.gz"
 )
 
 NSE_HEADERS = {
@@ -138,6 +147,9 @@ def normalize_nse_mii_security_master(
         frame["Normal Market Status"] != "3"
     ]
 
+    # PrtdToTrad=2 identifies BSE-exclusive securities.
+    # Keep PrtdToTrad=0 because the current audit has not
+    # established a safe reason to exclude those securities.
     if "Permitted to Trade" in frame.columns:
         frame = frame[
             frame["Permitted to Trade"] != "2"
@@ -162,7 +174,7 @@ def normalize_nse_mii_security_master(
         )
     ]
 
-    # NSE MII dates use seconds from 01-Jan-1980.
+    # NSE MII listing dates use seconds from 01-Jan-1980.
     if "Listing Date" in frame.columns:
         listing_seconds = pd.to_numeric(
             frame["Listing Date"],
@@ -191,8 +203,7 @@ def normalize_nse_mii_security_master(
     frame["Exchange"] = "NSE"
     frame["Source"] = "NSE MII Security Master"
 
-    # Do not deduplicate by ISIN.
-    # Different symbols may share an ISIN during symbol changes.
+    # Do not deduplicate by ISIN alone.
     frame = frame.drop_duplicates(
         subset=["Symbol", "Series", "ISIN"],
         keep="last",
@@ -320,21 +331,77 @@ def normalize_nse_equity_master(
     return frame
 
 
+def _read_mii_security_file(content: bytes) -> pd.DataFrame:
+    """Read a gzip MII file or an already decompressed CSV response."""
+
+    if not content:
+        raise ValueError("NSE MII security file response is empty.")
+
+    if content[:2] == b"\x1f\x8b":
+        content = gzip.decompress(content)
+
+    return pd.read_csv(
+        BytesIO(content),
+        dtype="string",
+        low_memory=False,
+    )
+
+
 def fetch_nse_equity_universe(
     timeout: int = 30,
     session: requests.Session | None = None,
+    as_of_date: date | None = None,
+    lookback_days: int = 7,
 ) -> pd.DataFrame:
-    """Fetch the legacy NSE equity master and normalize it."""
+    """Fetch NSE MII master first, then use legacy CSV as fallback."""
+
+    if lookback_days < 0:
+        raise ValueError("lookback_days must be zero or greater.")
 
     client = session or requests.Session()
     client.headers.update(NSE_HEADERS)
 
+    # Establish an NSE session before requesting archive files.
     home = client.get(
         "https://www.nseindia.com",
         timeout=timeout,
     )
     home.raise_for_status()
 
+    report_date = as_of_date or datetime.now(
+        ZoneInfo("Asia/Kolkata")
+    ).date()
+
+    mii_errors = []
+
+    # Search today's report and previous calendar days.
+    for offset in range(lookback_days + 1):
+        candidate_date = report_date - timedelta(days=offset)
+        date_token = candidate_date.strftime("%d%m%Y")
+
+        url = NSE_MII_SECURITY_URL_TEMPLATE.format(
+            date=date_token
+        )
+
+        try:
+            response = client.get(url, timeout=timeout)
+            response.raise_for_status()
+
+            raw = _read_mii_security_file(response.content)
+
+            result = normalize_nse_mii_security_master(raw)
+
+            if result.empty:
+                raise ValueError("MII universe is empty.")
+
+            return result
+
+        except Exception as exc:
+            mii_errors.append(
+                f"{date_token}: {type(exc).__name__}: {exc}"
+            )
+
+    # MII unavailable: retain the previous legacy provider.
     response = client.get(
         NSE_EQUITY_MASTER_URL,
         timeout=timeout,
@@ -345,14 +412,15 @@ def fetch_nse_equity_universe(
         raw = pd.read_csv(
             BytesIO(response.content),
             dtype="string",
+            low_memory=False,
         )
     except Exception as exc:
         raise ValueError(
-            "Could not parse the NSE equity-master CSV."
+            "Could not parse NSE legacy equity master. "
+            "MII attempts: " + " | ".join(mii_errors)
         ) from exc
 
     return normalize_nse_equity_master(
         raw,
         equity_series_only=True,
-        )
-    
+    )
