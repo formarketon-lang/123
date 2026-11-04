@@ -121,9 +121,10 @@ def test_verified_regular_session_missing_from_yahoo():
 
         row = detail.iloc[0]
 
-        assert summary["status"] == "REVIEW"
+        assert summary["status"] == "PASS_WITH_EXPECTED_EXCEPTIONS"
         assert summary["nse_only_sessions"] == 1
         assert summary["known_regular_session_yahoo_missing"] == 1
+        assert summary["expected_exception_sessions"] == 1
 
         assert (
             row["Session_Classification"]
@@ -184,6 +185,37 @@ def test_unknown_yahoo_only_date_remains_review():
     assert summary["status"] == "REVIEW"
 
 
+def test_known_nifty50_secondary_price_variance_is_accepted():
+    nse, yahoo = sample_data()
+
+    nse = nse.iloc[:1].copy()
+    yahoo = yahoo.iloc[:1].copy()
+
+    variance_date = pd.Timestamp("2026-03-06")
+
+    nse.loc[nse.index[0], "Date"] = variance_date
+    yahoo.loc[yahoo.index[0], "Date"] = variance_date
+
+    nse.loc[nse.index[0], "High"] = 24700.80
+    yahoo.loc[yahoo.index[0], "High"] = 24700.90
+
+    summary, detail = compare_sources(
+        nse, yahoo, "NIFTY 50"
+    )
+
+    row = detail.iloc[0]
+
+    assert summary["status"] == "PASS_WITH_EXPECTED_EXCEPTIONS"
+    assert summary["ohlc_mismatch_sessions"] == 1
+    assert summary["known_secondary_price_variance_sessions"] == 1
+    assert summary["unresolved_ohlc_mismatch_sessions"] == 0
+
+    assert (
+        row["Session_Classification"]
+        == "KNOWN_SECONDARY_PRICE_VARIANCE"
+    )
+
+
 def test_normalize_csv(tmp_path):
     file_path = tmp_path / "sample.csv"
 
@@ -233,4 +265,3 @@ def test_normalize_nse_security_archive_format(tmp_path):
     assert result.loc[0, "Low"] == 764.70
     assert result.loc[0, "Close"] == 802.90
     assert result.loc[0, "Volume"] == 3393736
-    
