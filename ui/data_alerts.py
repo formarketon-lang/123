@@ -1,9 +1,8 @@
-
 """
 TradeLab Pro - Data Integrity Action Center
 
 Reads the latest audit summary and daily comparison.
-Shows detected issues, recommended actions and audit rerun access.
+Shows verified calendar exceptions separately from real review issues.
 """
 
 import json
@@ -27,8 +26,8 @@ AUDIT_WORKFLOW_URL = (
 
 ACTION_GUIDANCE = {
     "SPECIAL_NSE_SESSION_YAHOO_MISSING": (
-        "Special NSE session",
-        "Keep the NSE record. Verify the special session. "
+        "Verified special NSE session",
+        "Keep the NSE record. This is an expected special session. "
         "Do not create a Yahoo record artificially.",
     ),
     "NSE_REGULAR_SESSION_YAHOO_MISSING": (
@@ -41,9 +40,9 @@ ACTION_GUIDANCE = {
         "whether the Yahoo record is missing.",
     ),
     "YAHOO_RECORD_ON_KNOWN_NSE_HOLIDAY": (
-        "Yahoo holiday record",
-        "Inspect the Yahoo record. Do not treat it automatically "
-        "as an NSE trading session.",
+        "Verified NSE holiday record",
+        "This Yahoo-only record falls on a known NSE holiday. "
+        "Do not treat it automatically as an NSE trading session.",
     ),
     "YAHOO_ONLY_SESSION_UNVERIFIED": (
         "Yahoo-only date",
@@ -105,6 +104,89 @@ def _load_daily_details(report_dir):
         return pd.DataFrame()
 
 
+def _show_instrument_details(item, details):
+    instrument = item.get("instrument", "Unknown")
+
+    st.write(
+        f"Common sessions: {item.get('common_sessions', 0)}"
+    )
+
+    st.write(
+        f"NSE-only: {item.get('nse_only_sessions', 0)} | "
+        f"Yahoo-only: {item.get('yahoo_only_sessions', 0)}"
+    )
+
+    st.write(
+        f"OHLC missing: {item.get('ohlc_missing_sessions', 0)} | "
+        f"OHLC mismatch: {item.get('ohlc_mismatch_sessions', 0)} | "
+        f"Volume mismatch: {item.get('volume_mismatch_sessions', 0)}"
+    )
+
+    if details.empty or "Instrument" not in details.columns:
+        st.info("Daily comparison details are not available.")
+        return
+
+    instrument_details = details[
+        details["Instrument"] == instrument
+    ].copy()
+
+    if instrument_details.empty:
+        st.info("No daily detail rows found for this instrument.")
+        return
+
+    if "Session_Classification" in instrument_details.columns:
+        instrument_details = instrument_details[
+            ~instrument_details["Session_Classification"].isin([
+                "VERIFIED_MATCH",
+                "SPECIAL_NSE_SESSION_MATCHED",
+            ])
+        ]
+
+    if instrument_details.empty:
+        st.info("No affected dates found.")
+        return
+
+    display_columns = [
+        "Date",
+        "Session_Classification",
+        "Classification_Reason",
+        "Open_Difference",
+        "High_Difference",
+        "Low_Difference",
+        "Close_Difference",
+    ]
+
+    display_columns = [
+        column for column in display_columns
+        if column in instrument_details.columns
+    ]
+
+    st.markdown("**Affected dates and findings**")
+    st.dataframe(
+        instrument_details[display_columns],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    if "Session_Classification" in instrument_details.columns:
+        issue_types = (
+            instrument_details["Session_Classification"]
+            .dropna()
+            .unique()
+        )
+
+        for issue in issue_types:
+            title, action = ACTION_GUIDANCE.get(
+                issue,
+                (
+                    "Manual review required",
+                    "Inspect the source records and verify the exchange calendar.",
+                ),
+            )
+
+            st.markdown(f"**{title}:** {action}")
+
+
 def render_data_integrity_alerts():
     st.subheader("Data Integrity Action Center")
 
@@ -134,9 +216,19 @@ def render_data_integrity_alerts():
         "audit_time_utc", "Unknown"
     )
 
-    flagged = [
+    review_items = [
         item for item in records
-        if item.get("status") != "MATCH"
+        if item.get("status") == "REVIEW"
+    ]
+
+    exception_items = [
+        item for item in records
+        if item.get("status") == "PASS_WITH_EXPECTED_EXCEPTIONS"
+    ]
+
+    matched_items = [
+        item for item in records
+        if item.get("status") == "MATCH"
     ]
 
     st.caption(
@@ -145,23 +237,36 @@ def render_data_integrity_alerts():
     )
 
     # Overall status
-    if not flagged:
+    if review_items:
+        st.warning(
+            f"{len(review_items)} of {len(records)} instruments "
+            "still need review."
+        )
+    elif exception_items:
+        st.success(
+            "All audited instruments passed. "
+            "Verified calendar exceptions are listed separately."
+        )
+    else:
         st.success(
             "All audited instruments passed the strict MATCH check."
         )
-    else:
-        st.warning(
-            f"{len(flagged)} of {len(records)} instruments "
-            "need review before affected data is used."
-        )
 
-    # Summary
+    # Status counts
+    st.caption(
+        f"MATCH: {len(matched_items)} | "
+        f"Passed with expected exceptions: {len(exception_items)} | "
+        f"REVIEW: {len(review_items)}"
+    )
+
+    # Summary table
     summary_columns = [
         "instrument",
         "status",
         "common_sessions",
         "nse_only_sessions",
         "yahoo_only_sessions",
+        "expected_exception_sessions",
         "ohlc_missing_sessions",
         "ohlc_mismatch_sessions",
         "volume_mismatch_sessions",
@@ -179,100 +284,40 @@ def render_data_integrity_alerts():
         hide_index=True,
     )
 
-    # Recommended actions
-    st.markdown("**Recommended Actions**")
+    # Details and actions
+    st.markdown("**Audit Details and Recommended Actions**")
 
-    if not flagged:
+    non_match_items = [
+        item for item in records
+        if item.get("status") != "MATCH"
+    ]
+
+    if not non_match_items:
         st.write("No corrective action is currently required.")
-    else:
-        for item in flagged:
-            instrument = item.get("instrument", "Unknown")
 
-            with st.expander(
-                f"{instrument} — {item.get('status', 'REVIEW')}"
-            ):
-                st.write(
-                    f"Common sessions: "
-                    f"{item.get('common_sessions', 0)}"
+    for item in non_match_items:
+        instrument = item.get("instrument", "Unknown")
+        status = item.get("status", "REVIEW")
+
+        with st.expander(f"{instrument} — {status}"):
+            if status == "PASS_WITH_EXPECTED_EXCEPTIONS":
+                st.info(
+                    "Expected exchange-calendar exceptions were verified. "
+                    "These exceptions are informational, not unresolved errors."
+                )
+            elif status == "REVIEW":
+                st.warning(
+                    "This instrument has unresolved data-integrity findings. "
+                    "Review before using affected data."
                 )
 
-                st.write(
-                    f"NSE-only: {item.get('nse_only_sessions', 0)} | "
-                    f"Yahoo-only: {item.get('yahoo_only_sessions', 0)}"
-                )
-
-                st.write(
-                    f"OHLC missing: "
-                    f"{item.get('ohlc_missing_sessions', 0)} | "
-                    f"OHLC mismatch: "
-                    f"{item.get('ohlc_mismatch_sessions', 0)} | "
-                    f"Volume mismatch: "
-                    f"{item.get('volume_mismatch_sessions', 0)}"
-                )
-
-                if not details.empty and "Instrument" in details.columns:
-                    instrument_details = details[
-                        details["Instrument"] == instrument
-                    ].copy()
-
-                    if "Session_Classification" in instrument_details.columns:
-                        instrument_details = instrument_details[
-                            ~instrument_details[
-                                "Session_Classification"
-                            ].isin([
-                                "VERIFIED_MATCH",
-                                "SPECIAL_NSE_SESSION_MATCHED",
-                            ])
-                        ]
-
-                    if not instrument_details.empty:
-                        display_columns = [
-                            "Date",
-                            "Session_Classification",
-                            "Classification_Reason",
-                            "Open_Difference",
-                            "High_Difference",
-                            "Low_Difference",
-                            "Close_Difference",
-                        ]
-
-                        display_columns = [
-                            column for column in display_columns
-                            if column in instrument_details.columns
-                        ]
-
-                        st.markdown("**Affected dates and findings**")
-                        st.dataframe(
-                            instrument_details[display_columns],
-                            use_container_width=True,
-                            hide_index=True,
-                        )
-
-                        if "Session_Classification" in instrument_details.columns:
-                            issue_types = (
-                                instrument_details[
-                                    "Session_Classification"
-                                ]
-                                .dropna()
-                                .unique()
-                            )
-
-                            for issue in issue_types:
-                                title, action = ACTION_GUIDANCE.get(
-                                    issue,
-                                    (
-                                        "Manual review required",
-                                        "Inspect the source records and "
-                                        "verify the exchange calendar.",
-                                    ),
-                                )
-                                st.markdown(f"**{title}:** {action}")
+            _show_instrument_details(item, details)
 
     # Workflow action
     st.divider()
     st.markdown("**Audit Action**")
     st.write(
-        "After correcting or reviewing source data, run the "
+        "After reviewing or correcting source data, run the "
         "automated audit again to generate a fresh report."
     )
 
