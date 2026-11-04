@@ -1,3 +1,4 @@
+
 from datetime import datetime, timezone
 from pathlib import Path
 import json
@@ -16,20 +17,18 @@ YAHOO_DIR = Path("data/raw/yahoo")
 REPORT_ROOT = Path("reports/data_integrity")
 HISTORY_FILE = REPORT_ROOT / "audit_history.csv"
 
-# Explicitly verified calendar references.
-# This is NOT a complete NSE holiday calendar.
+# Verified NSE holiday reference.
 KNOWN_NSE_HOLIDAYS = {
     "2026-01-15",
 }
 
-# Verified special NSE trading session.
+# Verified special NSE trading sessions.
 KNOWN_NSE_SPECIAL_SESSIONS = {
     "2026-02-01",
 }
 
-# Official NSE holiday calendars show these weekdays
-# as regular equity trading sessions.
-# This is a curated set, NOT a complete NSE trading calendar.
+# Curated regular NSE trading dates.
+# This is NOT a complete NSE trading calendar.
 KNOWN_NSE_REGULAR_SESSIONS = {
     "2025-10-30",
     "2026-01-01",
@@ -77,9 +76,8 @@ def load_and_normalize(path):
     if "Date" not in df.columns:
         raise ValueError(f"Date column missing in {path}")
 
-    required_prices = ["Open", "High", "Low", "Close"]
     missing_prices = [
-        column for column in required_prices
+        column for column in PRICE_COLUMNS
         if column not in df.columns
     ]
 
@@ -88,7 +86,8 @@ def load_and_normalize(path):
             f"Missing price columns in {path}: {missing_prices}"
         )
 
-    # Missing Volume remains missing; it is never replaced with zero.
+    # Missing Volume remains missing.
+    # Never replace missing Volume with zero.
     if "Volume" not in df.columns:
         df["Volume"] = pd.NA
 
@@ -109,6 +108,7 @@ def load_and_normalize(path):
     df = df.dropna(subset=["Date"]).sort_values("Date")
 
     duplicate_count = int(df["Date"].duplicated().sum())
+
     if duplicate_count:
         raise ValueError(
             f"Duplicate dates found in {path}: {duplicate_count}"
@@ -122,16 +122,19 @@ def classify_session(row):
     source_status = row["Session_Status"]
 
     if source_status == "NSE_ONLY":
+
         if date_key in KNOWN_NSE_SPECIAL_SESSIONS:
             return (
                 "SPECIAL_NSE_SESSION_YAHOO_MISSING",
-                "Verified special NSE trading session; Yahoo record is absent.",
+                "Verified special NSE trading session; "
+                "Yahoo record is absent. Keep the NSE record.",
             )
 
         if date_key in KNOWN_NSE_REGULAR_SESSIONS:
             return (
                 "NSE_REGULAR_SESSION_YAHOO_MISSING",
-                "Verified regular NSE equity trading session; Yahoo record is absent.",
+                "Verified regular NSE equity trading session; "
+                "Yahoo record is absent.",
             )
 
         return (
@@ -141,11 +144,12 @@ def classify_session(row):
         )
 
     if source_status == "YAHOO_ONLY":
+
         if date_key in KNOWN_NSE_HOLIDAYS:
             return (
                 "YAHOO_RECORD_ON_KNOWN_NSE_HOLIDAY",
-                "Yahoo contains a record on a verified NSE market holiday. "
-                "Review this record; do not treat it as an NSE trading session.",
+                "Yahoo contains a record on a verified NSE market "
+                "holiday. Do not treat it as an NSE trading session.",
             )
 
         return (
@@ -157,8 +161,8 @@ def classify_session(row):
     if bool(row["OHLC_Missing"]):
         return (
             "OHLC_DATA_MISSING",
-            "At least one required OHLC value is missing in one or both "
-            "sources on this common date.",
+            "At least one required OHLC value is missing "
+            "in one or both sources on this common date.",
         )
 
     if bool(row["OHLC_Mismatch"]):
@@ -168,7 +172,6 @@ def classify_session(row):
             f"{PRICE_TOLERANCE}.",
         )
 
-    # Volume checks must happen before special-session match classification.
     if bool(row["Volume_Mismatch"]):
         return (
             "VOLUME_DIFFERENCE",
@@ -178,20 +181,21 @@ def classify_session(row):
     if row["Volume_Status"] == "NOT_COMPARABLE":
         return (
             "OHLC_MATCH_VOLUME_NOT_AVAILABLE",
-            "OHLC values are within tolerance. Volume is missing in one "
-            "or both sources and cannot be compared.",
+            "OHLC values are within tolerance. Volume is missing "
+            "in one or both sources and cannot be compared.",
         )
 
     if date_key in KNOWN_NSE_SPECIAL_SESSIONS:
         return (
             "SPECIAL_NSE_SESSION_MATCHED",
-            "Verified special NSE trading session is present in both sources; "
-            "OHLC and comparable Volume match.",
+            "Verified special NSE trading session is present "
+            "in both sources; OHLC and comparable Volume match.",
         )
 
     return (
         "VERIFIED_MATCH",
-        "Both sources contain this date; OHLC and comparable Volume match.",
+        "Both sources contain this date; OHLC and "
+        "comparable Volume match.",
     )
 
 
@@ -212,7 +216,6 @@ def compare_sources(nse, yahoo, instrument):
 
     common_rows = merged["_merge"] == "both"
 
-    # Explicitly detect missing OHLC values on common dates.
     missing_ohlc = pd.Series(False, index=merged.index)
 
     for column in PRICE_COLUMNS:
@@ -267,12 +270,16 @@ def compare_sources(nse, yahoo, instrument):
     ] = "NOT_COMPARABLE"
 
     merged.loc[
-        common_rows & both_volumes_available & merged["Volume_Mismatch"],
+        common_rows
+        & both_volumes_available
+        & merged["Volume_Mismatch"],
         "Volume_Status",
     ] = "MISMATCH"
 
     merged.loc[
-        common_rows & both_volumes_available & ~merged["Volume_Mismatch"],
+        common_rows
+        & both_volumes_available
+        & ~merged["Volume_Mismatch"],
         "Volume_Status",
     ] = "MATCH"
 
@@ -290,6 +297,47 @@ def compare_sources(nse, yahoo, instrument):
     nse_only = int((merged["_merge"] == "left_only").sum())
     yahoo_only = int((merged["_merge"] == "right_only").sum())
 
+    classification = merged["Session_Classification"]
+
+    special_missing = int(
+        (
+            classification
+            == "SPECIAL_NSE_SESSION_YAHOO_MISSING"
+        ).sum()
+    )
+
+    holiday_yahoo_records = int(
+        (
+            classification
+            == "YAHOO_RECORD_ON_KNOWN_NSE_HOLIDAY"
+        ).sum()
+    )
+
+    regular_missing = int(
+        (
+            classification
+            == "NSE_REGULAR_SESSION_YAHOO_MISSING"
+        ).sum()
+    )
+
+    unverified_nse_missing = int(
+        (
+            classification
+            == "NSE_SESSION_YAHOO_MISSING_UNVERIFIED"
+        ).sum()
+    )
+
+    unverified_yahoo_only = int(
+        (
+            classification
+            == "YAHOO_ONLY_SESSION_UNVERIFIED"
+        ).sum()
+    )
+
+    expected_exceptions = (
+        special_missing + holiday_yahoo_records
+    )
+
     summary = {
         "instrument": instrument,
         "nse_rows": len(nse),
@@ -297,70 +345,83 @@ def compare_sources(nse, yahoo, instrument):
         "common_sessions": common,
         "nse_only_sessions": nse_only,
         "yahoo_only_sessions": yahoo_only,
+
         "ohlc_missing_sessions": int(
             merged["OHLC_Missing"].sum()
         ),
+
         "ohlc_mismatch_sessions": int(
             merged["OHLC_Mismatch"].sum()
         ),
+
         "volume_mismatch_sessions": int(
             merged["Volume_Mismatch"].sum()
         ),
+
         "volume_not_comparable_sessions": int(
             (
                 common_rows
                 & (merged["Volume_Status"] == "NOT_COMPARABLE")
             ).sum()
         ),
-        "known_nse_holiday_yahoo_records": int(
-            (
-                merged["Session_Classification"]
-                == "YAHOO_RECORD_ON_KNOWN_NSE_HOLIDAY"
-            ).sum()
-        ),
-        "known_special_session_yahoo_missing": int(
-            (
-                merged["Session_Classification"]
-                == "SPECIAL_NSE_SESSION_YAHOO_MISSING"
-            ).sum()
-        ),
-        "known_regular_session_yahoo_missing": int(
-            (
-                merged["Session_Classification"]
-                == "NSE_REGULAR_SESSION_YAHOO_MISSING"
-            ).sum()
-        ),
+
+        "known_nse_holiday_yahoo_records": holiday_yahoo_records,
+        "known_special_session_yahoo_missing": special_missing,
+        "known_regular_session_yahoo_missing": regular_missing,
+
+        "unverified_nse_missing_sessions": unverified_nse_missing,
+        "unverified_yahoo_only_sessions": unverified_yahoo_only,
+
+        "expected_exception_sessions": expected_exceptions,
+
         "nse_first_date": (
             str(nse["Date"].min().date())
             if not nse.empty else None
         ),
+
         "nse_last_date": (
             str(nse["Date"].max().date())
             if not nse.empty else None
         ),
+
         "yahoo_first_date": (
             str(yahoo["Date"].min().date())
             if not yahoo.empty else None
         ),
+
         "yahoo_last_date": (
             str(yahoo["Date"].max().date())
             if not yahoo.empty else None
         ),
     }
 
-    # Strict MATCH: no unmatched sessions, missing OHLC,
-    # OHLC mismatch, or comparable Volume mismatch.
-    summary["status"] = (
-        "MATCH"
-        if nse_only == 0
-        and yahoo_only == 0
-        and summary["ohlc_missing_sessions"] == 0
-        and summary["ohlc_mismatch_sessions"] == 0
-        and summary["volume_mismatch_sessions"] == 0
-        else "REVIEW"
+    # An exception is accepted only when every unmatched
+    # session is accounted for by a verified exception.
+    # Regular-session missing data and unverified dates
+    # remain REVIEW conditions.
+    all_unmatched_are_expected = (
+        nse_only + yahoo_only == expected_exceptions
+        and regular_missing == 0
+        and unverified_nse_missing == 0
+        and unverified_yahoo_only == 0
     )
 
+    no_price_or_volume_errors = (
+        summary["ohlc_missing_sessions"] == 0
+        and summary["ohlc_mismatch_sessions"] == 0
+        and summary["volume_mismatch_sessions"] == 0
+    )
+
+    if all_unmatched_are_expected and no_price_or_volume_errors:
+        if expected_exceptions > 0:
+            summary["status"] = "PASS_WITH_EXPECTED_EXCEPTIONS"
+        else:
+            summary["status"] = "MATCH"
+    else:
+        summary["status"] = "REVIEW"
+
     detail = merged.drop(columns=["_merge"])
+
     return summary, detail
 
 
@@ -456,6 +517,7 @@ def main():
 
     if HISTORY_FILE.exists():
         old_history = pd.read_csv(HISTORY_FILE)
+
         history = pd.concat(
             [old_history, summary_df],
             ignore_index=True,
@@ -474,3 +536,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
