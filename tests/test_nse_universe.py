@@ -1,7 +1,14 @@
+
+import gzip
+from datetime import date
+
 import pandas as pd
 import pytest
 
 from data.providers.nse_universe import (
+    NSE_EQUITY_MASTER_URL,
+    NSE_MII_SECURITY_URL_TEMPLATE,
+    fetch_nse_equity_universe,
     normalize_nse_equity_master,
     normalize_nse_mii_security_master,
 )
@@ -76,6 +83,40 @@ def sample_mii():
         "ElgbltyNrmlMkt": ["1"] * 7,
         "PrtdToTrad": ["0", "0", "2", "1", "1", "2", "0"],
     })
+
+
+class FakeResponse:
+    def __init__(self, content=b"", status_code=200):
+        self.content = content
+        self.status_code = status_code
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(
+                f"HTTP error: {self.status_code}"
+            )
+
+
+class FakeSession:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.headers = {}
+        self.urls = []
+
+    def get(self, url, timeout):
+        self.urls.append(url)
+
+        if not self.responses:
+            raise AssertionError(
+                f"Unexpected request: {url}"
+            )
+
+        return self.responses.pop(0)
+
+
+def gzip_csv(data):
+    csv_bytes = data.to_csv(index=False).encode("utf-8")
+    return gzip.compress(csv_bytes)
 
 
 def test_legacy_master_keeps_eq_series_only():
@@ -165,4 +206,88 @@ def test_mii_rejects_missing_required_columns():
         normalize_nse_mii_security_master(
             pd.DataFrame({"TckrSymb": ["MARICO"]})
         )
-        
+
+
+def test_fetcher_uses_mii_as_primary_source():
+    report_date = date(2026, 11, 4)
+    mii_url = NSE_MII_SECURITY_URL_TEMPLATE.format(
+        date="04112026"
+    )
+
+    session = FakeSession([
+        FakeResponse(),  # NSE homepage
+        FakeResponse(gzip_csv(sample_mii())),  # MII file
+    ])
+
+    result = fetch_nse_equity_universe(
+        session=session,
+        as_of_date=report_date,
+        lookback_days=0,
+    )
+
+    assert result["Symbol"].tolist() == [
+        "MARICO",
+        "RELIANCE",
+    ]
+    assert result["Source"].eq(
+        "NSE MII Security Master"
+    ).all()
+    assert mii_url in session.urls
+    assert NSE_EQUITY_MASTER_URL not in session.urls
+
+
+def test_fetcher_tries_previous_date_when_latest_mii_is_missing():
+    report_date = date(2026, 11, 4)
+
+    today_url = NSE_MII_SECURITY_URL_TEMPLATE.format(
+        date="04112026"
+    )
+    previous_url = NSE_MII_SECURITY_URL_TEMPLATE.format(
+        date="03112026"
+    )
+
+    session = FakeSession([
+        FakeResponse(),  # NSE homepage
+        FakeResponse(status_code=404),  # Today's MII file
+        FakeResponse(gzip_csv(sample_mii())),  # Previous day
+    ])
+
+    result = fetch_nse_equity_universe(
+        session=session,
+        as_of_date=report_date,
+        lookback_days=1,
+    )
+
+    assert "MARICO" in set(result["Symbol"])
+    assert today_url in session.urls
+    assert previous_url in session.urls
+    assert result["Source"].eq(
+        "NSE MII Security Master"
+    ).all()
+
+
+def test_fetcher_falls_back_to_legacy_master_when_mii_fails():
+    legacy_csv = sample_master().to_csv(index=False).encode(
+        "utf-8"
+    )
+
+    session = FakeSession([
+        FakeResponse(),  # NSE homepage
+        FakeResponse(status_code=404),  # MII file unavailable
+        FakeResponse(legacy_csv),  # Legacy NSE master
+    ])
+
+    result = fetch_nse_equity_universe(
+        session=session,
+        as_of_date=date(2026, 11, 4),
+        lookback_days=0,
+    )
+
+    assert result["Symbol"].tolist() == [
+        "HINDUNILVR",
+        "MARICO",
+    ]
+    assert result["Source"].eq(
+        "NSE Official Equity Master"
+    ).all()
+    assert session.urls[-1] == NSE_EQUITY_MASTER_URL
