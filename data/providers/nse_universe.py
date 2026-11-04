@@ -1,3 +1,4 @@
+
 """NSE cash-equity universe provider.
 
 Supports the legacy NSE EQUITY_L.csv and NSE MII security-master formats.
@@ -27,7 +28,7 @@ NSE_HEADERS = {
 MII_REQUIRED_COLUMNS = [
     "TCKRSYMB",
     "FININSTRMNM",
-    "SCTYRS",
+    "SCTYSRS",
     "ISIN",
     "DELFLG",
     "ELGBLTYNRMLMKT",
@@ -49,20 +50,7 @@ def normalize_nse_mii_security_master(
     data: pd.DataFrame,
     equity_series_only: bool = True,
 ) -> pd.DataFrame:
-    """Normalize official NSE MII security-master data.
-
-    Default NSE universe:
-    - EQ series
-    - Active records (DelFlg=N)
-    - Valid Indian ISIN
-    - Normal-market eligibility = 1
-    - Exclude suspended securities (status=3)
-    - Exclude BSE-exclusive instruments (PrtdToTrad=2)
-    - Exclude $ suffix and test/dummy instruments
-
-    PrtdToTrad=0 is retained when other conditions pass.
-    This matches the verified MII records of major NSE shares.
-    """
+    """Normalize official NSE MII security-master data."""
 
     if not isinstance(data, pd.DataFrame) or data.empty:
         raise ValueError("NSE MII security master is empty or invalid.")
@@ -74,6 +62,7 @@ def normalize_nse_mii_security_master(
         column for column in MII_REQUIRED_COLUMNS
         if column not in frame.columns
     ]
+
     if missing:
         raise ValueError(
             "Unexpected NSE MII format; missing columns: "
@@ -84,7 +73,7 @@ def normalize_nse_mii_security_master(
         "FININSTRMID": "Instrument ID",
         "TCKRSYMB": "Symbol",
         "FININSTRMNM": "Company",
-        "SCTYRS": "Series",
+        "SCTYSRS": "Series",
         "LISTGDT": "Listing Date",
         "ISIN": "ISIN",
         "PARVAL": "Face Value",
@@ -202,8 +191,8 @@ def normalize_nse_mii_security_master(
     frame["Exchange"] = "NSE"
     frame["Source"] = "NSE MII Security Master"
 
-    # Do not deduplicate by ISIN:
-    # different symbols can share an ISIN during symbol changes.
+    # Do not deduplicate by ISIN.
+    # Different symbols may share an ISIN during symbol changes.
     frame = frame.drop_duplicates(
         subset=["Symbol", "Series", "ISIN"],
         keep="last",
@@ -253,6 +242,7 @@ def normalize_nse_equity_master(
     frame = frame.rename(columns=aliases)
 
     required = ["Symbol", "Company", "Series", "ISIN"]
+
     missing = [
         column for column in required
         if column not in frame.columns
