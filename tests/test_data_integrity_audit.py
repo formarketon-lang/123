@@ -1,3 +1,4 @@
+
 import pandas as pd
 
 from scripts.run_data_integrity_audit import (
@@ -34,11 +35,7 @@ def sample_data():
 def test_matching_data():
     nse, yahoo = sample_data()
 
-    summary, detail = compare_sources(
-        nse,
-        yahoo,
-        "MARICO",
-    )
+    summary, detail = compare_sources(nse, yahoo, "MARICO")
 
     assert summary["status"] == "MATCH"
     assert summary["common_sessions"] == 2
@@ -50,11 +47,7 @@ def test_close_price_mismatch():
     nse, yahoo = sample_data()
     yahoo.loc[1, "Close"] = 110
 
-    summary, detail = compare_sources(
-        nse,
-        yahoo,
-        "MARICO",
-    )
+    summary, detail = compare_sources(nse, yahoo, "MARICO")
 
     assert summary["status"] == "REVIEW"
     assert summary["ohlc_mismatch_sessions"] == 1
@@ -64,11 +57,7 @@ def test_missing_session_detection():
     nse, yahoo = sample_data()
     yahoo = yahoo.iloc[:1].copy()
 
-    summary, detail = compare_sources(
-        nse,
-        yahoo,
-        "MARICO",
-    )
+    summary, detail = compare_sources(nse, yahoo, "MARICO")
 
     assert summary["common_sessions"] == 1
     assert summary["nse_only_sessions"] == 1
@@ -77,15 +66,9 @@ def test_missing_session_detection():
 
 def test_common_session_missing_ohlc_value():
     nse, yahoo = sample_data()
-
-    # One required OHLC value is missing in Yahoo.
     yahoo.loc[0, "High"] = float("nan")
 
-    summary, detail = compare_sources(
-        nse,
-        yahoo,
-        "MARICO",
-    )
+    summary, detail = compare_sources(nse, yahoo, "MARICO")
 
     row = detail[
         detail["Date"] == pd.Timestamp("2026-10-28")
@@ -95,7 +78,6 @@ def test_common_session_missing_ohlc_value():
     assert summary["ohlc_missing_sessions"] == 1
     assert row["OHLC_Missing"]
     assert row["Session_Classification"] == "OHLC_DATA_MISSING"
-    assert row["Session_Classification"] != "VERIFIED_MATCH"
 
 
 def test_special_session_volume_mismatch_is_not_hidden():
@@ -106,14 +88,9 @@ def test_special_session_volume_mismatch_is_not_hidden():
     nse.loc[0, "Date"] = special_date
     yahoo.loc[0, "Date"] = special_date
 
-    # OHLC values remain equal, but Volume differs.
     yahoo.loc[0, "Volume"] = 9999
 
-    summary, detail = compare_sources(
-        nse,
-        yahoo,
-        "MARICO",
-    )
+    summary, detail = compare_sources(nse, yahoo, "MARICO")
 
     row = detail[
         detail["Date"] == special_date
@@ -133,16 +110,13 @@ def test_verified_regular_session_missing_from_yahoo():
     for date in verified_dates:
         nse, yahoo = sample_data()
 
-        # Keep one NSE record and remove all Yahoo records.
         nse = nse.iloc[:1].copy()
         nse.loc[nse.index[0], "Date"] = pd.Timestamp(date)
 
         yahoo = yahoo.iloc[:0].copy()
 
         summary, detail = compare_sources(
-            nse,
-            yahoo,
-            "NIFTY 50",
+            nse, yahoo, "NIFTY 50"
         )
 
         row = detail.iloc[0]
@@ -155,6 +129,59 @@ def test_verified_regular_session_missing_from_yahoo():
             row["Session_Classification"]
             == "NSE_REGULAR_SESSION_YAHOO_MISSING"
         )
+
+
+def test_verified_calendar_exceptions_are_accepted():
+    nse, yahoo = sample_data()
+
+    special_row = nse.iloc[[0]].copy()
+    special_row["Date"] = pd.Timestamp("2026-02-01")
+
+    holiday_row = yahoo.iloc[[0]].copy()
+    holiday_row["Date"] = pd.Timestamp("2026-01-15")
+
+    nse = pd.concat(
+        [nse, special_row],
+        ignore_index=True,
+    )
+
+    yahoo = pd.concat(
+        [yahoo, holiday_row],
+        ignore_index=True,
+    )
+
+    summary, detail = compare_sources(
+        nse, yahoo, "MARICO"
+    )
+
+    assert summary["nse_only_sessions"] == 1
+    assert summary["yahoo_only_sessions"] == 1
+
+    assert summary["known_special_session_yahoo_missing"] == 1
+    assert summary["known_nse_holiday_yahoo_records"] == 1
+
+    assert summary["expected_exception_sessions"] == 2
+
+    assert summary["status"] == "PASS_WITH_EXPECTED_EXCEPTIONS"
+
+
+def test_unknown_yahoo_only_date_remains_review():
+    nse, yahoo = sample_data()
+
+    extra_row = yahoo.iloc[[0]].copy()
+    extra_row["Date"] = pd.Timestamp("2026-03-17")
+
+    yahoo = pd.concat(
+        [yahoo, extra_row],
+        ignore_index=True,
+    )
+
+    summary, detail = compare_sources(
+        nse, yahoo, "MARICO"
+    )
+
+    assert summary["unverified_yahoo_only_sessions"] == 1
+    assert summary["status"] == "REVIEW"
 
 
 def test_normalize_csv(tmp_path):
@@ -174,6 +201,7 @@ def test_normalize_csv(tmp_path):
     assert list(result.columns) == [
         "Date", "Open", "High", "Low", "Close", "Volume"
     ]
+
     assert len(result) == 1
 
 
@@ -205,3 +233,4 @@ def test_normalize_nse_security_archive_format(tmp_path):
     assert result.loc[0, "Low"] == 764.70
     assert result.loc[0, "Close"] == 802.90
     assert result.loc[0, "Volume"] == 3393736
+    
