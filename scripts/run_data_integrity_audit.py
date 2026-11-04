@@ -390,7 +390,6 @@ def compare_sources(nse, yahoo, instrument):
     }
 
     # NSE is the authoritative primary source.
-    # Yahoo differences remain visible as secondary-source warnings.
     nse_ohlc_missing_mask = nse[PRICE_COLUMNS].isna().any(axis=1)
 
     nse_ohlc_invalid_mask = (
@@ -432,8 +431,13 @@ def compare_sources(nse, yahoo, instrument):
         and primary_invalid == 0
     )
 
+    # Unresolved secondary-source differences must never be
+    # reported as a successful audit.
+    #
+    # Verified special-session and holiday exceptions are accepted.
     has_secondary_findings = (
         (nse_only + yahoo_only) > expected_exceptions
+        or summary["ohlc_missing_sessions"] > 0
         or summary["ohlc_mismatch_sessions"] > 0
         or summary["volume_mismatch_sessions"] > 0
         or secondary_ohlc_missing > 0
@@ -441,10 +445,16 @@ def compare_sources(nse, yahoo, instrument):
 
     if not primary_data_is_valid:
         summary["status"] = "REVIEW"
+
     elif has_secondary_findings:
+        summary["status"] = "REVIEW"
+
+    elif summary["volume_not_comparable_sessions"] > 0:
         summary["status"] = "PASS_WITH_SECONDARY_WARNINGS"
+
     elif expected_exceptions > 0:
         summary["status"] = "PASS_WITH_EXPECTED_EXCEPTIONS"
+
     else:
         summary["status"] = "MATCH"
 
@@ -564,4 +574,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-            
+    
