@@ -1,5 +1,7 @@
+"""NSE cash-equity universe provider.
 
-"""Download and normalize the official NSE cash-equity security list."""
+Supports the legacy NSE EQUITY_L.csv and NSE MII security-master formats.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +24,16 @@ NSE_HEADERS = {
     "Referer": "https://www.nseindia.com/",
 }
 
+MII_REQUIRED_COLUMNS = [
+    "TCKRSYMB",
+    "FININSTRMNM",
+    "SCTYRS",
+    "ISIN",
+    "DELFLG",
+    "ELGBLTYNRMLMKT",
+    "SCTYSTSNRMLMKT",
+]
+
 
 def _clean_column_name(value: object) -> str:
     return " ".join(
@@ -29,19 +41,205 @@ def _clean_column_name(value: object) -> str:
     )
 
 
+def _valid_indian_isin(values: pd.Series) -> pd.Series:
+    return values.str.fullmatch(r"IN[A-Z0-9]{10}", na=False)
+
+
+def normalize_nse_mii_security_master(
+    data: pd.DataFrame,
+    equity_series_only: bool = True,
+) -> pd.DataFrame:
+    """Normalize official NSE MII security-master data.
+
+    Default NSE universe:
+    - EQ series
+    - Active records (DelFlg=N)
+    - Valid Indian ISIN
+    - Normal-market eligibility = 1
+    - Exclude suspended securities (status=3)
+    - Exclude BSE-exclusive instruments (PrtdToTrad=2)
+    - Exclude $ suffix and test/dummy instruments
+
+    PrtdToTrad=0 is retained when other conditions pass.
+    This matches the verified MII records of major NSE shares.
+    """
+
+    if not isinstance(data, pd.DataFrame) or data.empty:
+        raise ValueError("NSE MII security master is empty or invalid.")
+
+    frame = data.copy()
+    frame.columns = [_clean_column_name(c) for c in frame.columns]
+
+    missing = [
+        column for column in MII_REQUIRED_COLUMNS
+        if column not in frame.columns
+    ]
+    if missing:
+        raise ValueError(
+            "Unexpected NSE MII format; missing columns: "
+            + ", ".join(missing)
+        )
+
+    aliases = {
+        "FININSTRMID": "Instrument ID",
+        "TCKRSYMB": "Symbol",
+        "FININSTRMNM": "Company",
+        "SCTYRS": "Series",
+        "LISTGDT": "Listing Date",
+        "ISIN": "ISIN",
+        "PARVAL": "Face Value",
+        "ISSDCPTL": "Issued Capital",
+        "DELFLG": "Delete Flag",
+        "ELGBLTYNRMLMKT": "Normal Market Eligibility",
+        "SCTYSTSNRMLMKT": "Normal Market Status",
+        "PRTDTOTRAD": "Permitted to Trade",
+    }
+
+    frame = frame.rename(columns=aliases)
+
+    selected = [
+        "Instrument ID",
+        "Symbol",
+        "Company",
+        "Series",
+        "Listing Date",
+        "ISIN",
+        "Face Value",
+        "Issued Capital",
+        "Delete Flag",
+        "Normal Market Eligibility",
+        "Normal Market Status",
+        "Permitted to Trade",
+    ]
+
+    frame = frame[
+        [column for column in selected if column in frame.columns]
+    ].copy()
+
+    text_columns = [
+        "Symbol",
+        "Company",
+        "Series",
+        "ISIN",
+        "Delete Flag",
+        "Normal Market Eligibility",
+        "Normal Market Status",
+        "Permitted to Trade",
+    ]
+
+    for column in text_columns:
+        if column in frame.columns:
+            frame[column] = (
+                frame[column].astype("string").str.strip()
+            )
+
+    for column in ["Symbol", "Series", "ISIN"]:
+        frame[column] = frame[column].str.upper()
+
+    if equity_series_only:
+        frame = frame[frame["Series"] == "EQ"]
+
+    frame = frame[frame["Delete Flag"] == "N"]
+
+    frame = frame[
+        frame["Normal Market Eligibility"] == "1"
+    ]
+
+    frame = frame[
+        frame["Normal Market Status"] != "3"
+    ]
+
+    if "Permitted to Trade" in frame.columns:
+        frame = frame[
+            frame["Permitted to Trade"] != "2"
+        ]
+
+    frame = frame[
+        frame["Symbol"].notna()
+        & frame["Company"].notna()
+        & frame["ISIN"].notna()
+        & frame["Symbol"].ne("")
+        & frame["Company"].ne("")
+        & _valid_indian_isin(frame["ISIN"])
+    ]
+
+    frame = frame[
+        ~frame["Symbol"].str.endswith("$", na=False)
+        & ~frame["Symbol"].str.contains(
+            r"NSETEST|DUMMY",
+            case=False,
+            regex=True,
+            na=False,
+        )
+    ]
+
+    # NSE MII dates use seconds from 01-Jan-1980.
+    if "Listing Date" in frame.columns:
+        listing_seconds = pd.to_numeric(
+            frame["Listing Date"],
+            errors="coerce",
+        )
+
+        frame["Listing Date"] = pd.to_datetime(
+            listing_seconds,
+            unit="s",
+            origin="1980-01-01",
+            errors="coerce",
+        )
+
+        frame.loc[
+            listing_seconds.eq(0),
+            "Listing Date",
+        ] = pd.NaT
+
+    for column in ["Face Value", "Issued Capital"]:
+        if column in frame.columns:
+            frame[column] = pd.to_numeric(
+                frame[column],
+                errors="coerce",
+            )
+
+    frame["Exchange"] = "NSE"
+    frame["Source"] = "NSE MII Security Master"
+
+    # Do not deduplicate by ISIN:
+    # different symbols can share an ISIN during symbol changes.
+    frame = frame.drop_duplicates(
+        subset=["Symbol", "Series", "ISIN"],
+        keep="last",
+    )
+
+    frame = frame.sort_values("Symbol").reset_index(drop=True)
+
+    if frame.empty:
+        raise ValueError(
+            "NSE MII master contains no eligible NSE EQ securities."
+        )
+
+    return frame
+
+
 def normalize_nse_equity_master(
     data: pd.DataFrame,
     equity_series_only: bool = True,
 ) -> pd.DataFrame:
-    """Validate and normalize an NSE equity-master DataFrame."""
+    """Normalize legacy NSE or newer MII security-master data."""
 
     if not isinstance(data, pd.DataFrame) or data.empty:
         raise ValueError("NSE equity master is empty or invalid.")
 
+    normalized_columns = {
+        _clean_column_name(column) for column in data.columns
+    }
+
+    if "TCKRSYMB" in normalized_columns:
+        return normalize_nse_mii_security_master(
+            data,
+            equity_series_only=equity_series_only,
+        )
+
     frame = data.copy()
-    frame.columns = [
-        _clean_column_name(column) for column in frame.columns
-    ]
+    frame.columns = [_clean_column_name(c) for c in frame.columns]
 
     aliases = {
         "SYMBOL": "Symbol",
@@ -68,25 +266,30 @@ def normalize_nse_equity_master(
 
     output_columns = [
         column for column in [
-            "Symbol", "Company", "Series",
-            "Listing Date", "ISIN", "Face Value",
+            "Symbol",
+            "Company",
+            "Series",
+            "Listing Date",
+            "ISIN",
+            "Face Value",
         ]
         if column in frame.columns
     ]
 
     frame = frame[output_columns].copy()
 
-    for column in ["Symbol", "Company", "Series", "ISIN"]:
-        frame[column] = frame[column].astype("string").str.strip()
+    for column in required:
+        frame[column] = (
+            frame[column].astype("string").str.strip()
+        )
 
-    frame = frame.dropna(
-        subset=["Symbol", "Company", "Series", "ISIN"]
-    )
+    frame = frame.dropna(subset=required)
 
     frame = frame[
-        (frame["Symbol"] != "")
-        & (frame["Company"] != "")
-        & (frame["ISIN"] != "")
+        frame["Symbol"].ne("")
+        & frame["Company"].ne("")
+        & frame["Series"].ne("")
+        & frame["ISIN"].ne("")
     ]
 
     if equity_series_only:
@@ -131,7 +334,7 @@ def fetch_nse_equity_universe(
     timeout: int = 30,
     session: requests.Session | None = None,
 ) -> pd.DataFrame:
-    """Fetch the latest NSE equity master and return EQ securities."""
+    """Fetch the legacy NSE equity master and normalize it."""
 
     client = session or requests.Session()
     client.headers.update(NSE_HEADERS)
@@ -161,4 +364,5 @@ def fetch_nse_equity_universe(
     return normalize_nse_equity_master(
         raw,
         equity_series_only=True,
-    )
+        )
+    
