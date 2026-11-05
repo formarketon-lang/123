@@ -1,20 +1,20 @@
 
-"""NSE historical index data downloader."""
+"""NSE historical index downloader using current NSE API."""
 
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from data.providers.nse_downloader import create_nse_session
-
-
-NSE_INDEX_URL = (
-    "https://www.nseindia.com/api/historical/indicesHistory"
+from data.providers.nse_downloader import (
+    NSE_BASE_URL,
+    create_nse_session,
 )
 
+NSE_INDEX_URL = (
+    f"{NSE_BASE_URL}/api/historicalOR/indicesHistory"
+)
 
-# Accepted names and exact indexType values sent to NSE.
 INDEX_ALIASES = {
     "NIFTY 50": "NIFTY 50",
     "NIFTY NEXT 50": "NIFTY NEXT 50",
@@ -24,68 +24,17 @@ INDEX_ALIASES = {
     "NIFTY FMCG": "NIFTY FMCG",
 }
 
-
-COLUMN_ALIASES = {
-    "Date": [
-        "EOD_TIMESTAMP",
-        "HistoricalDate",
-        "TIMESTAMP",
-        "Date",
-    ],
-    "Open": [
-        "EOD_OPEN_INDEX_VAL",
-        "OPEN_INDEX_VAL",
-        "Open",
-    ],
-    "High": [
-        "EOD_HIGH_INDEX_VAL",
-        "HIGH_INDEX_VAL",
-        "High",
-    ],
-    "Low": [
-        "EOD_LOW_INDEX_VAL",
-        "LOW_INDEX_VAL",
-        "Low",
-    ],
-    "Close": [
-        "EOD_CLOSE_INDEX_VAL",
-        "CLOSE_INDEX_VAL",
-        "Close",
-    ],
-    "Volume": [
-        "EOD_VOLUME",
-        "VOLUME",
-        "Volume",
-    ],
+INDEX_COLUMNS = {
+    "Date": "EOD_TIMESTAMP",
+    "Open": "EOD_OPEN_INDEX_VAL",
+    "High": "EOD_HIGH_INDEX_VAL",
+    "Low": "EOD_LOW_INDEX_VAL",
+    "Close": "EOD_CLOSE_INDEX_VAL",
 }
 
 
-def _find_column(df, possible_names):
-    for name in possible_names:
-        if name in df.columns:
-            return name
-
-    return None
-
-
-def _parse_index_dates(values):
-    """Parse NSE index dates without shifting ISO calendar dates."""
-
-    return pd.to_datetime(
-        values,
-        errors="coerce",
-        format="mixed",
-        dayfirst=True,
-    )
-
-
 def download_index_history(index_name, start_date, end_date):
-    """
-    Download historical NSE index data.
-
-    Reject invalid and duplicate trading dates.
-    Missing index Volume remains unavailable, not zero.
-    """
+    """Download official NSE historical index OHLC."""
 
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
@@ -93,12 +42,11 @@ def download_index_history(index_name, start_date, end_date):
     if start > end:
         raise ValueError("Start date cannot be after end date.")
 
-    index_name = index_name.upper().strip()
+    index_name = index_name.strip().upper()
 
     if index_name not in INDEX_ALIASES:
         raise ValueError(
-            f"Unsupported index: {index_name}. "
-            f"Supported: {list(INDEX_ALIASES)}"
+            f"Unsupported NSE index: {index_name}"
         )
 
     session = create_nse_session()
@@ -112,62 +60,106 @@ def download_index_history(index_name, start_date, end_date):
     response = session.get(
         NSE_INDEX_URL,
         params=params,
-        timeout=30,
+        headers={
+            "Accept": "application/json, text/plain, */*",
+            "Referer": (
+                f"{NSE_BASE_URL}/reports-indices-historical-index-data"
+            ),
+        },
+        timeout=60,
     )
 
     response.raise_for_status()
 
-    payload = response.json()
-    records = payload.get("data", [])
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        content_type = response.headers.get(
+            "content-type", "unknown"
+        )
+        preview = response.text[:160].replace("\n", " ")
 
-    if not records:
         raise ValueError(
-            f"No NSE index data returned for {index_name}. "
-            "Check NSE access, index name, or date range."
+            "NSE index API returned non-JSON response. "
+            f"Content-Type: {content_type}. "
+            f"Response preview: {preview}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid NSE index response structure.")
+
+    records = payload.get("data")
+
+    if not isinstance(records, list) or not records:
+        raise ValueError(
+            f"No NSE index records returned for {index_name}."
         )
 
-    df = pd.DataFrame(records)
-    output = pd.DataFrame()
+    raw = pd.DataFrame(records)
 
-    for standard_name, aliases in COLUMN_ALIASES.items():
-        source_column = _find_column(df, aliases)
+    required = set(INDEX_COLUMNS.values())
+    missing = required.difference(raw.columns)
 
-        if source_column is not None:
-            output[standard_name] = df[source_column]
-
-        elif standard_name != "Volume":
-            raise ValueError(
-                f"NSE response missing required field: "
-                f"{standard_name}. "
-                f"Received columns: {list(df.columns)}"
-            )
-
-        else:
-            output[standard_name] = pd.NA
-
-    output["Date"] = _parse_index_dates(output["Date"])
-
-    invalid_dates = int(output["Date"].isna().sum())
-
-    if invalid_dates:
+    if missing:
         raise ValueError(
-            "NSE index response contains "
-            f"{invalid_dates} invalid or missing trading dates."
+            f"NSE index response missing fields: {sorted(missing)}"
         )
 
-    duplicate_dates = int(output["Date"].duplicated().sum())
+    output = pd.DataFrame({
+        standard: raw[source]
+        for standard, source in INDEX_COLUMNS.items()
+    })
 
-    if duplicate_dates:
-        raise ValueError(
-            "Duplicate dates found in NSE index data: "
-            f"{duplicate_dates}. Data was not silently discarded."
-        )
+    output["Date"] = pd.to_datetime(
+        output["Date"],
+        errors="coerce",
+        format="mixed",
+        dayfirst=True,
+    )
 
-    for column in ["Open", "High", "Low", "Close", "Volume"]:
+    if output["Date"].isna().any():
+        raise ValueError("Invalid NSE index trading dates.")
+
+    if output["Date"].duplicated().any():
+        raise ValueError("Duplicate NSE index trading dates.")
+
+    for column in ["Open", "High", "Low", "Close"]:
         output[column] = pd.to_numeric(
             output[column],
             errors="coerce",
         )
+
+        if output[column].isna().any():
+            raise ValueError(
+                f"Invalid NSE index {column} values."
+            )
+
+        if (output[column] <= 0).any():
+            raise ValueError(
+                f"NSE index {column} must be positive."
+            )
+
+    if not output["Date"].between(
+        pd.Timestamp(start),
+        pd.Timestamp(end),
+    ).all():
+        raise ValueError(
+            "NSE index response contains dates outside requested range."
+        )
+
+    invalid_high = output["High"] < output[
+        ["Open", "Low", "Close"]
+    ].max(axis=1)
+
+    invalid_low = output["Low"] > output[
+        ["Open", "High", "Close"]
+    ].min(axis=1)
+
+    if invalid_high.any() or invalid_low.any():
+        raise ValueError("Invalid NSE index OHLC candles.")
+
+    # Index traded volume is not assumed or fabricated.
+    output["Volume"] = pd.NA
 
     output = output.sort_values("Date").reset_index(drop=True)
 
@@ -178,7 +170,7 @@ def download_index_history(index_name, start_date, end_date):
 
 
 def save_nse_index_csv(df, index_name):
-    """Save NSE index data as a raw CSV file."""
+    """Save official NSE index data."""
 
     output_dir = Path("data/raw/nse")
     output_dir.mkdir(parents=True, exist_ok=True)
