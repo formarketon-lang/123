@@ -2,7 +2,10 @@
 TradeLab Pro - Relative Strength Page
 
 Select stocks from the verified NSE EQ universe,
-then run separate Main Index and Sector comparisons.
+then run separate Main Index and audited Sector comparisons.
+
+Only sectors with configured official constituent sources
+are displayed as available sector selections.
 """
 
 import streamlit as st
@@ -17,22 +20,11 @@ from core.rs_scanner import execute_scanner
 from ui.rs_results import display_results
 
 
+# Only FMCG currently has an official constituent source
+# configured for live NSE MII membership auditing.
 SECTORS = [
     "None",
-    "All Sectors",
-    "Auto",
-    "Banking",
-    "Capital Goods",
-    "Chemicals",
-    "Consumer Discretionary",
-    "Energy",
     "FMCG",
-    "Healthcare",
-    "IT",
-    "Metals & Mining",
-    "Realty",
-    "Telecom",
-    "Utilities",
 ]
 
 
@@ -54,7 +46,7 @@ def render_relative_strength_page():
     st.header("Relative Strength Scanner")
     st.caption(
         "TradeLab Pro · Verified NSE Universe · "
-        "Stock vs Main Index vs Sector"
+        "Stock vs Main Index vs Audited Sector"
     )
 
     # 1. Stock selection
@@ -135,7 +127,8 @@ def render_relative_strength_page():
         selected_symbols = []
         st.info(
             "BSE Universe Integration এখনো সম্পন্ন হয়নি। "
-            "BSE-এর জন্য Manual Symbol ব্যবহার করুন।"
+            "BSE-এর জন্য Manual Symbol ব্যবহার করুন। "
+            "BSE Sector Comparison বর্তমানে unavailable।"
         )
 
     manual_symbols = st.text_area(
@@ -151,7 +144,8 @@ def render_relative_strength_page():
     if exchange == "NSE" and universe is not None:
         st.caption(
             "Manual Symbol না দিলে উপরে নির্বাচন করা NSE Stocks বিশ্লেষণ হবে। "
-            "কোনো Stock নির্বাচন না করলে configured sector list ব্যবহৃত হবে।"
+            "কোনো Stock নির্বাচন না করলে নির্বাচিত Sector-এর "
+            "live audited official membership ব্যবহার হবে।"
         )
 
     # 2. Benchmark selection
@@ -170,6 +164,10 @@ def render_relative_strength_page():
         st.success(
             f"Configured Sector Benchmark: "
             f"{sector} ({sector_benchmark_symbol})"
+        )
+        st.caption(
+            "Sector Comparison চালানোর আগে official constituent "
+            "membership এবং NSE MII Symbol/ISIN audit যাচাই করা হবে।"
         )
     else:
         st.warning(
@@ -277,5 +275,6 @@ def render_relative_strength_page():
     else:
         st.info(
             "NSE Universe থেকে Stock নির্বাচন করুন অথবা Manual Symbol দিন। "
+            "অথবা FMCG নির্বাচন করে live audited membership ব্যবহার করুন। "
             "তারপর Run চাপুন।"
         )
