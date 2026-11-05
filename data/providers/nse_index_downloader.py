@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from pathlib import Path
 
@@ -7,7 +6,9 @@ import pandas as pd
 from data.providers.nse_downloader import create_nse_session
 
 
-NSE_INDEX_URL = "https://www.nseindia.com/api/historical/indicesHistory"
+NSE_INDEX_URL = (
+    "https://www.nseindia.com/api/historical/indicesHistory"
+)
 
 
 INDEX_ALIASES = {
@@ -55,6 +56,7 @@ def _find_column(df, possible_names):
     for name in possible_names:
         if name in df.columns:
             return name
+
     return None
 
 
@@ -62,11 +64,8 @@ def download_index_history(index_name, start_date, end_date):
     """
     Download historical NSE index data.
 
-    Supported indexes:
-        NIFTY 50
-        NIFTY FMCG
-
-    Dates must use YYYY-MM-DD format.
+    Reject invalid and duplicate trading dates.
+    Missing index Volume remains unavailable, not zero.
     """
 
     start = datetime.strptime(start_date, "%Y-%m-%d")
@@ -96,6 +95,7 @@ def download_index_history(index_name, start_date, end_date):
         params=params,
         timeout=30,
     )
+
     response.raise_for_status()
 
     payload = response.json()
@@ -112,6 +112,7 @@ def download_index_history(index_name, start_date, end_date):
     output = pd.DataFrame()
 
     for standard_name, aliases in COLUMN_ALIASES.items():
+
         source_column = _find_column(df, aliases)
 
         if source_column is not None:
@@ -119,7 +120,8 @@ def download_index_history(index_name, start_date, end_date):
 
         elif standard_name != "Volume":
             raise ValueError(
-                f"NSE response missing required field: {standard_name}. "
+                f"NSE response missing required field: "
+                f"{standard_name}. "
                 f"Received columns: {list(df.columns)}"
             )
 
@@ -132,20 +134,29 @@ def download_index_history(index_name, start_date, end_date):
         dayfirst=True,
     )
 
+    invalid_dates = int(output["Date"].isna().sum())
+
+    if invalid_dates:
+        raise ValueError(
+            "NSE index response contains "
+            f"{invalid_dates} invalid or missing trading dates."
+        )
+
+    duplicate_dates = int(output["Date"].duplicated().sum())
+
+    if duplicate_dates:
+        raise ValueError(
+            "Duplicate dates found in NSE index data: "
+            f"{duplicate_dates}. Data was not silently discarded."
+        )
+
     for column in ["Open", "High", "Low", "Close", "Volume"]:
         output[column] = pd.to_numeric(
             output[column],
             errors="coerce",
         )
 
-    output = output.dropna(subset=["Date"])
-    output = output.sort_values("Date")
-    output = output.drop_duplicates(
-        subset=["Date"],
-        keep="last",
-    )
-
-    output = output.reset_index(drop=True)
+    output = output.sort_values("Date").reset_index(drop=True)
 
     output["Source"] = "NSE"
     output["Symbol"] = index_name
@@ -160,9 +171,9 @@ def save_nse_index_csv(df, index_name):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     safe_name = index_name.upper().replace(" ", "_")
+
     output_file = output_dir / f"{safe_name}_nse.csv"
 
     df.to_csv(output_file, index=False)
 
     return str(output_file)
-              
