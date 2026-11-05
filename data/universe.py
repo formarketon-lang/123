@@ -2,14 +2,14 @@
 TradeLab Pro - Central Stock Universe
 
 NSE MII is the primary verified NSE cash-equity universe.
-Sector membership is kept separate and must be independently verified.
+Sector membership is independently maintained and validated.
 """
 
 from data.providers.nse_universe import fetch_nse_equity_universe
 
 
-# Only independently configured sector symbols belong here.
-# Do not infer sector membership from the NSE security master.
+# Only independently verified sector membership belongs here.
+# NSE security master does not establish sector membership.
 SECTOR_UNIVERSE = {
     "FMCG": [
         "HINDUNILVR",
@@ -36,10 +36,8 @@ def get_available_sectors():
 
 
 def validate_symbols_against_universe(symbols, universe):
-    """
-    Keep only symbols that exist in the verified NSE universe.
-    Raise an error for unknown symbols instead of silently accepting them.
-    """
+    """Validate symbols against the verified NSE EQ universe."""
+
     if universe is None or universe.empty:
         raise ValueError("Verified NSE stock universe is empty.")
 
@@ -79,3 +77,43 @@ def validate_symbols_against_universe(symbols, universe):
         )
 
     return requested
+
+
+def validate_sector_membership(sector, symbols):
+    """
+    Allow sector comparison only when every selected symbol
+    belongs to the independently configured sector universe.
+    """
+
+    if not isinstance(sector, str) or not sector.strip():
+        return False, "No valid sector selected."
+
+    configured_symbols = {
+        symbol.strip().upper()
+        for symbol in get_sector_symbols(sector)
+    }
+
+    requested_symbols = {
+        str(symbol).strip().upper()
+        for symbol in symbols
+        if str(symbol).strip()
+    }
+
+    if not configured_symbols:
+        return False, (
+            f"No verified stock membership list exists for {sector}."
+        )
+
+    if not requested_symbols:
+        return False, "No stocks selected for sector validation."
+
+    unverified = sorted(requested_symbols - configured_symbols)
+
+    if unverified:
+        return False, (
+            "Sector membership is not verified for: "
+            + ", ".join(unverified)
+        )
+
+    return True, "All selected stocks have configured sector membership."
+    
