@@ -1,3 +1,6 @@
+
+"""NSE historical index data downloader."""
+
 from datetime import datetime
 from pathlib import Path
 
@@ -10,12 +13,10 @@ NSE_INDEX_URL = (
     "https://www.nseindia.com/api/historical/indicesHistory"
 )
 
-
 INDEX_ALIASES = {
     "NIFTY 50": "NIFTY 50",
     "NIFTY FMCG": "NIFTY FMCG",
 }
-
 
 COLUMN_ALIASES = {
     "Date": [
@@ -58,6 +59,17 @@ def _find_column(df, possible_names):
             return name
 
     return None
+
+
+def _parse_index_dates(values):
+    """Parse NSE index dates without shifting ISO calendar dates."""
+
+    return pd.to_datetime(
+        values,
+        errors="coerce",
+        format="mixed",
+        dayfirst=True,
+    )
 
 
 def download_index_history(index_name, start_date, end_date):
@@ -108,11 +120,9 @@ def download_index_history(index_name, start_date, end_date):
         )
 
     df = pd.DataFrame(records)
-
     output = pd.DataFrame()
 
     for standard_name, aliases in COLUMN_ALIASES.items():
-
         source_column = _find_column(df, aliases)
 
         if source_column is not None:
@@ -128,11 +138,7 @@ def download_index_history(index_name, start_date, end_date):
         else:
             output[standard_name] = pd.NA
 
-    output["Date"] = pd.to_datetime(
-        output["Date"],
-        errors="coerce",
-        dayfirst=True,
-    )
+    output["Date"] = _parse_index_dates(output["Date"])
 
     invalid_dates = int(output["Date"].isna().sum())
 
