@@ -3,6 +3,17 @@ import pandas as pd
 import pytest
 
 from data import market_data_adapter as adapter
+from data.providers.nse_index_downloader import INDEX_ALIASES
+
+
+MAIN_INDEXES = {
+    "^NSEI": "NIFTY 50",
+    "^NSMIDCP": "NIFTY NEXT 50",
+    "^CNX100": "NIFTY 100",
+    "^CNX200": "NIFTY 200",
+    "^CRSLDX": "NIFTY 500",
+    "^CNXFMCG": "NIFTY FMCG",
+}
 
 
 def sample_data():
@@ -17,6 +28,10 @@ def sample_data():
         "Close": [102, 103],
         "Volume": [1000, 1200],
     })
+
+
+def sample_index_data():
+    return sample_data().drop(columns=["Volume"])
 
 
 def test_nse_equity_is_primary(monkeypatch):
@@ -35,7 +50,6 @@ def test_nse_equity_is_primary(monkeypatch):
         "download_equity_history",
         fake_nse,
     )
-
     monkeypatch.setattr(
         adapter,
         "fetch_yahoo_history",
@@ -52,18 +66,29 @@ def test_nse_equity_is_primary(monkeypatch):
     assert result["Source"].unique().tolist() == ["NSE"]
 
 
-def test_nse_index_is_primary(monkeypatch):
-    index_data = sample_data().drop(columns=["Volume"])
+@pytest.mark.parametrize(
+    "symbol,index_name",
+    MAIN_INDEXES.items(),
+)
+def test_all_configured_indexes_use_nse_primary(
+    monkeypatch,
+    symbol,
+    index_name,
+):
+    calls = []
 
-    monkeypatch.setattr(
-        adapter,
-        "download_index_history",
-        lambda *args: index_data,
-    )
+    def fake_nse(name, start_date, end_date):
+        calls.append(name)
+        return sample_index_data()
 
     def fake_yahoo(**kwargs):
         raise AssertionError("Yahoo must not be called.")
 
+    monkeypatch.setattr(
+        adapter,
+        "download_index_history",
+        fake_nse,
+    )
     monkeypatch.setattr(
         adapter,
         "fetch_yahoo_history",
@@ -71,17 +96,59 @@ def test_nse_index_is_primary(monkeypatch):
     )
 
     result = adapter.fetch_market_history(
-        "^NSEI",
+        symbol,
         "2026-10-01",
         "2026-10-02",
     )
 
+    assert calls == [index_name]
     assert result["Source"].unique().tolist() == ["NSE"]
     assert result["Volume"].isna().all()
-    assert result["Close"].tolist() == [102, 103]
+    assert result["Fallback Reason"].iloc[0] == ""
 
 
-def test_yahoo_fallback_after_nse_failure(monkeypatch):
+@pytest.mark.parametrize(
+    "symbol,index_name",
+    MAIN_INDEXES.items(),
+)
+def test_all_configured_indexes_fallback_to_yahoo(
+    monkeypatch,
+    symbol,
+    index_name,
+):
+    def fake_nse(*args):
+        raise RuntimeError("NSE index unavailable")
+
+    monkeypatch.setattr(
+        adapter,
+        "download_index_history",
+        fake_nse,
+    )
+    monkeypatch.setattr(
+        adapter,
+        "fetch_yahoo_history",
+        lambda **kwargs: sample_data(),
+    )
+
+    result = adapter.fetch_market_history(
+        symbol,
+        "2026-10-01",
+        "2026-10-02",
+    )
+
+    assert result["Source"].unique().tolist() == ["Yahoo"]
+    assert "NSE index unavailable" in (
+        result["Fallback Reason"].iloc[0]
+    )
+
+
+def test_downloader_accepts_all_configured_index_names():
+    for index_name in MAIN_INDEXES.values():
+        assert index_name in INDEX_ALIASES
+        assert INDEX_ALIASES[index_name] == index_name
+
+
+def test_yahoo_fallback_after_nse_equity_failure(monkeypatch):
     monkeypatch.setattr(
         adapter,
         "download_equity_history",
@@ -103,7 +170,6 @@ def test_yahoo_fallback_after_nse_failure(monkeypatch):
     )
 
     assert result["Source"].unique().tolist() == ["Yahoo"]
-
     assert "NSE unavailable" in (
         result["Fallback Reason"].iloc[0]
     )
@@ -117,13 +183,12 @@ def test_unmapped_index_uses_yahoo_with_reason(monkeypatch):
     )
 
     result = adapter.fetch_market_history(
-        "^NSMIDCP",
+        "^UNKNOWN",
         "2026-10-01",
         "2026-10-02",
     )
 
     assert result["Source"].unique().tolist() == ["Yahoo"]
-
     assert "No verified NSE index mapping" in (
         result["Fallback Reason"].iloc[0]
     )
@@ -164,5 +229,4 @@ def test_both_sources_failure_is_reported(monkeypatch):
             "MARICO",
             "2026-10-01",
             "2026-10-02",
-  )
-      
+        )
