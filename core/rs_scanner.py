@@ -2,24 +2,27 @@
 """
 TradeLab Pro - Relative Strength Scanner Engine
 
-NSE scanning requires verified NSE EQ universe.
+NSE Primary market data with Yahoo Secondary fallback.
 BSE scanning remains disabled until its official universe
 and validated data adapter are implemented.
 """
 
 from datetime import timedelta
 
-from data.yahoo_adapter import fetch_yahoo_history
+from data.market_data_adapter import fetch_market_history
+
 from data.universe import (
     get_sector_symbols,
     load_nse_universe,
     validate_symbols_against_universe,
     validate_sector_membership,
 )
+
 from data.benchmark_mapping import (
     MAIN_BENCHMARKS,
     get_sector_benchmark,
 )
+
 from core.rs_windows import build_windows
 from rs_engine import compare_on_common_dates
 
@@ -33,14 +36,43 @@ BSE_SCANNER_DISABLED_MESSAGE = (
 
 
 def get_market_data(symbol, start_date, end_date, exchange):
-    """Fetch historical daily market data."""
-    return fetch_yahoo_history(
+    """Fetch data using NSE Primary and Yahoo Secondary."""
+
+    return fetch_market_history(
         symbol=symbol,
         start_date=start_date,
         end_date=end_date,
         interval="1d",
         exchange=exchange,
     )
+
+
+def _source_info(data):
+    """Extract source and fallback information from a dataset."""
+
+    if data is None or data.empty:
+        return {
+            "source": "Unavailable",
+            "fallback_reason": "",
+        }
+
+    source = "Unknown"
+    fallback_reason = ""
+
+    if "Source" in data.columns:
+        values = data["Source"].dropna().unique()
+        if len(values):
+            source = str(values[0])
+
+    if "Fallback Reason" in data.columns:
+        values = data["Fallback Reason"].dropna().unique()
+        if len(values):
+            fallback_reason = str(values[0])
+
+    return {
+        "source": source,
+        "fallback_reason": fallback_reason,
+    }
 
 
 def resolve_symbols(
@@ -64,6 +96,7 @@ def resolve_symbols(
             for item in manual_symbols.replace("\n", ",").split(",")
             if item.strip()
         ]
+
         requested = list(dict.fromkeys(requested))
         source = "Manual selection"
 
@@ -73,6 +106,7 @@ def resolve_symbols(
             for item in selected_symbols
             if str(item).strip()
         ))
+
         source = "Verified NSE Universe selection"
 
     else:
@@ -83,6 +117,7 @@ def resolve_symbols(
             sector,
             universe=universe,
         )
+
         source = "Live audited official sector membership"
 
     if not requested:
@@ -113,8 +148,7 @@ def execute_scanner(
 ):
     """Run NSE Main Index and guarded Sector comparisons."""
 
-    # Critical fail-closed security guard.
-    # Must execute before universe loading or market-data requests.
+    # Security guard: before universe or market-data requests.
     if exchange == "BSE":
         raise ValueError(BSE_SCANNER_DISABLED_MESSAGE)
 
@@ -172,6 +206,7 @@ def execute_scanner(
 
     sector_data = None
 
+    # Main benchmark.
     try:
         main_benchmark_data = get_market_data(
             benchmark_symbol,
@@ -179,10 +214,22 @@ def execute_scanner(
             end_date,
             "NSE",
         )
+
+        main_benchmark_source = _source_info(
+            main_benchmark_data
+        )
+
     except Exception as error:
         main_benchmark_data = None
+        main_benchmark_source = _source_info(None)
         benchmark_error = str(error)
 
+        errors.append({
+            "Stock": "MAIN INDEX",
+            "Reason": str(error),
+        })
+
+    # Sector benchmark.
     if sector_allowed:
         try:
             sector_data = get_market_data(
@@ -191,17 +238,29 @@ def execute_scanner(
                 end_date,
                 "NSE",
             )
+
+            sector_source = _source_info(sector_data)
+
         except Exception as error:
+            sector_data = None
+            sector_source = _source_info(None)
+
             sector_reason = (
                 "Sector benchmark data could not be fetched: "
                 + str(error)
             )
+
             errors.append({
                 "Stock": "SECTOR INDEX",
                 "Reason": str(error),
             })
 
+    else:
+        sector_source = _source_info(None)
+
+    # Stock comparisons.
     if main_benchmark_data is not None:
+
         for symbol in symbols:
             try:
                 stock_data = get_market_data(
@@ -210,6 +269,8 @@ def execute_scanner(
                     end_date,
                     "NSE",
                 )
+
+                stock_source = _source_info(stock_data)
 
                 for window_name, dates in windows.items():
                     window_start, window_end = dates
@@ -238,6 +299,16 @@ def execute_scanner(
                         ),
                         "Start Date": main_comparison["start_date"],
                         "End Date": main_comparison["end_date"],
+                        "Stock Source": stock_source["source"],
+                        "Main Index Source": (
+                            main_benchmark_source["source"]
+                        ),
+                        "Stock Fallback Reason": (
+                            stock_source["fallback_reason"]
+                        ),
+                        "Main Index Fallback Reason": (
+                            main_benchmark_source["fallback_reason"]
+                        ),
                     })
 
                     if sector_data is not None:
@@ -258,13 +329,24 @@ def execute_scanner(
                                 sector_comparison["benchmark_return_pct"], 2
                             ),
                             "Sector Excess Return (%)": round(
-                                sector_comparison["stock_vs_benchmark_pct"], 2
+                                sector_comparison["stock_vs_benchmark_pct"],
+                                2,
                             ),
                             "Common Sessions": (
                                 sector_comparison["common_trading_sessions"]
                             ),
                             "Start Date": sector_comparison["start_date"],
                             "End Date": sector_comparison["end_date"],
+                            "Stock Source": stock_source["source"],
+                            "Sector Index Source": (
+                                sector_source["source"]
+                            ),
+                            "Stock Fallback Reason": (
+                                stock_source["fallback_reason"]
+                            ),
+                            "Sector Index Fallback Reason": (
+                                sector_source["fallback_reason"]
+                            ),
                         })
 
             except Exception as error:
@@ -290,4 +372,6 @@ def execute_scanner(
             sector_data is not None and bool(sector_results)
         ),
         "sector_comparison_reason": sector_reason,
+        "main_index_source": main_benchmark_source,
+        "sector_index_source": sector_source,
     }
