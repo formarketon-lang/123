@@ -2,6 +2,7 @@
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from core import rs_scanner
 
@@ -104,6 +105,10 @@ def _run_scanner(monkeypatch, symbol, fail_symbol=None):
     return result, calls
 
 
+# --------------------------------------------------
+# Existing NSE Integration Tests
+# --------------------------------------------------
+
 def test_verified_stock_gets_main_and_sector_comparisons(
     monkeypatch,
 ):
@@ -169,3 +174,56 @@ def test_sector_data_failure_does_not_block_main_results(
         error["Stock"] == "SECTOR INDEX"
         for error in result["errors"]
     )
+
+
+# --------------------------------------------------
+# New BSE Fail-Closed Security Tests
+# --------------------------------------------------
+
+def test_bse_manual_symbol_is_rejected_before_market_data(
+    monkeypatch,
+):
+    calls = []
+
+    def unexpected_market_data(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise AssertionError(
+            "BSE symbol must never reach market-data provider."
+        )
+
+    monkeypatch.setattr(
+        rs_scanner,
+        "get_market_data",
+        unexpected_market_data,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="BSE Scanner বন্ধ রাখা হয়েছে",
+    ):
+        rs_scanner.execute_scanner(
+            sector="FMCG",
+            manual_symbols="500034",
+            exchange="BSE",
+            benchmark_name="Nifty 50",
+            sector_benchmark_symbol="^CNXFMCG",
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 5),
+            custom_windows=[],
+            universe=_universe(),
+        )
+
+    assert calls == []
+
+
+def test_bse_manual_symbol_is_rejected_by_symbol_resolver():
+    with pytest.raises(
+        ValueError,
+        match="BSE Scanner বন্ধ রাখা হয়েছে",
+    ):
+        rs_scanner.resolve_symbols(
+            sector="FMCG",
+            manual_symbols="500034",
+            exchange="BSE",
+            universe=_universe(),
+        )
