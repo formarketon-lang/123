@@ -244,4 +244,6 @@ def test_invalid_inputs_raise_clear_errors(
     nse,
 ):
     with pytest.raises(ValueError):
-        build_constituent_audit(constituents, nse)
+        build_constituent_audit(
+            constituents, nse
+        )
