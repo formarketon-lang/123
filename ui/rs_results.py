@@ -1,4 +1,3 @@
-
 """
 TradeLab Pro - Relative Strength Results
 
@@ -10,7 +9,6 @@ import pandas as pd
 
 
 MAIN_SORT_COLUMN = "Excess Return (%)"
-
 SECTOR_SORT_COLUMN = "Sector Excess Return (%)"
 
 SECTOR_REQUIRED_COLUMNS = [
@@ -60,7 +58,6 @@ def build_ranked_results(data, windows, sort_column):
         ).reset_index(drop=True)
 
         view.insert(0, "Rank", range(1, len(view) + 1))
-
         ranked_parts.append(view)
 
     if not ranked_parts:
@@ -70,6 +67,7 @@ def build_ranked_results(data, windows, sort_column):
 
 
 def display_results(result):
+    """Render Main Index and guarded Sector results with CSV exports."""
 
     st.divider()
     st.subheader("4. Stock vs Main Index")
@@ -92,7 +90,6 @@ def display_results(result):
     windows = result["windows"]
 
     if main_results:
-
         try:
             ranked_main = build_ranked_results(
                 main_results,
@@ -105,18 +102,18 @@ def display_results(result):
 
             else:
                 for window_name in windows:
-
                     st.markdown(f"**{window_name} Ranking**")
 
                     view = ranked_main[
                         ranked_main["Window"] == window_name
                     ].copy()
 
-                    st.dataframe(
-                        view,
-                        use_container_width=True,
-                        hide_index=True,
-                    )
+                    if not view.empty:
+                        st.dataframe(
+                            view,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
 
                 main_csv = ranked_main.to_csv(
                     index=False,
@@ -139,14 +136,54 @@ def display_results(result):
             "Main Index-এর সঙ্গে তুলনাযোগ্য ফলাফল পাওয়া যায়নি।"
         )
 
-    # Sector results
+    # -------------------------------------------------
+    # Sector Comparison and Membership Guard
+    # -------------------------------------------------
+
     st.divider()
     st.subheader("5. Stock vs Sector Index")
 
-    sector_results = result["sector_results"]
+    sector_results = result.get("sector_results", [])
 
-    if sector_results:
+    sector_available = result.get(
+        "sector_comparison_available",
+        bool(sector_results),
+    )
 
+    sector_reason = result.get(
+        "sector_comparison_reason",
+        "",
+    )
+
+    if not sector_available:
+        # Guard failed or sector data could not be retrieved.
+        if sector_reason and not sector_reason.startswith(
+            "All selected stocks"
+        ):
+            st.warning(
+                "Sector Comparison বন্ধ রাখা হয়েছে। "
+                "কারণ: " + sector_reason
+            )
+        else:
+            if sector_reason:
+                st.info(
+                    "Sector Membership Guard: "
+                    + sector_reason
+                )
+
+            st.info(
+                "Guard যাচাইয়ের পরও Sector Comparison-এর জন্য "
+                "তুলনাযোগ্য ফলাফল পাওয়া যায়নি। "
+                "Main Index ফলাফল আলাদাভাবে উপলব্ধ থাকলে তা ব্যবহার করুন।"
+            )
+
+    elif not sector_results:
+        st.info(
+            "Sector Membership Guard পাস করেছে, "
+            "কিন্তু Sector Comparison-এর ফলাফল পাওয়া যায়নি।"
+        )
+
+    else:
         sector_df = pd.DataFrame(sector_results)
 
         missing_columns = [
@@ -156,14 +193,12 @@ def display_results(result):
         ]
 
         if missing_columns:
-
             st.error(
                 "Sector Results-এ প্রয়োজনীয় ডেটা পাওয়া যায়নি: "
                 + ", ".join(missing_columns)
             )
 
         else:
-
             try:
                 ranked_sector = build_ranked_results(
                     sector_results,
@@ -178,7 +213,6 @@ def display_results(result):
 
                 else:
                     for window_name in windows:
-
                         st.markdown(
                             f"**{window_name} Sector Ranking**"
                         )
@@ -194,11 +228,11 @@ def display_results(result):
                                 f"{view['End Date'].iloc[0]}"
                             )
 
-                        st.dataframe(
-                            view[["Rank"] + SECTOR_REQUIRED_COLUMNS],
-                            use_container_width=True,
-                            hide_index=True,
-                        )
+                            st.dataframe(
+                                view[["Rank"] + SECTOR_REQUIRED_COLUMNS],
+                                use_container_width=True,
+                                hide_index=True,
+                            )
 
                     sector_csv = ranked_sector.to_csv(
                         index=False,
@@ -216,15 +250,11 @@ def display_results(result):
             except ValueError as error:
                 st.error(f"Sector Ranking Error: {error}")
 
-    else:
-        st.info(
-            "Verified Sector Index Mapping এবং Stock Membership "
-            "যাচাই সম্পন্ন হলে Sector Comparison দেখানো হবে।"
-        )
+    # -------------------------------------------------
+    # Data Retrieval Errors
+    # -------------------------------------------------
 
-    # Errors
     if result["errors"]:
-
         st.divider()
         st.subheader("6. Data Retrieval Errors")
 
