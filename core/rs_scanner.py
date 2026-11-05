@@ -1,10 +1,13 @@
-
 """
 TradeLab Pro - Relative Strength Scanner Engine
 
 Uses verified NSE EQ universe.
-Sector comparisons require independently verified membership
-and a matching configured sector benchmark.
+Sector comparisons require:
+1. Official sector constituent membership.
+2. Successful NSE MII Symbol/ISIN audit.
+3. Matching configured sector benchmark.
+
+BSE sector comparison remains disabled until independently verified.
 """
 
 from datetime import timedelta
@@ -62,8 +65,14 @@ def resolve_symbols(
         source = "Verified NSE Universe selection"
 
     else:
-        requested = get_sector_symbols(sector)
-        source = "Configured sector list"
+        if exchange == "NSE" and universe is None:
+            universe = load_nse_universe()
+
+        requested = get_sector_symbols(
+            sector,
+            universe=universe,
+        )
+        source = "Live audited official sector membership"
 
     if not requested:
         raise ValueError(
@@ -100,6 +109,9 @@ def execute_scanner(
     if exchange not in {"NSE", "BSE"}:
         raise ValueError("Exchange must be NSE or BSE.")
 
+    if exchange == "NSE" and universe is None:
+        universe = load_nse_universe()
+
     symbols, selection_source = resolve_symbols(
         sector=sector,
         manual_symbols=manual_symbols,
@@ -125,11 +137,19 @@ def execute_scanner(
     errors = []
     benchmark_error = None
 
-    # Sector guard: both membership and mapping must be valid.
-    sector_allowed, sector_reason = validate_sector_membership(
-        sector,
-        symbols,
-    )
+    # Sector comparison is allowed only for NSE.
+    if exchange != "NSE":
+        sector_allowed = False
+        sector_reason = (
+            "BSE sector membership and benchmark mapping "
+            "have not been independently verified."
+        )
+    else:
+        sector_allowed, sector_reason = validate_sector_membership(
+            sector,
+            symbols,
+            universe=universe,
+        )
 
     configured_sector_benchmark = get_sector_benchmark(sector)
 
@@ -216,7 +236,6 @@ def execute_scanner(
                         "End Date": main_comparison["end_date"],
                     })
 
-                    # Sector comparison only after membership guard passes.
                     if sector_data is not None:
                         sector_comparison = compare_on_common_dates(
                             stock_data=stock_data,
@@ -267,5 +286,4 @@ def execute_scanner(
             sector_data is not None and bool(sector_results)
         ),
         "sector_comparison_reason": sector_reason,
-                    }
-    
+    }
