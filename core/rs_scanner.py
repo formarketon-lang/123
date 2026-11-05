@@ -1,13 +1,10 @@
+
 """
 TradeLab Pro - Relative Strength Scanner Engine
 
-Uses verified NSE EQ universe.
-Sector comparisons require:
-1. Official sector constituent membership.
-2. Successful NSE MII Symbol/ISIN audit.
-3. Matching configured sector benchmark.
-
-BSE sector comparison remains disabled until independently verified.
+NSE scanning requires verified NSE EQ universe.
+BSE scanning remains disabled until its official universe
+and validated data adapter are implemented.
 """
 
 from datetime import timedelta
@@ -25,6 +22,14 @@ from data.benchmark_mapping import (
 )
 from core.rs_windows import build_windows
 from rs_engine import compare_on_common_dates
+
+
+BSE_SCANNER_DISABLED_MESSAGE = (
+    "BSE Scanner বন্ধ রাখা হয়েছে: Official verified BSE universe "
+    "এবং validated BSE data adapter এখনো সম্পন্ন হয়নি। "
+    "Manual BSE Symbol-সহ কোনো BSE Symbol Yahoo Finance-এ "
+    "পাঠানো হবে না।"
+)
 
 
 def get_market_data(symbol, start_date, end_date, exchange):
@@ -47,6 +52,12 @@ def resolve_symbols(
 ):
     """Resolve and validate scanner stock selection."""
 
+    if exchange == "BSE":
+        raise ValueError(BSE_SCANNER_DISABLED_MESSAGE)
+
+    if exchange != "NSE":
+        raise ValueError("Exchange must be NSE.")
+
     if manual_symbols and manual_symbols.strip():
         requested = [
             item.strip().upper()
@@ -65,7 +76,7 @@ def resolve_symbols(
         source = "Verified NSE Universe selection"
 
     else:
-        if exchange == "NSE" and universe is None:
+        if universe is None:
             universe = load_nse_universe()
 
         requested = get_sector_symbols(
@@ -75,19 +86,15 @@ def resolve_symbols(
         source = "Live audited official sector membership"
 
     if not requested:
-        raise ValueError(
-            "কোনো Stock নির্বাচন করা হয়নি। "
-            "NSE Universe থেকে Stock বাছুন অথবা Manual Symbol লিখুন।"
-        )
+        raise ValueError("কোনো Stock নির্বাচন করা হয়নি।")
 
-    if exchange == "NSE":
-        if universe is None:
-            universe = load_nse_universe()
+    if universe is None:
+        universe = load_nse_universe()
 
-        requested = validate_symbols_against_universe(
-            requested,
-            universe,
-        )
+    requested = validate_symbols_against_universe(
+        requested,
+        universe,
+    )
 
     return requested, source
 
@@ -104,12 +111,17 @@ def execute_scanner(
     selected_symbols=None,
     universe=None,
 ):
-    """Run Main Index comparison and guarded Sector comparison."""
+    """Run NSE Main Index and guarded Sector comparisons."""
 
-    if exchange not in {"NSE", "BSE"}:
-        raise ValueError("Exchange must be NSE or BSE.")
+    # Critical fail-closed security guard.
+    # Must execute before universe loading or market-data requests.
+    if exchange == "BSE":
+        raise ValueError(BSE_SCANNER_DISABLED_MESSAGE)
 
-    if exchange == "NSE" and universe is None:
+    if exchange != "NSE":
+        raise ValueError("Exchange must be NSE.")
+
+    if universe is None:
         universe = load_nse_universe()
 
     symbols, selection_source = resolve_symbols(
@@ -137,19 +149,11 @@ def execute_scanner(
     errors = []
     benchmark_error = None
 
-    # Sector comparison is allowed only for NSE.
-    if exchange != "NSE":
-        sector_allowed = False
-        sector_reason = (
-            "BSE sector membership and benchmark mapping "
-            "have not been independently verified."
-        )
-    else:
-        sector_allowed, sector_reason = validate_sector_membership(
-            sector,
-            symbols,
-            universe=universe,
-        )
+    sector_allowed, sector_reason = validate_sector_membership(
+        sector,
+        symbols,
+        universe=universe,
+    )
 
     configured_sector_benchmark = get_sector_benchmark(sector)
 
@@ -204,7 +208,7 @@ def execute_scanner(
                     symbol,
                     fetch_start,
                     end_date,
-                    exchange,
+                    "NSE",
                 )
 
                 for window_name, dates in windows.items():
