@@ -1,29 +1,67 @@
+
+"""NSE historical equity downloader using Chrome TLS impersonation."""
+
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-import requests
+from curl_cffi import requests
 
 
 NSE_BASE_URL = "https://www.nseindia.com"
 
+NSE_OPTION_CHAIN_URL = f"{NSE_BASE_URL}/option-chain"
+
+HTML_ACCEPT = (
+    "text/html,application/xhtml+xml,application/xml;q=0.9,"
+    "image/avif,image/webp,*/*;q=0.8"
+)
+
 HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-    ),
     "Accept": "application/json, text/plain, */*",
-    "Referer": "https://www.nseindia.com/",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": f"{NSE_BASE_URL}/option-chain",
 }
 
 
 def create_nse_session():
-    """Create a session and initialize NSE cookies."""
-    session = requests.Session()
+    """
+    Create a Chrome-impersonated NSE session.
+
+    Warm up the NSE homepage and option-chain page before
+    calling historical API endpoints.
+
+    No CAPTCHA or access-control challenge is bypassed.
+    """
+
+    session = requests.Session(impersonate="chrome")
+
     session.headers.update(HEADERS)
 
-    response = session.get(NSE_BASE_URL, timeout=20)
-    response.raise_for_status()
+    # Step 1: Initialize NSE cookies using a browser-like request.
+    homepage = session.get(
+        NSE_BASE_URL,
+        headers={
+            "Accept": HTML_ACCEPT,
+            "Referer": f"{NSE_BASE_URL}/",
+        },
+        timeout=30,
+    )
+    homepage.raise_for_status()
+
+    # Step 2: Warm up the option-chain page in the same session.
+    option_chain = session.get(
+        NSE_OPTION_CHAIN_URL,
+        headers={
+            "Accept": HTML_ACCEPT,
+            "Referer": f"{NSE_BASE_URL}/",
+        },
+        timeout=30,
+    )
+    option_chain.raise_for_status()
+
+    # Step 3: Restore JSON headers for historical API requests.
+    session.headers.update(HEADERS)
 
     return session
 
@@ -36,6 +74,9 @@ def download_equity_history(symbol, start_date, end_date):
     Dates must use YYYY-MM-DD format.
     """
 
+    if not isinstance(symbol, str) or not symbol.strip():
+        raise ValueError("A valid NSE equity symbol is required.")
+
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
 
@@ -47,13 +88,17 @@ def download_equity_history(symbol, start_date, end_date):
     url = f"{NSE_BASE_URL}/api/historical/cm/equity"
 
     params = {
-        "symbol": symbol.upper(),
+        "symbol": symbol.strip().upper(),
         "series": '["EQ"]',
         "from": start.strftime("%d-%m-%Y"),
         "to": end.strftime("%d-%m-%Y"),
     }
 
-    response = session.get(url, params=params, timeout=30)
+    response = session.get(
+        url,
+        params=params,
+        timeout=30,
+    )
     response.raise_for_status()
 
     payload = response.json()
