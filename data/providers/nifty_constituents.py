@@ -1,4 +1,3 @@
-
 """NSE Indices constituent-list provider.
 
 Primary source: Official Nifty Indices constituent CSV.
@@ -31,14 +30,17 @@ HEADERS = {
 def normalize_sector_constituents(
     data: pd.DataFrame,
     sector: str,
+    deduplicate: bool = True,
 ) -> pd.DataFrame:
-    """Normalize official constituent CSV data."""
+    """Normalize official constituent CSV data.
 
+    deduplicate=True preserves the existing default behaviour.
+    deduplicate=False preserves duplicate Symbol rows for auditing.
+    """
     if not isinstance(data, pd.DataFrame) or data.empty:
         raise ValueError("Constituent data is empty or invalid.")
 
     frame = data.copy()
-
     frame.columns = [
         " ".join(
             str(column)
@@ -59,7 +61,6 @@ def normalize_sector_constituents(
         "isin code": "ISIN",
         "isin": "ISIN",
     }
-
     frame = frame.rename(columns=aliases)
 
     if "Symbol" not in frame.columns:
@@ -71,53 +72,37 @@ def normalize_sector_constituents(
         if column not in frame.columns:
             frame[column] = pd.NA
 
-    selected = [
-        "Symbol",
-        "Company",
-        "Industry",
-        "Series",
-        "ISIN",
-    ]
-
+    selected = ["Symbol", "Company", "Industry", "Series", "ISIN"]
     frame = frame[selected].copy()
 
     for column in selected:
-        frame[column] = (
-            frame[column].astype("string").str.strip()
-        )
+        frame[column] = frame[column].astype("string").str.strip()
 
     frame["Symbol"] = frame["Symbol"].str.upper()
-
     frame = frame[
-        frame["Symbol"].notna()
-        & frame["Symbol"].ne("")
+        frame["Symbol"].notna() & frame["Symbol"].ne("")
     ]
 
-    frame = frame.drop_duplicates(
-        subset=["Symbol"],
-        keep="last",
-    )
+    if deduplicate:
+        frame = frame.drop_duplicates(
+            subset=["Symbol"], keep="last"
+        )
 
     frame["Sector"] = sector
     frame["Index"] = f"Nifty {sector}"
     frame["Exchange"] = "NSE"
     frame["Source"] = "NSE Indices Official Constituents"
 
-    frame = frame.sort_values("Symbol").reset_index(drop=True)
-
-    if frame.empty:
-        raise ValueError("No valid constituent symbols found.")
-
-    return frame
+    return frame.sort_values("Symbol").reset_index(drop=True)
 
 
 def fetch_sector_constituents(
     sector: str,
     timeout: int = 30,
     session=None,
+    deduplicate: bool = True,
 ) -> pd.DataFrame:
     """Download and normalize a supported sector constituent list."""
-
     sector = str(sector).strip().upper()
 
     if sector not in SECTOR_CONSTITUENT_URLS:
@@ -126,7 +111,6 @@ def fetch_sector_constituents(
         )
 
     client = session or requests
-
     response = client.get(
         SECTOR_CONSTITUENT_URLS[sector],
         headers=HEADERS,
@@ -143,4 +127,8 @@ def fetch_sector_constituents(
         low_memory=False,
     )
 
-    return normalize_sector_constituents(raw, sector)
+    return normalize_sector_constituents(
+        raw,
+        sector,
+        deduplicate=deduplicate,
+    )
