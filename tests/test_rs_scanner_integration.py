@@ -1,3 +1,4 @@
+
 from datetime import date
 
 import pandas as pd
@@ -53,10 +54,39 @@ def _run_scanner(monkeypatch, symbol, fail_symbol=None):
 
         return market_data[requested_symbol]
 
+    def fake_validate_sector_membership(
+        sector,
+        symbols,
+        universe=None,
+    ):
+        requested = {
+            str(item).strip().upper()
+            for item in symbols
+        }
+
+        if str(sector).strip().upper() != "FMCG":
+            return False, "No verified sector membership."
+
+        unverified = sorted(requested - {"HINDUNILVR"})
+
+        if unverified:
+            return False, (
+                "Sector membership is not verified for: "
+                + ", ".join(unverified)
+            )
+
+        return True, "All selected stocks passed membership audit."
+
     monkeypatch.setattr(
         rs_scanner,
         "get_market_data",
         fake_get_market_data,
+    )
+
+    monkeypatch.setattr(
+        rs_scanner,
+        "validate_sector_membership",
+        fake_validate_sector_membership,
     )
 
     result = rs_scanner.execute_scanner(
