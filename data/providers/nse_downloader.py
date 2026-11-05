@@ -1,4 +1,3 @@
-
 from datetime import datetime
 from pathlib import Path
 
@@ -33,8 +32,8 @@ def download_equity_history(symbol, start_date, end_date):
     """
     Download historical NSE equity price data.
 
+    Reject invalid and duplicate trading dates.
     Dates must use YYYY-MM-DD format.
-    Returns a DataFrame or raises an error.
     """
 
     start = datetime.strptime(start_date, "%Y-%m-%d")
@@ -80,7 +79,9 @@ def download_equity_history(symbol, start_date, end_date):
     missing = required_columns.difference(df.columns)
 
     if missing:
-        raise ValueError(f"Unexpected NSE response. Missing: {missing}")
+        raise ValueError(
+            f"Unexpected NSE response. Missing: {missing}"
+        )
 
     df = df.rename(
         columns={
@@ -93,15 +94,38 @@ def download_equity_history(symbol, start_date, end_date):
         }
     )
 
-    df = df[["Date", "Open", "High", "Low", "Close", "Volume"]]
+    df = df[
+        ["Date", "Open", "High", "Low", "Close", "Volume"]
+    ].copy()
 
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df["Date"] = pd.to_datetime(
+        df["Date"],
+        errors="coerce",
+    )
+
+    invalid_dates = int(df["Date"].isna().sum())
+
+    if invalid_dates:
+        raise ValueError(
+            "NSE equity response contains "
+            f"{invalid_dates} invalid or missing trading dates."
+        )
+
+    duplicate_dates = int(df["Date"].duplicated().sum())
+
+    if duplicate_dates:
+        raise ValueError(
+            "Duplicate dates found in NSE equity data: "
+            f"{duplicate_dates}. Data was not silently discarded."
+        )
+
     for column in ["Open", "High", "Low", "Close", "Volume"]:
-        df[column] = pd.to_numeric(df[column], errors="coerce")
+        df[column] = pd.to_numeric(
+            df[column],
+            errors="coerce",
+        )
 
-    df = df.dropna(subset=["Date"]).sort_values("Date")
-    df = df.drop_duplicates(subset=["Date"], keep="last")
-    df = df.reset_index(drop=True)
+    df = df.sort_values("Date").reset_index(drop=True)
 
     return df
 
@@ -117,4 +141,3 @@ def save_nse_csv(df, symbol):
     df.to_csv(output_file, index=False)
 
     return str(output_file)
-  
