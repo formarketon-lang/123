@@ -1,3 +1,4 @@
+
 import pytest
 
 from data.providers import nse_downloader
@@ -18,10 +19,13 @@ class FakeResponse:
 
 class FakeSession:
 
-    def __init__(self, records):
-        self.response = FakeResponse(records)
+    def __init__(self, records=None):
+        self.response = FakeResponse(records or [])
+        self.headers = {}
+        self.calls = []
 
-    def get(self, *args, **kwargs):
+    def get(self, url, *args, **kwargs):
+        self.calls.append((url, kwargs))
         return self.response
 
 
@@ -45,6 +49,44 @@ def index_record(trading_date):
         "EOD_CLOSE_INDEX_VAL": 25050,
         "EOD_VOLUME": 1000,
     }
+
+
+def test_chrome_impersonation_and_session_warmup(monkeypatch):
+    created = {}
+
+    def fake_session_factory(**kwargs):
+        created["kwargs"] = kwargs
+        created["session"] = FakeSession()
+        return created["session"]
+
+    monkeypatch.setattr(
+        nse_downloader.requests,
+        "Session",
+        fake_session_factory,
+    )
+
+    session = nse_downloader.create_nse_session()
+
+    assert created["kwargs"] == {
+        "impersonate": "chrome"
+    }
+
+    assert session is created["session"]
+
+    requested_urls = [
+        call[0] for call in session.calls
+    ]
+
+    assert requested_urls == [
+        nse_downloader.NSE_BASE_URL,
+        nse_downloader.NSE_OPTION_CHAIN_URL,
+    ]
+
+    assert session.headers["Accept"] == (
+        "application/json, text/plain, */*"
+    )
+
+    assert session.headers["Referer"].endswith("/option-chain")
 
 
 def test_equity_downloader_rejects_duplicate_dates(monkeypatch):
