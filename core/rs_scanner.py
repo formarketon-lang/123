@@ -1,21 +1,25 @@
 """
 TradeLab Pro - Relative Strength Scanner Engine
 
-Handles market data retrieval and stock comparisons.
+Uses the verified NSE EQ universe for NSE stock selection.
+Sector membership and sector benchmark mapping remain separate.
 """
 
 from datetime import timedelta
 
 from data.yahoo_adapter import fetch_yahoo_history
-from data.universe import get_sector_symbols
+from data.universe import (
+    get_sector_symbols,
+    load_nse_universe,
+    validate_symbols_against_universe,
+)
 from data.benchmark_mapping import MAIN_BENCHMARKS
 from core.rs_windows import build_windows
 from rs_engine import compare_on_common_dates
 
 
 def get_market_data(symbol, start_date, end_date, exchange):
-    """Fetch historical market data."""
-
+    """Fetch historical daily market data."""
     return fetch_yahoo_history(
         symbol=symbol,
         start_date=start_date,
@@ -25,30 +29,52 @@ def get_market_data(symbol, start_date, end_date, exchange):
     )
 
 
-def resolve_symbols(sector, manual_symbols):
-    """Resolve manually entered or configured stock symbols."""
+def resolve_symbols(
+    sector,
+    manual_symbols,
+    selected_symbols=None,
+    universe=None,
+    exchange="NSE",
+):
+    """Resolve and validate the scanner's stock selection."""
 
     if manual_symbols and manual_symbols.strip():
-
-        symbols = [
+        requested = [
             item.strip().upper()
             for item in manual_symbols.replace("\n", ",").split(",")
             if item.strip()
         ]
+        requested = list(dict.fromkeys(requested))
+        source = "Manual selection"
 
-        symbols = list(dict.fromkeys(symbols))
+    elif selected_symbols:
+        requested = list(dict.fromkeys(
+            str(item).strip().upper()
+            for item in selected_symbols
+            if str(item).strip()
+        ))
+        source = "Verified NSE Universe selection"
 
-        return symbols, "Manual selection"
+    else:
+        requested = get_sector_symbols(sector)
+        source = "Configured sector list"
 
-    symbols = get_sector_symbols(sector)
+    if not requested:
+        raise ValueError(
+            "কোনো Stock নির্বাচন করা হয়নি। "
+            "NSE Universe থেকে Stock বাছুন অথবা Manual Symbol লিখুন।"
+        )
 
-    if symbols:
-        return symbols, "Configured starter universe"
+    if exchange == "NSE":
+        if universe is None:
+            universe = load_nse_universe()
 
-    raise ValueError(
-        "এই Sector-এর Stock Universe এখনো তৈরি হয়নি। "
-        "Manual Stock Symbol লিখুন।"
-    )
+        requested = validate_symbols_against_universe(
+            requested,
+            universe,
+        )
+
+    return requested, source
 
 
 def execute_scanner(
@@ -60,12 +86,20 @@ def execute_scanner(
     start_date,
     end_date,
     custom_windows,
+    selected_symbols=None,
+    universe=None,
 ):
-    """Run the complete Relative Strength analysis."""
+    """Run Stock vs Main Index and optional Stock vs Sector analysis."""
+
+    if exchange not in {"NSE", "BSE"}:
+        raise ValueError("Exchange must be NSE or BSE.")
 
     symbols, selection_source = resolve_symbols(
-        sector,
-        manual_symbols,
+        sector=sector,
+        manual_symbols=manual_symbols,
+        selected_symbols=selected_symbols,
+        universe=universe,
+        exchange=exchange,
     )
 
     windows = build_windows(
@@ -85,7 +119,6 @@ def execute_scanner(
     errors = []
     benchmark_error = None
 
-    # Fetch main benchmark.
     try:
         main_benchmark_data = get_market_data(
             benchmark_symbol,
@@ -97,7 +130,6 @@ def execute_scanner(
         main_benchmark_data = None
         benchmark_error = str(error)
 
-    # Fetch sector benchmark.
     sector_data = None
 
     if sector_benchmark_symbol:
@@ -114,11 +146,8 @@ def execute_scanner(
                 "Reason": str(error),
             })
 
-    # Process each stock.
     if main_benchmark_data is not None:
-
         for symbol in symbols:
-
             try:
                 stock_data = get_market_data(
                     symbol,
@@ -128,10 +157,8 @@ def execute_scanner(
                 )
 
                 for window_name, dates in windows.items():
-
                     window_start, window_end = dates
 
-                    # Stock vs Main Index
                     main_comparison = compare_on_common_dates(
                         stock_data=stock_data,
                         benchmark_data=main_benchmark_data,
@@ -158,9 +185,7 @@ def execute_scanner(
                         "End Date": main_comparison["end_date"],
                     })
 
-                    # Stock vs Sector Index
                     if sector_data is not None:
-
                         sector_comparison = compare_on_common_dates(
                             stock_data=stock_data,
                             benchmark_data=sector_data,
@@ -205,5 +230,6 @@ def execute_scanner(
         "end_date": str(end_date),
         "windows": list(windows.keys()),
         "symbols": symbols,
+        "exchange": exchange,
+        "sector_comparison_available": sector_data is not None,
     }
-    
