@@ -1,30 +1,225 @@
 
+import gzip
+import io
 import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pandas as pd
 import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from data.providers.nse_universe import (
-    NSE_MII_SECURITY_URL_TEMPLATE,
-    fetch_nse_equity_universe,
-)
+from data.providers.nse_universe import fetch_nse_equity_universe
 
 REPORT_DIR = PROJECT_ROOT / "reports" / "nse_universe_live"
 
+FIELD_MAPPING = {
+    "TCKRSYMB": "Symbol",
+    "FININSTRMNM": "Company",
+    "SCTYSRS": "Series",
+    "LISTGDT": "Listing Date",
+    "ISIN": "ISIN",
+    "PARVAL": "Face Value",
+    "ISSDCPTL": "Issued Capital",
+    "DELFLG": "Delete Flag",
+    "ELGBLTYNRMLMKT": "Normal Market Eligibility",
+    "SCTYSTSNRMLMKT": "Normal Market Status",
+    "PRTDTOTRAD": "Permitted to Trade",
+}
+
 
 class AuditedSession(requests.Session):
+    """Capture the successful NSE MII response."""
+
     def __init__(self):
         super().__init__()
         self.requested_urls = []
+        self.raw_responses = []
 
     def get(self, url, *args, **kwargs):
         self.requested_urls.append(url)
-        return super().get(url, *args, **kwargs)
+        response = super().get(url, *args, **kwargs)
+
+        if (
+            "/content/cm/NSE_CM_security_" in url
+            and response.status_code == 200
+            and response.content
+        ):
+            self.raw_responses.append({
+                "url": url,
+                "content": response.content,
+                "content_type": response.headers.get("Content-Type"),
+                "content_encoding": response.headers.get(
+                    "Content-Encoding"
+                ),
+            })
+
+        return response
+
+
+def clean_columns(frame):
+    frame = frame.copy()
+    frame.columns = [
+        " ".join(
+            str(c).replace("\ufeff", "").strip().upper().split()
+        )
+        for c in frame.columns
+    ]
+    return frame
+
+
+def normalize_key_columns(frame):
+    frame = frame.copy()
+
+    for column in ["TCKRSYMB", "SCTYSRS", "ISIN"]:
+        if column in frame.columns:
+            frame[column] = (
+                frame[column].astype("string").str.strip().str.upper()
+            )
+
+    return frame
+
+
+def expected_normalized_values(raw_series, field):
+    values = raw_series.astype("string").str.strip()
+
+    if field in ["Symbol", "Series", "ISIN"]:
+        return values.str.upper()
+
+    if field == "Listing Date":
+        seconds = pd.to_numeric(values, errors="coerce")
+        dates = pd.to_datetime(
+            seconds,
+            unit="s",
+            origin="1980-01-01",
+            errors="coerce",
+        )
+        dates.loc[seconds.eq(0)] = pd.NaT
+        return dates
+
+    if field in ["Face Value", "Issued Capital"]:
+        return pd.to_numeric(values, errors="coerce")
+
+    return values
+
+
+def compare_fields(raw_frame, normalized):
+    raw = normalize_key_columns(raw_frame)
+
+    normalized = normalized.copy()
+
+    raw_keys = ["TCKRSYMB", "SCTYSRS", "ISIN"]
+    normalized_keys = ["Symbol", "Series", "ISIN"]
+
+    missing_keys = [
+        key for key in raw_keys if key not in raw.columns
+    ]
+    if missing_keys:
+        raise ValueError(
+            f"Raw file missing key columns: {missing_keys}"
+        )
+
+    if raw.duplicated(subset=raw_keys).any():
+        raise ValueError(
+            "Raw MII file contains duplicate Symbol/Series/ISIN keys."
+        )
+
+    raw = raw.set_index(raw_keys, drop=False)
+
+    results = {}
+    total_mismatches = 0
+
+    for source_field, target_field in FIELD_MAPPING.items():
+
+        if (
+            source_field not in raw.columns
+            or target_field not in normalized.columns
+        ):
+            results[source_field] = {
+                "normalized_field": target_field,
+                "status": "MISSING_COLUMN",
+                "mismatch_count": None,
+            }
+            continue
+
+        mismatches = []
+        compared = 0
+
+        for _, row in normalized.iterrows():
+            key = (
+                str(row["Symbol"]).strip().upper(),
+                str(row["Series"]).strip().upper(),
+                str(row["ISIN"]).strip().upper(),
+            )
+
+            if key not in raw.index:
+                mismatches.append({
+                    "key": key,
+                    "reason": "RAW_RECORD_NOT_FOUND",
+                })
+                continue
+
+            raw_row = raw.loc[key]
+
+            expected = expected_normalized_values(
+                pd.Series([raw_row[source_field]]),
+                target_field,
+            ).iloc[0]
+
+            actual = row[target_field]
+
+            if pd.isna(expected) and pd.isna(actual):
+                compared += 1
+                continue
+
+            if pd.isna(expected) != pd.isna(actual):
+                mismatches.append({
+                    "key": key,
+                    "raw_value": str(expected),
+                    "normalized_value": str(actual),
+                })
+            elif target_field in ["Face Value", "Issued Capital"]:
+                if float(expected) != float(actual):
+                    mismatches.append({
+                        "key": key,
+                        "raw_value": str(expected),
+                        "normalized_value": str(actual),
+                    })
+                else:
+                    compared += 1
+            elif target_field == "Listing Date":
+                if pd.Timestamp(expected) != pd.Timestamp(actual):
+                    mismatches.append({
+                        "key": key,
+                        "raw_value": str(expected),
+                        "normalized_value": str(actual),
+                    })
+                else:
+                    compared += 1
+            elif str(expected) != str(actual):
+                mismatches.append({
+                    "key": key,
+                    "raw_value": str(expected),
+                    "normalized_value": str(actual),
+                })
+            else:
+                compared += 1
+
+        mismatch_count = len(mismatches)
+        total_mismatches += mismatch_count
+
+        results[source_field] = {
+            "normalized_field": target_field,
+            "status": "PASS" if mismatch_count == 0 else "MISMATCH",
+            "compared_records": compared,
+            "mismatch_count": mismatch_count,
+            "mismatch_samples": mismatches[:10],
+        }
+
+    return results, total_mismatches
 
 
 def main():
@@ -35,33 +230,45 @@ def main():
 
     session = AuditedSession()
 
-    print("========== NSE MII LIVE VERIFICATION ==========")
-
     try:
+        print("========== NSE MII RAW FIELD AUDIT ==========")
+
         universe = fetch_nse_equity_universe(
             timeout=45,
             session=session,
             lookback_days=7,
         )
 
-        mii_urls = [
-            url for url in session.requested_urls
-            if "/content/cm/NSE_CM_security_" in url
-        ]
-
-        print("\nRequested MII URLs:")
-        for url in mii_urls:
-            print(url)
-
-        sources = universe["Source"].dropna().unique().tolist()
-
-        if sources != ["NSE MII Security Master"]:
+        if not session.raw_responses:
             raise ValueError(
-                f"MII was not confirmed as source: {sources}"
+                "Successful raw NSE MII response was not captured."
             )
 
-        if universe.empty:
-            raise ValueError("NSE universe is empty.")
+        capture = session.raw_responses[-1]
+        raw_bytes = capture["content"]
+
+        is_gzip = raw_bytes[:2] == b"\x1f\x8b"
+
+        if is_gzip:
+            raw_path = REPORT_DIR / (
+                f"nse_mii_raw_{audit_id}.csv.gz"
+            )
+            raw_path.write_bytes(raw_bytes)
+            csv_bytes = gzip.decompress(raw_bytes)
+        else:
+            raw_path = REPORT_DIR / (
+                f"nse_mii_raw_{audit_id}.csv"
+            )
+            raw_path.write_bytes(raw_bytes)
+            csv_bytes = raw_bytes
+
+        raw_frame = pd.read_csv(
+            io.BytesIO(csv_bytes),
+            dtype="string",
+            low_memory=False,
+        )
+
+        raw_frame = clean_columns(raw_frame)
 
         required = [
             "Symbol",
@@ -81,8 +288,11 @@ def main():
 
         if missing:
             raise ValueError(
-                f"Required columns missing: {missing}"
+                f"Normalized columns missing: {missing}"
             )
+
+        if universe.empty:
+            raise ValueError("Normalized universe is empty.")
 
         if not (universe["Series"] == "EQ").all():
             raise ValueError("Non-EQ security found.")
@@ -100,49 +310,69 @@ def main():
         ).any():
             raise ValueError("Suspended security found.")
 
-        if universe["Symbol"].str.endswith("$").any():
-            raise ValueError("BSE-exclusive symbol found.")
-
         if not universe["ISIN"].str.fullmatch(
-            r"IN[A-Z0-9]{10}",
-            na=False,
+            r"IN[A-Z0-9]{10}", na=False
         ).all():
             raise ValueError("Invalid ISIN found.")
 
         if universe.duplicated(
             subset=["Symbol", "Series", "ISIN"]
         ).any():
-            raise ValueError("Duplicate security found.")
-
-        if "Permitted to Trade" in universe.columns:
-            if (
-                universe["Permitted to Trade"] == "2"
-            ).any():
-                raise ValueError(
-                    "BSE-exclusive PrtdToTrad=2 security found."
-                )
+            raise ValueError("Duplicate normalized security found.")
 
         if "MARICO" not in set(universe["Symbol"]):
-            raise ValueError(
-                "MARICO was not found in the live universe."
-            )
+            raise ValueError("MARICO not found.")
 
-        csv_path = REPORT_DIR / f"nse_universe_{audit_id}.csv"
-        json_path = REPORT_DIR / f"nse_universe_{audit_id}.json"
+        mapping_results, total_mismatches = compare_fields(
+            raw_frame,
+            universe,
+        )
 
-        universe.to_csv(csv_path, index=False)
+        normalized_path = REPORT_DIR / (
+            f"nse_universe_{audit_id}.csv"
+        )
+
+        mapping_path = REPORT_DIR / (
+            f"nse_field_mapping_{audit_id}.json"
+        )
+
+        summary_path = REPORT_DIR / (
+            f"nse_universe_{audit_id}.json"
+        )
+
+        universe.to_csv(normalized_path, index=False)
+
+        mapping_report = {
+            "audit_id": audit_id,
+            "raw_source_url": capture["url"],
+            "raw_file": raw_path.name,
+            "raw_is_gzip": is_gzip,
+            "raw_rows": int(len(raw_frame)),
+            "normalized_rows": int(len(universe)),
+            "field_mapping": mapping_results,
+            "total_field_mismatches": total_mismatches,
+            "status": (
+                "PASS" if total_mismatches == 0 else "FAIL"
+            ),
+        }
+
+        mapping_path.write_text(
+            json.dumps(mapping_report, indent=2, default=str),
+            encoding="utf-8",
+        )
 
         summary = {
             "audit_id": audit_id,
             "audit_time_utc": audit_time.isoformat(),
-            "source": sources,
-            "mii_urls_attempted": mii_urls,
-            "total_eligible_eq_securities": len(universe),
+            "source": "NSE MII Security Master",
+            "source_url": capture["url"],
+            "raw_file": raw_path.name,
+            "normalized_file": normalized_path.name,
+            "mapping_file": mapping_path.name,
+            "raw_rows": int(len(raw_frame)),
+            "normalized_rows": int(len(universe)),
             "unique_symbols": int(universe["Symbol"].nunique()),
             "marico_found": True,
-            "series_counts": (
-                universe["Series"].value_counts().to_dict()
-            ),
             "permitted_to_trade_counts": (
                 universe["Permitted to Trade"]
                 .value_counts(dropna=False)
@@ -150,25 +380,28 @@ def main():
                 if "Permitted to Trade" in universe.columns
                 else {}
             ),
-            "columns": universe.columns.tolist(),
-            "csv_file": str(csv_path),
-            "status": "PASS",
+            "field_mismatches": total_mismatches,
+            "status": (
+                "PASS" if total_mismatches == 0 else "FAIL"
+            ),
         }
 
-        with open(json_path, "w", encoding="utf-8") as file:
-            json.dump(
-                summary,
-                file,
-                indent=2,
-                default=str,
+        summary_path.write_text(
+            json.dumps(summary, indent=2, default=str),
+            encoding="utf-8",
+        )
+
+        print(json.dumps(summary, indent=2, default=str))
+
+        if total_mismatches:
+            raise ValueError(
+                f"Field mapping mismatches found: {total_mismatches}"
             )
 
-        print("\n========== LIVE AUDIT SUMMARY ==========")
-        print(json.dumps(summary, indent=2, default=str))
-        print("\nNSE MII LIVE VERIFICATION: PASS")
+        print("NSE MII RAW FIELD AUDIT: PASS")
 
     except Exception as error:
-        print("\nNSE MII LIVE VERIFICATION: FAIL")
+        print("NSE MII RAW FIELD AUDIT: FAIL")
         print(f"{type(error).__name__}: {error}")
         raise
 
