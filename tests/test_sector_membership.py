@@ -1,11 +1,26 @@
 
 import pytest
 
-from data.universe import validate_sector_membership
+from data import universe
 
 
-def test_verified_fmcg_member_is_allowed():
-    allowed, reason = validate_sector_membership(
+@pytest.fixture
+def verified_fmcg_membership(monkeypatch):
+    """Provide deterministic audited membership for unit tests."""
+    def fake_get_sector_symbols(sector, universe=None):
+        if str(sector).strip().upper() == "FMCG":
+            return ["HINDUNILVR"]
+        return []
+
+    monkeypatch.setattr(
+        universe,
+        "get_sector_symbols",
+        fake_get_sector_symbols,
+    )
+
+
+def test_verified_fmcg_member_is_allowed(verified_fmcg_membership):
+    allowed, reason = universe.validate_sector_membership(
         "FMCG",
         ["HINDUNILVR"],
     )
@@ -14,8 +29,10 @@ def test_verified_fmcg_member_is_allowed():
     assert "membership" in reason.lower()
 
 
-def test_unverified_stock_is_blocked_from_sector_comparison():
-    allowed, reason = validate_sector_membership(
+def test_unverified_stock_is_blocked_from_sector_comparison(
+    verified_fmcg_membership,
+):
+    allowed, reason = universe.validate_sector_membership(
         "FMCG",
         ["MARICO"],
     )
@@ -24,8 +41,10 @@ def test_unverified_stock_is_blocked_from_sector_comparison():
     assert "MARICO" in reason
 
 
-def test_mixed_verified_and_unverified_stocks_are_blocked():
-    allowed, reason = validate_sector_membership(
+def test_mixed_verified_and_unverified_stocks_are_blocked(
+    verified_fmcg_membership,
+):
+    allowed, reason = universe.validate_sector_membership(
         "FMCG",
         ["HINDUNILVR", "MARICO"],
     )
@@ -34,8 +53,8 @@ def test_mixed_verified_and_unverified_stocks_are_blocked():
     assert "MARICO" in reason
 
 
-def test_unknown_sector_is_blocked():
-    allowed, reason = validate_sector_membership(
+def test_unknown_sector_is_blocked(verified_fmcg_membership):
+    allowed, reason = universe.validate_sector_membership(
         "UNKNOWN SECTOR",
         ["HINDUNILVR"],
     )
@@ -44,8 +63,8 @@ def test_unknown_sector_is_blocked():
     assert "No verified" in reason
 
 
-def test_empty_stock_selection_is_blocked():
-    allowed, reason = validate_sector_membership(
+def test_empty_stock_selection_is_blocked(verified_fmcg_membership):
+    allowed, reason = universe.validate_sector_membership(
         "FMCG",
         [],
     )
@@ -54,11 +73,12 @@ def test_empty_stock_selection_is_blocked():
     assert "No stocks" in reason
 
 
-def test_sector_membership_is_case_insensitive():
-    allowed, reason = validate_sector_membership(
+def test_sector_membership_is_case_insensitive(
+    verified_fmcg_membership,
+):
+    allowed, reason = universe.validate_sector_membership(
         "FMCG",
         ["hindunilvr"],
     )
 
     assert allowed is True
-  
