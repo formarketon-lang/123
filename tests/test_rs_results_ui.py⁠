@@ -218,3 +218,4 @@ def test_sector_guard_pass_but_no_results_shows_no_data_message(
 
     assert "Membership Guard" in displayed_text
     assert "তুলনাযোগ্য ফলাফল পাওয়া যায়নি" in displayed_text
+
