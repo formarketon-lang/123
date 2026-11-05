@@ -64,9 +64,13 @@ def clean_columns(frame):
     frame = frame.copy()
     frame.columns = [
         " ".join(
-            str(c).replace("\ufeff", "").strip().upper().split()
+            str(column)
+            .replace("\ufeff", "")
+            .strip()
+            .upper()
+            .split()
         )
-        for c in frame.columns
+        for column in frame.columns
     ]
     return frame
 
@@ -77,7 +81,10 @@ def normalize_key_columns(frame):
     for column in ["TCKRSYMB", "SCTYSRS", "ISIN"]:
         if column in frame.columns:
             frame[column] = (
-                frame[column].astype("string").str.strip().str.upper()
+                frame[column]
+                .astype("string")
+                .str.strip()
+                .str.upper()
             )
 
     return frame
@@ -91,12 +98,14 @@ def expected_normalized_values(raw_series, field):
 
     if field == "Listing Date":
         seconds = pd.to_numeric(values, errors="coerce")
+
         dates = pd.to_datetime(
             seconds,
             unit="s",
             origin="1980-01-01",
             errors="coerce",
         )
+
         dates.loc[seconds.eq(0)] = pd.NaT
         return dates
 
@@ -108,23 +117,51 @@ def expected_normalized_values(raw_series, field):
 
 def compare_fields(raw_frame, normalized):
     raw = normalize_key_columns(raw_frame)
-
     normalized = normalized.copy()
 
     raw_keys = ["TCKRSYMB", "SCTYSRS", "ISIN"]
-    normalized_keys = ["Symbol", "Series", "ISIN"]
 
     missing_keys = [
-        key for key in raw_keys if key not in raw.columns
+        key for key in raw_keys
+        if key not in raw.columns
     ]
+
     if missing_keys:
         raise ValueError(
             f"Raw file missing key columns: {missing_keys}"
         )
 
+    normalized_keys = ["Symbol", "Series", "ISIN"]
+
+    missing_normalized_keys = [
+        key for key in normalized_keys
+        if key not in normalized.columns
+    ]
+
+    if missing_normalized_keys:
+        raise ValueError(
+            "Normalized file missing key columns: "
+            f"{missing_normalized_keys}"
+        )
+
+    if raw[raw_keys].isna().any().any():
+        raise ValueError("Raw file contains null security keys.")
+
+    if normalized[normalized_keys].isna().any().any():
+        raise ValueError(
+            "Normalized file contains null security keys."
+        )
+
     if raw.duplicated(subset=raw_keys).any():
         raise ValueError(
-            "Raw MII file contains duplicate Symbol/Series/ISIN keys."
+            "Raw MII file contains duplicate "
+            "Symbol/Series/ISIN keys."
+        )
+
+    if normalized.duplicated(subset=normalized_keys).any():
+        raise ValueError(
+            "Normalized file contains duplicate "
+            "Symbol/Series/ISIN keys."
         )
 
     raw = raw.set_index(raw_keys, drop=False)
@@ -134,14 +171,27 @@ def compare_fields(raw_frame, normalized):
 
     for source_field, target_field in FIELD_MAPPING.items():
 
-        if (
-            source_field not in raw.columns
-            or target_field not in normalized.columns
-        ):
+        source_present = source_field in raw.columns
+        target_present = target_field in normalized.columns
+
+        # Missing mapped columns are a hard failure.
+        if not source_present or not target_present:
+            total_mismatches += 1
+
             results[source_field] = {
                 "normalized_field": target_field,
                 "status": "MISSING_COLUMN",
-                "mismatch_count": None,
+                "compared_records": 0,
+                "mismatch_count": 1,
+                "mismatch_samples": [{
+                    "reason": (
+                        "MAPPED_SOURCE_OR_TARGET_COLUMN_MISSING"
+                    ),
+                    "raw_column": source_field,
+                    "normalized_column": target_field,
+                    "raw_column_present": source_present,
+                    "normalized_column_present": target_present,
+                }],
             }
             continue
 
@@ -171,55 +221,117 @@ def compare_fields(raw_frame, normalized):
 
             actual = row[target_field]
 
-            if pd.isna(expected) and pd.isna(actual):
+            expected_missing = pd.isna(expected)
+            actual_missing = pd.isna(actual)
+
+            if expected_missing and actual_missing:
                 compared += 1
                 continue
 
-            if pd.isna(expected) != pd.isna(actual):
+            if expected_missing != actual_missing:
                 mismatches.append({
                     "key": key,
                     "raw_value": str(expected),
                     "normalized_value": str(actual),
+                    "reason": "NULL_VALUE_MISMATCH",
                 })
-            elif target_field in ["Face Value", "Issued Capital"]:
-                if float(expected) != float(actual):
-                    mismatches.append({
-                        "key": key,
-                        "raw_value": str(expected),
-                        "normalized_value": str(actual),
-                    })
-                else:
-                    compared += 1
+                continue
+
+            if target_field in ["Face Value", "Issued Capital"]:
+                try:
+                    equal = float(expected) == float(actual)
+                except (TypeError, ValueError):
+                    equal = False
+
             elif target_field == "Listing Date":
-                if pd.Timestamp(expected) != pd.Timestamp(actual):
-                    mismatches.append({
-                        "key": key,
-                        "raw_value": str(expected),
-                        "normalized_value": str(actual),
-                    })
-                else:
-                    compared += 1
-            elif str(expected) != str(actual):
+                equal = (
+                    pd.Timestamp(expected)
+                    == pd.Timestamp(actual)
+                )
+
+            else:
+                equal = str(expected) == str(actual)
+
+            if equal:
+                compared += 1
+            else:
                 mismatches.append({
                     "key": key,
                     "raw_value": str(expected),
                     "normalized_value": str(actual),
+                    "reason": "VALUE_MISMATCH",
                 })
-            else:
-                compared += 1
 
         mismatch_count = len(mismatches)
         total_mismatches += mismatch_count
 
         results[source_field] = {
             "normalized_field": target_field,
-            "status": "PASS" if mismatch_count == 0 else "MISMATCH",
+            "status": (
+                "PASS" if mismatch_count == 0 else "MISMATCH"
+            ),
             "compared_records": compared,
             "mismatch_count": mismatch_count,
             "mismatch_samples": mismatches[:10],
         }
 
     return results, total_mismatches
+
+
+def validate_universe(universe):
+    required = [
+        "Symbol",
+        "Company",
+        "Series",
+        "ISIN",
+        "Delete Flag",
+        "Normal Market Eligibility",
+        "Normal Market Status",
+        "Source",
+    ]
+
+    missing = [
+        column for column in required
+        if column not in universe.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            f"Normalized columns missing: {missing}"
+        )
+
+    if universe.empty:
+        raise ValueError("Normalized universe is empty.")
+
+    if not universe["Series"].eq("EQ").all():
+        raise ValueError("Non-EQ security found.")
+
+    if not universe["Delete Flag"].eq("N").all():
+        raise ValueError("Deleted security found.")
+
+    if not universe[
+        "Normal Market Eligibility"
+    ].eq("1").all():
+        raise ValueError("Ineligible security found.")
+
+    if universe[
+        "Normal Market Status"
+    ].eq("3").any():
+        raise ValueError("Suspended security found.")
+
+    if not universe["ISIN"].str.fullmatch(
+        r"IN[A-Z0-9]{10}",
+        na=False,
+    ).all():
+        raise ValueError("Invalid ISIN found.")
+
+    if universe.duplicated(
+        subset=["Symbol", "Series", "ISIN"]
+    ).any():
+        raise ValueError("Duplicate normalized security found.")
+
+    if "MARICO" not in set(universe["Symbol"]):
+        raise ValueError("MARICO not found.")
 
 
 def main():
@@ -270,58 +382,7 @@ def main():
 
         raw_frame = clean_columns(raw_frame)
 
-        required = [
-            "Symbol",
-            "Company",
-            "Series",
-            "ISIN",
-            "Delete Flag",
-            "Normal Market Eligibility",
-            "Normal Market Status",
-            "Source",
-        ]
-
-        missing = [
-            column for column in required
-            if column not in universe.columns
-        ]
-
-        if missing:
-            raise ValueError(
-                f"Normalized columns missing: {missing}"
-            )
-
-        if universe.empty:
-            raise ValueError("Normalized universe is empty.")
-
-        if not (universe["Series"] == "EQ").all():
-            raise ValueError("Non-EQ security found.")
-
-        if not (universe["Delete Flag"] == "N").all():
-            raise ValueError("Deleted security found.")
-
-        if not (
-            universe["Normal Market Eligibility"] == "1"
-        ).all():
-            raise ValueError("Ineligible security found.")
-
-        if (
-            universe["Normal Market Status"] == "3"
-        ).any():
-            raise ValueError("Suspended security found.")
-
-        if not universe["ISIN"].str.fullmatch(
-            r"IN[A-Z0-9]{10}", na=False
-        ).all():
-            raise ValueError("Invalid ISIN found.")
-
-        if universe.duplicated(
-            subset=["Symbol", "Series", "ISIN"]
-        ).any():
-            raise ValueError("Duplicate normalized security found.")
-
-        if "MARICO" not in set(universe["Symbol"]):
-            raise ValueError("MARICO not found.")
+        validate_universe(universe)
 
         mapping_results, total_mismatches = compare_fields(
             raw_frame,
@@ -342,24 +403,41 @@ def main():
 
         universe.to_csv(normalized_path, index=False)
 
+        mapping_status = (
+            "PASS" if total_mismatches == 0 else "FAIL"
+        )
+
         mapping_report = {
             "audit_id": audit_id,
             "raw_source_url": capture["url"],
             "raw_file": raw_path.name,
             "raw_is_gzip": is_gzip,
+            "content_type": capture["content_type"],
+            "content_encoding": capture["content_encoding"],
             "raw_rows": int(len(raw_frame)),
             "normalized_rows": int(len(universe)),
             "field_mapping": mapping_results,
             "total_field_mismatches": total_mismatches,
-            "status": (
-                "PASS" if total_mismatches == 0 else "FAIL"
-            ),
+            "status": mapping_status,
         }
 
         mapping_path.write_text(
-            json.dumps(mapping_report, indent=2, default=str),
+            json.dumps(
+                mapping_report,
+                indent=2,
+                default=str,
+            ),
             encoding="utf-8",
         )
+
+        permitted_counts = {}
+
+        if "Permitted to Trade" in universe.columns:
+            permitted_counts = (
+                universe["Permitted to Trade"]
+                .value_counts(dropna=False)
+                .to_dict()
+            )
 
         summary = {
             "audit_id": audit_id,
@@ -371,23 +449,26 @@ def main():
             "mapping_file": mapping_path.name,
             "raw_rows": int(len(raw_frame)),
             "normalized_rows": int(len(universe)),
-            "unique_symbols": int(universe["Symbol"].nunique()),
-            "marico_found": True,
-            "permitted_to_trade_counts": (
-                universe["Permitted to Trade"]
-                .value_counts(dropna=False)
-                .to_dict()
-                if "Permitted to Trade" in universe.columns
-                else {}
+            "unique_symbols": int(
+                universe["Symbol"].nunique()
             ),
+            "marico_found": True,
+            "permitted_to_trade_counts": permitted_counts,
             "field_mismatches": total_mismatches,
+            "mapping_status": mapping_status,
             "status": (
-                "PASS" if total_mismatches == 0 else "FAIL"
+                "PASS"
+                if total_mismatches == 0
+                else "FAIL"
             ),
         }
 
         summary_path.write_text(
-            json.dumps(summary, indent=2, default=str),
+            json.dumps(
+                summary,
+                indent=2,
+                default=str,
+            ),
             encoding="utf-8",
         )
 
@@ -395,7 +476,8 @@ def main():
 
         if total_mismatches:
             raise ValueError(
-                f"Field mapping mismatches found: {total_mismatches}"
+                "Field mapping mismatches found: "
+                f"{total_mismatches}"
             )
 
         print("NSE MII RAW FIELD AUDIT: PASS")
@@ -411,3 +493,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    
