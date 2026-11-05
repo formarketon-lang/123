@@ -2,11 +2,71 @@
 """
 TradeLab Pro - Relative Strength Results
 
-Displays rankings, comparison tables and CSV downloads.
+Displays verified rankings and correctly ranked CSV exports.
 """
 
 import streamlit as st
 import pandas as pd
+
+
+MAIN_SORT_COLUMN = "Excess Return (%)"
+
+SECTOR_SORT_COLUMN = "Sector Excess Return (%)"
+
+SECTOR_REQUIRED_COLUMNS = [
+    "Stock",
+    "Window",
+    "Stock Return (%)",
+    "Sector Return (%)",
+    "Sector Excess Return (%)",
+    "Common Sessions",
+    "Start Date",
+    "End Date",
+]
+
+
+def build_ranked_results(data, windows, sort_column):
+    """Build independent ranking for every return window."""
+
+    if not data:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(data)
+
+    if sort_column not in df.columns or "Window" not in df.columns:
+        raise ValueError(
+            f"Required ranking columns missing: {sort_column}, Window"
+        )
+
+    ranked_parts = []
+
+    for window_name in windows:
+        view = df[df["Window"] == window_name].copy()
+
+        if view.empty:
+            continue
+
+        view[sort_column] = pd.to_numeric(
+            view[sort_column],
+            errors="coerce",
+        )
+
+        view = view.dropna(subset=[sort_column])
+
+        view = view.sort_values(
+            sort_column,
+            ascending=False,
+            kind="stable",
+        ).reset_index(drop=True)
+
+        view.insert(0, "Rank", range(1, len(view) + 1))
+
+        ranked_parts.append(view)
+
+    if not ranked_parts:
+        return pd.DataFrame()
+
+    return pd.concat(ranked_parts, ignore_index=True)
 
 
 def display_results(result):
@@ -33,41 +93,46 @@ def display_results(result):
 
     if main_results:
 
-        main_df = pd.DataFrame(main_results)
-
-        for window_name in windows:
-
-            st.markdown(f"**{window_name} Ranking**")
-
-            view = main_df[
-                main_df["Window"] == window_name
-            ].copy()
-
-            view = view.sort_values(
-                "Excess Return (%)",
-                ascending=False,
-            ).reset_index(drop=True)
-
-            view.insert(0, "Rank", range(1, len(view) + 1))
-
-            st.dataframe(
-                view,
-                use_container_width=True,
-                hide_index=True,
+        try:
+            ranked_main = build_ranked_results(
+                main_results,
+                windows,
+                MAIN_SORT_COLUMN,
             )
 
-        main_csv = main_df.to_csv(
-            index=False
-        ).encode("utf-8-sig")
+            if ranked_main.empty:
+                st.warning("Main Index Ranking তৈরি করা যায়নি।")
 
-        st.download_button(
-            "Download Main Index CSV",
-            data=main_csv,
-            file_name="tradelab_main_index_rs.csv",
-            mime="text/csv",
-            key="rs_main_csv",
-            on_click="ignore",
-        )
+            else:
+                for window_name in windows:
+
+                    st.markdown(f"**{window_name} Ranking**")
+
+                    view = ranked_main[
+                        ranked_main["Window"] == window_name
+                    ].copy()
+
+                    st.dataframe(
+                        view,
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                main_csv = ranked_main.to_csv(
+                    index=False,
+                ).encode("utf-8-sig")
+
+                st.download_button(
+                    "Download Main Index CSV",
+                    data=main_csv,
+                    file_name="tradelab_main_index_rs.csv",
+                    mime="text/csv",
+                    key="rs_main_csv",
+                    on_click="ignore",
+                )
+
+        except ValueError as error:
+            st.error(f"Main Ranking Error: {error}")
 
     else:
         st.warning(
@@ -84,88 +149,77 @@ def display_results(result):
 
         sector_df = pd.DataFrame(sector_results)
 
-        expected_columns = [
-            "Stock",
-            "Window",
-            "Stock Return (%)",
-            "Sector Return (%)",
-            "Sector Excess Return (%)",
-            "Common Sessions",
-            "Start Date",
-            "End Date",
-        ]
-
         missing_columns = [
             column
-            for column in expected_columns
+            for column in SECTOR_REQUIRED_COLUMNS
             if column not in sector_df.columns
         ]
 
         if missing_columns:
+
             st.error(
                 "Sector Results-এ প্রয়োজনীয় ডেটা পাওয়া যায়নি: "
                 + ", ".join(missing_columns)
             )
 
-            st.caption(
-                "প্রাপ্ত Data Columns: "
-                + ", ".join(sector_df.columns.astype(str))
-            )
-
         else:
 
-            for window_name in windows:
-
-                st.markdown(
-                    f"**{window_name} Sector Ranking**"
+            try:
+                ranked_sector = build_ranked_results(
+                    sector_results,
+                    windows,
+                    SECTOR_SORT_COLUMN,
                 )
 
-                view = sector_df[
-                    sector_df["Window"] == window_name
-                ].copy()
-
-                view = view.sort_values(
-                    "Sector Excess Return (%)",
-                    ascending=False,
-                ).reset_index(drop=True)
-
-                view.insert(
-                    0,
-                    "Rank",
-                    range(1, len(view) + 1),
-                )
-
-                if not view.empty:
-
-                    st.caption(
-                        f"Actual Comparison Period: "
-                        f"{view['Start Date'].iloc[0]} to "
-                        f"{view['End Date'].iloc[0]}"
+                if ranked_sector.empty:
+                    st.warning(
+                        "Sector Ranking তৈরি করা যায়নি।"
                     )
 
-                st.dataframe(
-                    view[["Rank"] + expected_columns],
-                    use_container_width=True,
-                    hide_index=True,
-                )
+                else:
+                    for window_name in windows:
 
-        sector_csv = sector_df.to_csv(
-            index=False
-        ).encode("utf-8-sig")
+                        st.markdown(
+                            f"**{window_name} Sector Ranking**"
+                        )
 
-        st.download_button(
-            "Download Sector Comparison CSV",
-            data=sector_csv,
-            file_name="tradelab_sector_rs.csv",
-            mime="text/csv",
-            key="rs_sector_csv",
-            on_click="ignore",
-        )
+                        view = ranked_sector[
+                            ranked_sector["Window"] == window_name
+                        ].copy()
+
+                        if not view.empty:
+                            st.caption(
+                                "Actual Comparison Period: "
+                                f"{view['Start Date'].iloc[0]} to "
+                                f"{view['End Date'].iloc[0]}"
+                            )
+
+                        st.dataframe(
+                            view[["Rank"] + SECTOR_REQUIRED_COLUMNS],
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                    sector_csv = ranked_sector.to_csv(
+                        index=False,
+                    ).encode("utf-8-sig")
+
+                    st.download_button(
+                        "Download Sector Comparison CSV",
+                        data=sector_csv,
+                        file_name="tradelab_sector_rs.csv",
+                        mime="text/csv",
+                        key="rs_sector_csv",
+                        on_click="ignore",
+                    )
+
+            except ValueError as error:
+                st.error(f"Sector Ranking Error: {error}")
 
     else:
         st.info(
-            "Verified Sector Index Mapping যুক্ত হলে "
-            "এই বিভাগে Sector Comparison দেখা যাবে।"
+            "Verified Sector Index Mapping এবং Stock Membership "
+            "যাচাই সম্পন্ন হলে Sector Comparison দেখানো হবে।"
         )
 
     # Errors
