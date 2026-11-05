@@ -13,10 +13,17 @@ NSE_INDEX_URL = (
     "https://www.nseindia.com/api/historical/indicesHistory"
 )
 
+
+# Accepted names and exact indexType values sent to NSE.
 INDEX_ALIASES = {
     "NIFTY 50": "NIFTY 50",
+    "NIFTY NEXT 50": "NIFTY NEXT 50",
+    "NIFTY 100": "NIFTY 100",
+    "NIFTY 200": "NIFTY 200",
+    "NIFTY 500": "NIFTY 500",
     "NIFTY FMCG": "NIFTY FMCG",
 }
+
 
 COLUMN_ALIASES = {
     "Date": [
