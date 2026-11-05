@@ -5,3 +5,4 @@ plotly>=5.24,<7.0
 pytest>=8.0,<10.0
 yfinance>=0.2.65,<2.0
 requests>=2.32,<3.0
+curl_cffi>=0.14,<1.0
