@@ -1,8 +1,10 @@
+
 """
 TradeLab Pro - Relative Strength Scanner Engine
 
-Uses the verified NSE EQ universe for NSE stock selection.
-Sector membership and sector benchmark mapping remain separate.
+Uses verified NSE EQ universe.
+Sector comparisons require independently verified membership
+and a matching configured sector benchmark.
 """
 
 from datetime import timedelta
@@ -12,8 +14,12 @@ from data.universe import (
     get_sector_symbols,
     load_nse_universe,
     validate_symbols_against_universe,
+    validate_sector_membership,
 )
-from data.benchmark_mapping import MAIN_BENCHMARKS
+from data.benchmark_mapping import (
+    MAIN_BENCHMARKS,
+    get_sector_benchmark,
+)
 from core.rs_windows import build_windows
 from rs_engine import compare_on_common_dates
 
@@ -36,7 +42,7 @@ def resolve_symbols(
     universe=None,
     exchange="NSE",
 ):
-    """Resolve and validate the scanner's stock selection."""
+    """Resolve and validate scanner stock selection."""
 
     if manual_symbols and manual_symbols.strip():
         requested = [
@@ -89,7 +95,7 @@ def execute_scanner(
     selected_symbols=None,
     universe=None,
 ):
-    """Run Stock vs Main Index and optional Stock vs Sector analysis."""
+    """Run Main Index comparison and guarded Sector comparison."""
 
     if exchange not in {"NSE", "BSE"}:
         raise ValueError("Exchange must be NSE or BSE.")
@@ -119,6 +125,29 @@ def execute_scanner(
     errors = []
     benchmark_error = None
 
+    # Sector guard: both membership and mapping must be valid.
+    sector_allowed, sector_reason = validate_sector_membership(
+        sector,
+        symbols,
+    )
+
+    configured_sector_benchmark = get_sector_benchmark(sector)
+
+    if not configured_sector_benchmark:
+        sector_allowed = False
+        sector_reason = (
+            f"No configured sector benchmark exists for {sector}."
+        )
+
+    elif sector_benchmark_symbol != configured_sector_benchmark:
+        sector_allowed = False
+        sector_reason = (
+            "Selected sector benchmark does not match the configured "
+            "sector benchmark."
+        )
+
+    sector_data = None
+
     try:
         main_benchmark_data = get_market_data(
             benchmark_symbol,
@@ -130,17 +159,19 @@ def execute_scanner(
         main_benchmark_data = None
         benchmark_error = str(error)
 
-    sector_data = None
-
-    if sector_benchmark_symbol:
+    if sector_allowed:
         try:
             sector_data = get_market_data(
-                sector_benchmark_symbol,
+                configured_sector_benchmark,
                 fetch_start,
                 end_date,
                 "NSE",
             )
         except Exception as error:
+            sector_reason = (
+                "Sector benchmark data could not be fetched: "
+                + str(error)
+            )
             errors.append({
                 "Stock": "SECTOR INDEX",
                 "Reason": str(error),
@@ -185,6 +216,7 @@ def execute_scanner(
                         "End Date": main_comparison["end_date"],
                     })
 
+                    # Sector comparison only after membership guard passes.
                     if sector_data is not None:
                         sector_comparison = compare_on_common_dates(
                             stock_data=stock_data,
@@ -231,5 +263,9 @@ def execute_scanner(
         "windows": list(windows.keys()),
         "symbols": symbols,
         "exchange": exchange,
-        "sector_comparison_available": sector_data is not None,
-    }
+        "sector_comparison_available": (
+            sector_data is not None and bool(sector_results)
+        ),
+        "sector_comparison_reason": sector_reason,
+                    }
+    
