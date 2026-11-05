@@ -9,9 +9,14 @@ from data.providers.nse_index_downloader import download_index_history
 from data.yahoo_adapter import fetch_yahoo_history
 
 
-# Only index mappings supported by the current NSE downloader.
+# NSE historical index names supported by the downloader.
+# Yahoo ticker -> NSE indexType
 NSE_INDEX_SYMBOLS = {
     "^NSEI": "NIFTY 50",
+    "^NSMIDCP": "NIFTY NEXT 50",
+    "^CNX100": "NIFTY 100",
+    "^CNX200": "NIFTY 200",
+    "^CRSLDX": "NIFTY 500",
     "^CNXFMCG": "NIFTY FMCG",
 }
 
@@ -145,15 +150,21 @@ def fetch_market_history(
     exchange="NSE",
 ):
     """
-    Fetch data using NSE Primary and Yahoo Secondary.
+    Fetch market data using NSE Primary and Yahoo Secondary.
 
-    Supported NSE primary data:
+    NSE Primary:
     - NSE equity symbols
     - NIFTY 50
+    - NIFTY NEXT 50
+    - NIFTY 100
+    - NIFTY 200
+    - NIFTY 500
     - NIFTY FMCG
 
-    Unsupported NSE indexes use Yahoo Secondary.
-    BSE is rejected.
+    Yahoo is used only when NSE Primary fails or the interval
+    is unsupported by the NSE downloader.
+
+    BSE scanning remains disabled.
     """
 
     if not isinstance(symbol, str) or not symbol.strip():
@@ -251,4 +262,3 @@ def fetch_market_history(
             f"Yahoo Secondary failed: "
             f"{type(yahoo_error).__name__}: {yahoo_error}"
         ) from yahoo_error
-  
