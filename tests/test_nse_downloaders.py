@@ -7,8 +7,10 @@ from data.providers import nse_index_downloader
 
 class FakeResponse:
 
-    def __init__(self, records):
-        self.records = records
+    def __init__(self, records=None, text="", content_type="text/csv"):
+        self.records = records or []
+        self.text = text
+        self.headers = {"content-type": content_type}
 
     def raise_for_status(self):
         pass
@@ -19,8 +21,8 @@ class FakeResponse:
 
 class FakeSession:
 
-    def __init__(self, records=None):
-        self.response = FakeResponse(records or [])
+    def __init__(self, response=None):
+        self.response = response or FakeResponse()
         self.headers = {}
         self.calls = []
 
@@ -29,15 +31,17 @@ class FakeSession:
         return self.response
 
 
-def equity_record(trading_date):
-    return {
-        "CH_TIMESTAMP": trading_date,
-        "CH_OPENING_PRICE": 100,
-        "CH_TRADE_HIGH_PRICE": 105,
-        "CH_TRADE_LOW_PRICE": 99,
-        "CH_CLOSING_PRICE": 104,
-        "CH_TOT_TRADED_QTY": 1000,
-    }
+def equity_csv(dates):
+    rows = [
+        "Date,Symbol,Series,Open Price,High Price,Low Price,Close Price,Total Traded Quantity"
+    ]
+
+    for trading_date in dates:
+        rows.append(
+            f"{trading_date},MARICO,EQ,100,105,99,104,1000"
+        )
+
+    return "\n".join(rows)
 
 
 def index_record(trading_date):
@@ -47,11 +51,11 @@ def index_record(trading_date):
         "EOD_HIGH_INDEX_VAL": 25100,
         "EOD_LOW_INDEX_VAL": 24900,
         "EOD_CLOSE_INDEX_VAL": 25050,
-        "EOD_VOLUME": 1000,
     }
 
 
 def test_chrome_impersonation_and_session_warmup(monkeypatch):
+
     created = {}
 
     def fake_session_factory(**kwargs):
@@ -78,33 +82,37 @@ def test_chrome_impersonation_and_session_warmup(monkeypatch):
     ]
 
     assert requested_urls == [
-        nse_downloader.NSE_BASE_URL,
-        nse_downloader.NSE_OPTION_CHAIN_URL,
+        nse_downloader.NSE_BOOTSTRAP_URL
     ]
 
     assert session.headers["Accept"] == (
         "application/json, text/plain, */*"
     )
 
-    assert session.headers["Referer"].endswith("/option-chain")
+    assert (
+        session.headers["Referer"]
+        == nse_downloader.NSE_BOOTSTRAP_URL
+    )
 
 
 def test_equity_downloader_rejects_duplicate_dates(monkeypatch):
 
-    records = [
-        equity_record("2026-10-05"),
-        equity_record("2026-10-05"),
-    ]
+    response = FakeResponse(
+        text=equity_csv([
+            "05-Oct-2026",
+            "05-Oct-2026",
+        ])
+    )
 
     monkeypatch.setattr(
         nse_downloader,
         "create_nse_session",
-        lambda: FakeSession(records),
+        lambda: FakeSession(response),
     )
 
     with pytest.raises(
         ValueError,
-        match="Duplicate dates found in NSE equity data",
+        match="Duplicate dates in NSE equity response",
     ):
         nse_downloader.download_equity_history(
             "MARICO",
@@ -115,19 +123,19 @@ def test_equity_downloader_rejects_duplicate_dates(monkeypatch):
 
 def test_equity_downloader_rejects_invalid_dates(monkeypatch):
 
-    records = [
-        equity_record("INVALID-DATE"),
-    ]
+    response = FakeResponse(
+        text=equity_csv(["INVALID-DATE"])
+    )
 
     monkeypatch.setattr(
         nse_downloader,
         "create_nse_session",
-        lambda: FakeSession(records),
+        lambda: FakeSession(response),
     )
 
     with pytest.raises(
         ValueError,
-        match="invalid or missing trading dates",
+        match="Invalid dates in NSE equity response",
     ):
         nse_downloader.download_equity_history(
             "MARICO",
@@ -138,20 +146,23 @@ def test_equity_downloader_rejects_invalid_dates(monkeypatch):
 
 def test_index_downloader_rejects_duplicate_dates(monkeypatch):
 
-    records = [
-        index_record("05-Oct-2026"),
-        index_record("05-Oct-2026"),
-    ]
+    response = FakeResponse(
+        records=[
+            index_record("05-Oct-2026"),
+            index_record("05-Oct-2026"),
+        ],
+        content_type="application/json",
+    )
 
     monkeypatch.setattr(
         nse_index_downloader,
         "create_nse_session",
-        lambda: FakeSession(records),
+        lambda: FakeSession(response),
     )
 
     with pytest.raises(
         ValueError,
-        match="Duplicate dates found in NSE index data",
+        match="Duplicate NSE index trading dates",
     ):
         nse_index_downloader.download_index_history(
             "NIFTY 50",
@@ -162,22 +173,85 @@ def test_index_downloader_rejects_duplicate_dates(monkeypatch):
 
 def test_index_downloader_rejects_invalid_dates(monkeypatch):
 
-    records = [
-        index_record("INVALID-DATE"),
-    ]
+    response = FakeResponse(
+        records=[
+            index_record("INVALID-DATE"),
+        ],
+        content_type="application/json",
+    )
 
     monkeypatch.setattr(
         nse_index_downloader,
         "create_nse_session",
-        lambda: FakeSession(records),
+        lambda: FakeSession(response),
     )
 
     with pytest.raises(
         ValueError,
-        match="invalid or missing trading dates",
+        match="Invalid NSE index trading dates",
     ):
         nse_index_downloader.download_index_history(
             "NIFTY 50",
             "2026-10-01",
             "2026-10-10",
         )
+
+
+def test_equity_downloader_uses_current_api(monkeypatch):
+
+    response = FakeResponse(
+        text=equity_csv(["05-Oct-2026"])
+    )
+
+    session = FakeSession(response)
+
+    monkeypatch.setattr(
+        nse_downloader,
+        "create_nse_session",
+        lambda: session,
+    )
+
+    result = nse_downloader.download_equity_history(
+        "MARICO",
+        "2026-10-01",
+        "2026-10-10",
+    )
+
+    assert len(result) == 1
+    assert result.iloc[0]["Close"] == 104
+
+    url, kwargs = session.calls[0]
+
+    assert url == nse_downloader.NSE_EQUITY_HISTORY_URL
+    assert kwargs["params"]["symbol"] == "MARICO"
+
+
+def test_index_downloader_uses_current_api(monkeypatch):
+
+    response = FakeResponse(
+        records=[index_record("05-Oct-2026")],
+        content_type="application/json",
+    )
+
+    session = FakeSession(response)
+
+    monkeypatch.setattr(
+        nse_index_downloader,
+        "create_nse_session",
+        lambda: session,
+    )
+
+    result = nse_index_downloader.download_index_history(
+        "NIFTY 50",
+        "2026-10-01",
+        "2026-10-10",
+    )
+
+    assert len(result) == 1
+    assert result.iloc[0]["Source"] == "NSE"
+    assert result.iloc[0]["Close"] == 25050
+
+    url, kwargs = session.calls[0]
+
+    assert url == nse_index_downloader.NSE_INDEX_URL
+    assert kwargs["params"]["indexType"] == "NIFTY 50"
