@@ -85,11 +85,33 @@ def load_and_normalize(path):
     if "Volume" not in df.columns:
         df["Volume"] = pd.NA
 
-    df["Date"] = pd.to_datetime(
-        df["Date"],
+    # FIX: Parse ISO dates separately to avoid dayfirst warning.
+    date_text = df["Date"].astype("string").str.strip()
+
+    iso_mask = date_text.str.match(
+        r"^\d{4}-\d{2}-\d{2}(?:[ T].*)?$",
+        na=False,
+    )
+
+    parsed_dates = pd.Series(
+        pd.NaT,
+        index=df.index,
+        dtype="datetime64[ns]",
+    )
+
+    parsed_dates.loc[iso_mask] = pd.to_datetime(
+        date_text.loc[iso_mask],
+        errors="coerce",
+        format="ISO8601",
+    )
+
+    parsed_dates.loc[~iso_mask] = pd.to_datetime(
+        date_text.loc[~iso_mask],
         errors="coerce",
         dayfirst=True,
     )
+
+    df["Date"] = parsed_dates
 
     for column in OHLCV:
         df[column] = pd.to_numeric(
@@ -112,14 +134,6 @@ def load_and_normalize(path):
 
 
 def is_known_secondary_price_variance(row, instrument):
-    """
-    Recognize only the independently verified NIFTY 50
-    Yahoo secondary-source High difference on 2026-03-06.
-
-    NSE remains the authoritative primary source.
-    Global PRICE_TOLERANCE is not changed.
-    """
-
     if instrument != "NIFTY 50":
         return False
 
@@ -131,7 +145,6 @@ def is_known_secondary_price_variance(row, instrument):
     if row["Session_Status"] != "COMMON":
         return False
 
-    # All required OHLC values must be present.
     for column in PRICE_COLUMNS:
         if pd.isna(row[f"{column}_NSE"]):
             return False
@@ -142,7 +155,6 @@ def is_known_secondary_price_variance(row, instrument):
     nse_high = float(row["High_NSE"])
     yahoo_high = float(row["High_Yahoo"])
 
-    # Verified values: NSE 24700.80, Yahoo 24700.90.
     if round(nse_high, 2) != 24700.80:
         return False
 
@@ -152,7 +164,6 @@ def is_known_secondary_price_variance(row, instrument):
     if round(abs(nse_high - yahoo_high), 2) != 0.10:
         return False
 
-    # Open, Low and Close must remain within normal tolerance.
     for column in ["Open", "Low", "Close"]:
         difference = abs(
             float(row[f"{column}_NSE"])
@@ -213,7 +224,6 @@ def classify_session(row, instrument):
             "in one or both sources on this common date.",
         )
 
-    # Exact, independently verified secondary-source exception.
     if is_known_secondary_price_variance(row, instrument):
         return (
             "KNOWN_SECONDARY_PRICE_VARIANCE",
@@ -402,7 +412,6 @@ def compare_sources(nse, yahoo, instrument):
         ).sum()
     )
 
-    # Verified regular sessions are accepted exceptions too.
     expected_exceptions = (
         special_missing
         + regular_missing
@@ -481,7 +490,6 @@ def compare_sources(nse, yahoo, instrument):
         ),
     }
 
-    # NSE is the authoritative primary source.
     nse_ohlc_missing_mask = nse[PRICE_COLUMNS].isna().any(axis=1)
 
     nse_ohlc_invalid_mask = (
@@ -527,8 +535,6 @@ def compare_sources(nse, yahoo, instrument):
         and primary_invalid == 0
     )
 
-    # Only verified exceptions are accepted.
-    # Unknown session gaps and unresolved mismatches remain REVIEW.
     has_secondary_findings = (
         (nse_only + yahoo_only) > expected_exceptions
         or summary["ohlc_missing_sessions"] > 0
