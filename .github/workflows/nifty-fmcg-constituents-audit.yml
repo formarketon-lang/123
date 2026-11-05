@@ -1,0 +1,44 @@
+
+name: Nifty FMCG Constituents Integrity Audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fmcg-constituents-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run focused audit unit tests
+        run: |
+          python -m pytest -q tests/test_sector_constituents_audit.py
+
+      - name: Run live Nifty FMCG vs NSE MII audit
+        run: |
+          python -m scripts.run_sector_constituents_audit
+
+      - name: Upload constituent integrity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nifty-fmcg-constituents-integrity-audit
+          path: reports/sector_constituents/
+          if-no-files-found: warn
+          retention-days: 30
+          
