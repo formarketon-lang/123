@@ -1,15 +1,17 @@
+
 """
 TradeLab Pro - Relative Strength Page
 
 Select stocks from the verified NSE EQ universe,
 then run separate Main Index and audited Sector comparisons.
 
-Only sectors with configured official constituent sources
-are displayed as available sector selections.
+BSE scanner remains disabled until official BSE universe
+verification and a validated BSE data adapter are available.
 """
 
-import streamlit as st
 from datetime import date, timedelta
+
+import streamlit as st
 
 from data.universe import load_nse_universe
 from data.benchmark_mapping import (
@@ -26,6 +28,13 @@ SECTORS = [
     "None",
     "FMCG",
 ]
+
+
+BSE_DISABLED_MESSAGE = (
+    "BSE Scanner বন্ধ রাখা হয়েছে। "
+    "Official verified BSE Universe এবং validated BSE Data Adapter "
+    "প্রস্তুত না হওয়া পর্যন্ত BSE Stock Analysis চালানো যাবে না।"
+)
 
 
 @st.cache_data(ttl=21600, show_spinner=False)
@@ -49,8 +58,40 @@ def render_relative_strength_page():
         "Stock vs Main Index vs Audited Sector"
     )
 
-    # 1. Stock selection
-    st.subheader("1. Stock Selection")
+    # 1. Exchange selection
+    st.subheader("1. Exchange Selection")
+
+    exchange = st.selectbox(
+        "Select Exchange",
+        ["NSE", "BSE"],
+        key="rs_exchange",
+    )
+
+    # BSE FAIL-CLOSED UI GUARD
+    # Do not display manual symbols, benchmark controls,
+    # date controls, or Run button for BSE.
+    if exchange == "BSE":
+
+        # Hide any previously displayed result while BSE is selected.
+        st.session_state["rs_last_run"] = None
+
+        st.error(BSE_DISABLED_MESSAGE)
+
+        st.warning(
+            "BSE Universe Verification, Official ISIN Mapping এবং "
+            "BSE Data Adapter সম্পূর্ণভাবে যাচাই না হওয়া পর্যন্ত "
+            "এই Exchange নিষ্ক্রিয় থাকবে।"
+        )
+
+        st.info(
+            "বর্তমানে Relative Strength Scanner শুধু "
+            "Verified NSE EQ Universe-এর জন্য উপলব্ধ।"
+        )
+
+        return
+
+    # 2. Stock selection (NSE only)
+    st.subheader("2. Stock Selection")
 
     sector = st.selectbox(
         "Select Sector",
@@ -58,78 +99,67 @@ def render_relative_strength_page():
         key="rs_sector",
     )
 
-    exchange = st.selectbox(
-        "Exchange",
-        ["NSE", "BSE"],
-        key="rs_exchange",
-    )
-
     universe = None
     universe_symbols = []
+    selected_symbols = []
 
-    if exchange == "NSE":
-        refresh_col, info_col = st.columns([1, 2])
+    refresh_col, info_col = st.columns([1, 2])
 
-        with refresh_col:
-            if st.button(
-                "Refresh NSE Universe",
-                use_container_width=True,
-            ):
-                get_cached_nse_universe.clear()
+    with refresh_col:
+        if st.button(
+            "Refresh NSE Universe",
+            use_container_width=True,
+        ):
+            get_cached_nse_universe.clear()
 
-        try:
-            with st.spinner(
-                "Verified NSE EQ Universe লোড হচ্ছে..."
-            ):
-                universe = get_cached_nse_universe()
+    try:
+        with st.spinner(
+            "Verified NSE EQ Universe লোড হচ্ছে..."
+        ):
+            universe = get_cached_nse_universe()
 
-            eligible = universe[
-                (universe["Series"].astype("string").str.upper() == "EQ")
-                & universe["ISIN"].notna()
-            ].copy()
+        eligible = universe[
+            (universe["Series"].astype("string").str.upper() == "EQ")
+            & universe["ISIN"].notna()
+        ].copy()
 
-            universe_symbols = sorted(
-                eligible["Symbol"]
-                .dropna()
-                .astype(str)
-                .str.strip()
-                .str.upper()
-                .loc[lambda values: values != ""]
-                .unique()
-                .tolist()
-            )
-
-            with info_col:
-                st.metric(
-                    "Verified NSE EQ Securities",
-                    f"{len(universe_symbols):,}",
-                )
-
-            selected_symbols = st.multiselect(
-                "Select Stocks from NSE Universe",
-                options=universe_symbols,
-                default=[],
-                help=(
-                    "Symbol লিখে Search করুন এবং এক বা একাধিক Stock নির্বাচন করুন।"
-                ),
-                key="rs_universe_symbols",
-            )
-
-        except Exception as error:
-            selected_symbols = []
-            st.error(
-                "NSE Universe লোড করা যায়নি। "
-                "এই অবস্থায় NSE Scanner চালানো হবে না।"
-            )
-            st.caption(f"Technical detail: {error}")
-
-    else:
-        selected_symbols = []
-        st.info(
-            "BSE Universe Integration এখনো সম্পন্ন হয়নি। "
-            "BSE-এর জন্য Manual Symbol ব্যবহার করুন। "
-            "BSE Sector Comparison বর্তমানে unavailable।"
+        universe_symbols = sorted(
+            eligible["Symbol"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .loc[lambda values: values != ""]
+            .unique()
+            .tolist()
         )
+
+        with info_col:
+            st.metric(
+                "Verified NSE EQ Securities",
+                f"{len(universe_symbols):,}",
+            )
+
+        selected_symbols = st.multiselect(
+            "Select Stocks from NSE Universe",
+            options=universe_symbols,
+            default=[],
+            help=(
+                "Symbol লিখে Search করুন এবং এক বা একাধিক "
+                "Stock নির্বাচন করুন।"
+            ),
+            key="rs_universe_symbols",
+        )
+
+    except Exception as error:
+        selected_symbols = []
+
+        st.error(
+            "NSE Universe লোড করা যায়নি। "
+            "এই অবস্থায় NSE Scanner চালানো হবে না।"
+        )
+
+        st.caption(f"Technical detail: {error}")
 
     manual_symbols = st.text_area(
         "Manual Stock Symbols (Optional)",
@@ -141,16 +171,16 @@ def render_relative_strength_page():
         key="rs_symbols",
     )
 
-    if exchange == "NSE" and universe is not None:
+    if universe is not None:
         st.caption(
-            "Manual Symbol না দিলে উপরে নির্বাচন করা NSE Stocks বিশ্লেষণ হবে। "
-            "কোনো Stock নির্বাচন না করলে নির্বাচিত Sector-এর "
-            "live audited official membership ব্যবহার হবে।"
+            "Manual Symbol না দিলে উপরে নির্বাচন করা NSE Stocks "
+            "বিশ্লেষণ হবে। কোনো Stock নির্বাচন না করলে নির্বাচিত "
+            "Sector-এর live audited official membership ব্যবহার হবে।"
         )
 
-    # 2. Benchmark selection
+    # 3. Benchmark selection
     st.divider()
-    st.subheader("2. Benchmark Selection")
+    st.subheader("3. Benchmark Selection")
 
     benchmark_name = st.selectbox(
         "Main Benchmark Index",
@@ -165,10 +195,12 @@ def render_relative_strength_page():
             f"Configured Sector Benchmark: "
             f"{sector} ({sector_benchmark_symbol})"
         )
+
         st.caption(
             "Sector Comparison চালানোর আগে official constituent "
             "membership এবং NSE MII Symbol/ISIN audit যাচাই করা হবে।"
         )
+
     else:
         st.warning(
             "এই Sector-এর verified Index Mapping নেই। "
@@ -176,9 +208,9 @@ def render_relative_strength_page():
             "Main Index Comparison চলতে পারবে।"
         )
 
-    # 3. Return period
+    # 4. Return period
     st.divider()
-    st.subheader("3. Return Period")
+    st.subheader("4. Return Period")
 
     col1, col2 = st.columns(2)
 
@@ -208,7 +240,7 @@ def render_relative_strength_page():
         "আলাদাভাবে বিশ্লেষণ করা হবে।"
     )
 
-    # 4. Run scanner
+    # 5. Run scanner
     st.divider()
 
     run_button = st.button(
@@ -218,12 +250,13 @@ def render_relative_strength_page():
     )
 
     if run_button:
+
         if start_date >= end_date:
             st.error(
                 "Start Date অবশ্যই End Date-এর আগের হতে হবে।"
             )
 
-        elif exchange == "NSE" and universe is None:
+        elif universe is None:
             st.error(
                 "Verified NSE Universe পাওয়া যায়নি। "
                 "প্রথমে Universe Connection ঠিক করুন।"
@@ -232,12 +265,14 @@ def render_relative_strength_page():
         else:
             try:
                 with st.spinner(
-                    "Market Data সংগ্রহ এবং Relative Strength বিশ্লেষণ চলছে..."
+                    "Market Data সংগ্রহ এবং Relative Strength "
+                    "বিশ্লেষণ চলছে..."
                 ):
+
                     new_result = execute_scanner(
                         sector=sector,
                         manual_symbols=manual_symbols,
-                        exchange=exchange,
+                        exchange="NSE",
                         benchmark_name=benchmark_name,
                         sector_benchmark_symbol=sector_benchmark_symbol,
                         start_date=start_date,
@@ -250,7 +285,8 @@ def render_relative_strength_page():
                     st.session_state["rs_last_run"] = new_result
 
                 st.success(
-                    "Analysis সম্পন্ন। ফলাফল Session-এ সংরক্ষিত হয়েছে।"
+                    "Analysis সম্পন্ন। "
+                    "ফলাফল Session-এ সংরক্ষিত হয়েছে।"
                 )
 
             except Exception as error:
@@ -258,10 +294,11 @@ def render_relative_strength_page():
                     f"Scanner চালানো যায়নি: {error}"
                 )
 
-    # 5. Persistent results
+    # 6. Persistent results
     saved_result = st.session_state.get("rs_last_run")
 
     if saved_result is not None:
+
         st.divider()
         st.subheader("Last Successful Run")
 
@@ -274,7 +311,8 @@ def render_relative_strength_page():
 
     else:
         st.info(
-            "NSE Universe থেকে Stock নির্বাচন করুন অথবা Manual Symbol দিন। "
-            "অথবা FMCG নির্বাচন করে live audited membership ব্যবহার করুন। "
+            "NSE Universe থেকে Stock নির্বাচন করুন অথবা "
+            "Manual Symbol দিন। অথবা FMCG নির্বাচন করে "
+            "live audited membership ব্যবহার করুন। "
             "তারপর Run চাপুন।"
         )
