@@ -1,13 +1,12 @@
 """
 TradeLab Pro - Relative Strength Page
 
-Select stocks from the verified NSE EQ universe,
-then run separate Main Index and audited Sector comparisons.
-
+Verified NSE EQ universe with official AMFI Market Cap filtering.
+Separate Stock vs Main Index and Stock vs audited Sector comparisons.
 Supports standard and custom calendar-day return windows.
 
-BSE scanner remains disabled until official BSE universe
-verification and a validated BSE data adapter are available.
+BSE remains disabled until its official universe and validated
+data adapter are available.
 """
 
 from datetime import date, timedelta
@@ -15,6 +14,11 @@ from datetime import date, timedelta
 import streamlit as st
 
 from data.universe import load_nse_universe
+from data.market_cap import (
+    fetch_amfi_market_cap,
+    enrich_nse_universe_with_amfi,
+    filter_by_market_cap,
+)
 from data.benchmark_mapping import (
     MAIN_BENCHMARKS,
     get_sector_benchmark,
@@ -28,6 +32,12 @@ SECTORS = [
     "FMCG",
 ]
 
+MARKET_CAP_OPTIONS = [
+    "All Market Caps",
+    "Large Cap",
+    "Mid Cap",
+    "Small Cap",
+]
 
 BSE_DISABLED_MESSAGE = (
     "BSE Scanner বন্ধ রাখা হয়েছে। "
@@ -42,9 +52,18 @@ def get_cached_nse_universe():
     return load_nse_universe()
 
 
+@st.cache_data(ttl=21600, show_spinner=False)
+def get_cached_amfi_market_cap():
+    """Cache official AMFI half-yearly market-cap classification."""
+    return fetch_amfi_market_cap()
+
+
 def initialize_session():
     if "rs_last_run" not in st.session_state:
         st.session_state["rs_last_run"] = None
+
+    if "settings_market_cap" not in st.session_state:
+        st.session_state["settings_market_cap"] = "All Market Caps"
 
 
 def render_relative_strength_page():
@@ -66,7 +85,7 @@ def render_relative_strength_page():
         key="rs_exchange",
     )
 
-    # BSE FAIL-CLOSED UI GUARD
+    # BSE fail-closed guard
     if exchange == "BSE":
 
         st.session_state["rs_last_run"] = None
@@ -86,8 +105,40 @@ def render_relative_strength_page():
 
         return
 
-    # 2. Stock selection (NSE only)
-    st.subheader("2. Stock Selection")
+    # 2. Market Cap setting
+    st.subheader("2. Market Capitalization")
+
+    market_cap_filter = st.selectbox(
+        "Market Cap Filter",
+        MARKET_CAP_OPTIONS,
+        index=MARKET_CAP_OPTIONS.index(
+            st.session_state.get(
+                "settings_market_cap",
+                "All Market Caps",
+            )
+        )
+        if st.session_state.get(
+            "settings_market_cap",
+            "All Market Caps",
+        ) in MARKET_CAP_OPTIONS
+        else 0,
+        key="rs_market_cap_filter",
+        help=(
+            "AMFI-এর সর্বশেষ উপলব্ধ half-yearly classification "
+            "অনুযায়ী NSE stocks filter করা হবে।"
+        ),
+    )
+
+    # Settings page and scanner share the selected setting.
+    st.session_state["settings_market_cap"] = market_cap_filter
+
+    st.caption(
+        "AMFI classification half-yearly; এটি live daily market cap নয়। "
+        "শুধু ISIN এবং NSE Symbol উভয়টি মিলে গেলে stock eligible হবে।"
+    )
+
+    # 3. Stock selection
+    st.subheader("3. Stock Selection")
 
     sector = st.selectbox(
         "Select Sector",
@@ -96,6 +147,7 @@ def render_relative_strength_page():
     )
 
     universe = None
+    market_cap_universe = None
     universe_symbols = []
     selected_symbols = []
 
@@ -107,16 +159,56 @@ def render_relative_strength_page():
             use_container_width=True,
         ):
             get_cached_nse_universe.clear()
+            get_cached_amfi_market_cap.clear()
 
     try:
-        with st.spinner(
-            "Verified NSE EQ Universe লোড হচ্ছে..."
-        ):
+        with st.spinner("Verified NSE EQ Universe লোড হচ্ছে..."):
+
+            # Keep the complete NSE universe for sector membership audit.
             universe = get_cached_nse_universe()
 
-        eligible = universe[
-            (universe["Series"].astype("string").str.upper() == "EQ")
-            & universe["ISIN"].notna()
+        eligible = universe.copy()
+
+        # Apply official AMFI classification only when requested.
+        if market_cap_filter != "All Market Caps":
+
+            with st.spinner(
+                "Official AMFI Market Cap classification যাচাই হচ্ছে..."
+            ):
+
+                amfi_data = get_cached_amfi_market_cap()
+
+                market_cap_universe = enrich_nse_universe_with_amfi(
+                    universe,
+                    amfi_data,
+                )
+
+                eligible = filter_by_market_cap(
+                    market_cap_universe,
+                    market_cap_filter,
+                )
+
+            if eligible.empty:
+                raise ValueError(
+                    f"{market_cap_filter}-এ কোনো verified NSE EQ "
+                    "stock পাওয়া যায়নি।"
+                )
+
+            st.info(
+                f"AMFI Market Cap Filter: {market_cap_filter} | "
+                f"Verified Matches: {len(eligible):,}"
+            )
+
+        # Only verified NSE EQ rows with ISIN are selectable.
+        eligible = eligible[
+            (
+                eligible["Series"]
+                .astype("string")
+                .str.strip()
+                .str.upper()
+                == "EQ"
+            )
+            & eligible["ISIN"].notna()
         ].copy()
 
         universe_symbols = sorted(
@@ -132,7 +224,7 @@ def render_relative_strength_page():
 
         with info_col:
             st.metric(
-                "Verified NSE EQ Securities",
+                "Eligible NSE EQ Securities",
                 f"{len(universe_symbols):,}",
             )
 
@@ -148,11 +240,14 @@ def render_relative_strength_page():
         )
 
     except Exception as error:
+
+        universe = None
+        market_cap_universe = None
         selected_symbols = []
 
         st.error(
-            "NSE Universe লোড করা যায়নি। "
-            "এই অবস্থায় NSE Scanner চালানো হবে না।"
+            "NSE Universe অথবা Market Cap classification লোড "
+            "করা যায়নি। এই অবস্থায় Scanner চালানো হবে না।"
         )
 
         st.caption(f"Technical detail: {error}")
@@ -162,7 +257,9 @@ def render_relative_strength_page():
         placeholder="MARICO, RELIANCE, INFY",
         help=(
             "Manual Symbol দিলে সেটিই অগ্রাধিকার পাবে। "
-            "NSE Symbol অবশ্যই verified NSE EQ Universe-এ থাকতে হবে।"
+            "NSE Symbol অবশ্যই verified NSE EQ Universe-এ থাকতে হবে। "
+            "Market Cap filter সক্রিয় থাকলে নির্বাচিত category-তেও "
+            "থাকতে হবে।"
         ),
         key="rs_symbols",
     )
@@ -171,12 +268,13 @@ def render_relative_strength_page():
         st.caption(
             "Manual Symbol না দিলে উপরে নির্বাচন করা NSE Stocks "
             "বিশ্লেষণ হবে। কোনো Stock নির্বাচন না করলে নির্বাচিত "
-            "Sector-এর live audited official membership ব্যবহার হবে।"
+            "Sector-এর audited official membership থেকে Market Cap "
+            "অনুযায়ী eligible stocks নেওয়া হবে।"
         )
 
-    # 3. Benchmark selection
+    # 4. Benchmark selection
     st.divider()
-    st.subheader("3. Benchmark Selection")
+    st.subheader("4. Benchmark Selection")
 
     benchmark_name = st.selectbox(
         "Main Benchmark Index",
@@ -187,6 +285,7 @@ def render_relative_strength_page():
     sector_benchmark_symbol = get_sector_benchmark(sector)
 
     if sector_benchmark_symbol:
+
         st.success(
             f"Configured Sector Benchmark: "
             f"{sector} ({sector_benchmark_symbol})"
@@ -198,15 +297,16 @@ def render_relative_strength_page():
         )
 
     else:
+
         st.warning(
             "এই Sector-এর verified Index Mapping নেই। "
             "Sector Comparison unavailable থাকবে; "
             "Main Index Comparison চলতে পারবে।"
         )
 
-    # 4. Return period
+    # 5. Return period
     st.divider()
-    st.subheader("4. Return Period")
+    st.subheader("5. Return Period")
 
     col1, col2 = st.columns(2)
 
@@ -253,13 +353,15 @@ def render_relative_strength_page():
     )
 
     if include_custom_window:
+
         custom_token = f"CUSTOM_{int(custom_days)}D"
 
         if custom_token not in custom_windows:
             custom_windows.append(custom_token)
 
         st.info(
-            f"Custom Window সক্রিয়: {int(custom_days)} Calendar Days"
+            f"Custom Window সক্রিয়: "
+            f"{int(custom_days)} Calendar Days"
         )
 
     st.caption(
@@ -267,7 +369,7 @@ def render_relative_strength_page():
         "আলাদাভাবে বিশ্লেষণ করা হবে।"
     )
 
-    # 5. Run scanner
+    # 6. Run scanner
     st.divider()
 
     run_button = st.button(
@@ -279,18 +381,22 @@ def render_relative_strength_page():
     if run_button:
 
         if start_date >= end_date:
+
             st.error(
                 "Start Date অবশ্যই End Date-এর আগের হতে হবে।"
             )
 
         elif universe is None:
+
             st.error(
                 "Verified NSE Universe পাওয়া যায়নি। "
                 "প্রথমে Universe Connection ঠিক করুন।"
             )
 
         else:
+
             try:
+
                 with st.spinner(
                     "Market Data সংগ্রহ এবং Relative Strength "
                     "বিশ্লেষণ চলছে..."
@@ -307,21 +413,24 @@ def render_relative_strength_page():
                         custom_windows=custom_windows,
                         selected_symbols=selected_symbols,
                         universe=universe,
+                        market_cap_filter=market_cap_filter,
+                        market_cap_universe=market_cap_universe,
                     )
 
                     st.session_state["rs_last_run"] = new_result
 
                 st.success(
                     "Analysis সম্পন্ন। "
-                    "ফলাফল Session-এ সংরক্ষিত হয়েছে।"
+                    "ফলাফল Session-এ সংরক্ষণ করা হয়েছে।"
                 )
 
             except Exception as error:
+
                 st.error(
                     f"Scanner চালানো যায়নি: {error}"
                 )
 
-    # 6. Persistent results
+    # 7. Persistent results
     saved_result = st.session_state.get("rs_last_run")
 
     if saved_result is not None:
@@ -337,10 +446,10 @@ def render_relative_strength_page():
         display_results(saved_result)
 
     else:
+
         st.info(
             "NSE Universe থেকে Stock নির্বাচন করুন অথবা "
             "Manual Symbol দিন। অথবা FMCG নির্বাচন করে "
-            "live audited membership ব্যবহার করুন। "
+            "audited official membership ব্যবহার করুন। "
             "তারপর Run চাপুন।"
         )
-        
