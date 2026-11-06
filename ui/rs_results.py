@@ -309,5 +309,4 @@ def display_results(result):
     st.caption(
         "Excess Return = Stock Return − Benchmark Return. "
         "এটি percentage-point difference, ভবিষ্যৎ Return-এর পূর্বাভাস নয়।"
-        )
-        
+    )
