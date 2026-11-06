@@ -92,6 +92,7 @@ def resolve_yahoo_symbol(symbol: str, exchange: str) -> str:
         return symbol
 
     suffix = ".NS" if exchange == "NSE" else ".BO"
+
     return symbol + suffix
 
 
@@ -175,6 +176,58 @@ def _raise_diagnostic(
     raise error
 
 
+def _exclude_unfinished_daily_candle(
+    data: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Exclude today's potentially unfinished daily candle.
+
+    Only the current India trading date is excluded. Historical rows
+    with missing or invalid OHLCV values are not silently discarded;
+    they continue to the common schema validator and will fail there.
+    """
+
+    if "Date" not in data.columns:
+        raise ValueError(
+            "Yahoo response has no Date column."
+        )
+
+    parsed_dates = pd.to_datetime(
+        data["Date"],
+        errors="coerce",
+    )
+
+    if parsed_dates.isna().any():
+        raise ValueError(
+            "Yahoo response contains invalid dates."
+        )
+
+    if parsed_dates.dt.tz is not None:
+        session_dates = (
+            parsed_dates.dt
+            .tz_convert("Asia/Kolkata")
+            .dt.date
+        )
+    else:
+        session_dates = parsed_dates.dt.date
+
+    today_ist = pd.Timestamp.now(
+        tz="Asia/Kolkata"
+    ).date()
+
+    completed_rows = data.loc[
+        session_dates != today_ist
+    ].copy()
+
+    if completed_rows.empty:
+        raise ValueError(
+            "No completed daily candles returned by Yahoo. "
+            "The available daily row may still be in progress."
+        )
+
+    return completed_rows
+
+
 def fetch_yahoo_history(
     symbol: str,
     start_date,
@@ -197,7 +250,7 @@ def fetch_yahoo_history(
     symbol = symbol.strip().upper()
 
     if not symbol:
-        raise ValueError("Stock symbol must not be empty.")
+        raise ValueError("Symbol must not be empty.")
 
     if exchange not in {"NSE", "BSE"}:
         raise ValueError("Exchange must be NSE or BSE.")
@@ -211,6 +264,7 @@ def fetch_yahoo_history(
     try:
         start = pd.Timestamp(start_date)
         end = pd.Timestamp(end_date)
+
     except Exception as error:
         raise ValueError(
             f"Invalid date input: {error}"
@@ -246,6 +300,7 @@ def fetch_yahoo_history(
             start=start,
             interval=interval,
         )
+
     except ValueError as error:
         _raise_diagnostic(
             error_class=YahooDataUnavailableError,
@@ -276,6 +331,7 @@ def fetch_yahoo_history(
             progress=False,
             threads=False,
         )
+
     except Exception as error:
         _raise_diagnostic(
             error_class=YahooDownloadError,
@@ -323,12 +379,19 @@ def fetch_yahoo_history(
         ]
 
         if "Datetime" in data.columns and "Date" not in data.columns:
-            data = data.rename(columns={"Datetime": "Date"})
+            data = data.rename(
+                columns={"Datetime": "Date"}
+            )
 
         if "Date" not in data.columns:
             raise ValueError(
                 "Yahoo Finance response has no Date column."
             )
+
+        # Exclude only today's unfinished daily candle.
+        # Do not remove historical rows with missing OHLCV values.
+        if interval == "1d":
+            data = _exclude_unfinished_daily_candle(data)
 
         # 8. COMMON DATA VALIDATION
 
@@ -389,5 +452,3 @@ def fetch_yahoo_history(
     # 10. FINAL OUTPUT
 
     return result.reset_index(drop=True)
-
-
