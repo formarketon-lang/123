@@ -1,3 +1,4 @@
+
 """Yahoo Finance historical market-data adapter."""
 
 import pandas as pd
@@ -182,15 +183,11 @@ def _exclude_unfinished_daily_candle(
     """
     Exclude today's potentially unfinished daily candle.
 
-    Only the current India trading date is excluded. Historical rows
-    with missing or invalid OHLCV values are not silently discarded;
-    they continue to the common schema validator and will fail there.
+    Historical rows are not silently discarded.
     """
 
     if "Date" not in data.columns:
-        raise ValueError(
-            "Yahoo response has no Date column."
-        )
+        raise ValueError("Yahoo response has no Date column.")
 
     parsed_dates = pd.to_datetime(
         data["Date"],
@@ -198,9 +195,7 @@ def _exclude_unfinished_daily_candle(
     )
 
     if parsed_dates.isna().any():
-        raise ValueError(
-            "Yahoo response contains invalid dates."
-        )
+        raise ValueError("Yahoo response contains invalid dates.")
 
     if parsed_dates.dt.tz is not None:
         session_dates = (
@@ -226,6 +221,56 @@ def _exclude_unfinished_daily_candle(
         )
 
     return completed_rows
+
+
+def _exclude_trailing_incomplete_daily_rows(
+    data: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Remove only incomplete trailing daily rows.
+
+    Missing OHLC values inside historical data remain a
+    validation failure. Only rows after the last complete
+    OHLC candle are excluded.
+    """
+
+    required = ["Open", "High", "Low", "Close"]
+
+    missing = [
+        column for column in required
+        if column not in data.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            "Yahoo daily data is missing columns: "
+            + ", ".join(missing)
+        )
+
+    numeric = data[required].apply(
+        pd.to_numeric,
+        errors="coerce",
+    )
+
+    complete = numeric.notna().all(axis=1)
+
+    if not complete.any():
+        raise ValueError(
+            "Yahoo returned no complete OHLC daily candle."
+        )
+
+    last_complete_position = (
+        complete.to_numpy().nonzero()[0][-1]
+    )
+
+    # Do not silently remove missing historical observations.
+    if not complete.iloc[:last_complete_position + 1].all():
+        raise ValueError(
+            "Yahoo returned missing OHLC values inside "
+            "historical daily data."
+        )
+
+    return data.iloc[:last_complete_position + 1].copy()
 
 
 def fetch_yahoo_history(
@@ -368,7 +413,7 @@ def fetch_yahoo_history(
             ),
         )
 
-    # 7. RESPONSE NORMALIZATION
+    # 7. RESPONSE NORMALIZATION AND VALIDATION
 
     try:
         data = normalize_yahoo_columns(data)
@@ -388,13 +433,18 @@ def fetch_yahoo_history(
                 "Yahoo Finance response has no Date column."
             )
 
-        # Exclude only today's unfinished daily candle.
-        # Do not remove historical rows with missing OHLCV values.
+        # Daily data only:
+        # 1. Exclude today's unfinished candle.
+        # 2. Exclude incomplete trailing OHLC rows.
+        # 3. Preserve historical missing values as validation errors.
         if interval == "1d":
             data = _exclude_unfinished_daily_candle(data)
 
-        # 8. COMMON DATA VALIDATION
+            data = _exclude_trailing_incomplete_daily_rows(
+                data
+            )
 
+        # Common schema validation.
         standardized = standardize_ohlcv(
             data=data,
             symbol=symbol,
@@ -420,7 +470,7 @@ def fetch_yahoo_history(
             ),
         )
 
-    # 9. PRESERVE EXISTING RS ENGINE INTERFACE
+    # 8. PRESERVE EXISTING RS ENGINE INTERFACE
 
     result = standardized[REQUIRED_COLUMNS].copy()
 
@@ -449,6 +499,7 @@ def fetch_yahoo_history(
             ),
         )
 
-    # 10. FINAL OUTPUT
+    # 9. FINAL OUTPUT
 
     return result.reset_index(drop=True)
+    
