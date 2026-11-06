@@ -1,7 +1,7 @@
-
 """
 TradeLab Pro - Relative Strength Page
 
+Settings-driven NSE Relative Strength Scanner.
 Verified NSE EQ universe with official AMFI Market Cap filtering.
 Separate Stock vs Main Index and audited Sector comparisons.
 Supports standard and custom calendar-day return windows.
@@ -21,29 +21,27 @@ from data.market_cap import (
     filter_by_market_cap,
 )
 from data.benchmark_mapping import (
-    MAIN_BENCHMARKS,
+    get_main_benchmarks,
     get_sector_benchmark,
 )
 from core.rs_scanner import execute_scanner
 from ui.rs_results import display_results
+from ui.settings import (
+    SECTORS as SETTINGS_SECTORS,
+    MARKET_CAP_OPTIONS,
+    EXCHANGE_OPTIONS,
+)
 
-
-SECTORS = [
-    "None",
-    "FMCG",
-]
-
-MARKET_CAP_OPTIONS = [
-    "All Market Caps",
-    "Large Cap",
-    "Mid Cap",
-    "Small Cap",
-]
 
 BSE_DISABLED_MESSAGE = (
     "BSE Scanner বন্ধ রাখা হয়েছে। "
     "Official verified BSE Universe এবং validated BSE Data Adapter "
     "প্রস্তুত না হওয়া পর্যন্ত BSE Stock Analysis চালানো যাবে না।"
+)
+
+UNSUPPORTED_EXCHANGE_MESSAGE = (
+    "বর্তমানে Relative Strength Scanner শুধু NSE সমর্থন করে। "
+    "BSE এবং Both নির্বাচন করলে Scanner চালানো হবে না।"
 )
 
 
@@ -60,11 +58,55 @@ def get_cached_amfi_market_cap():
 
 
 def initialize_session():
-    if "rs_last_run" not in st.session_state:
-        st.session_state["rs_last_run"] = None
+    """Initialize shared Settings and scanner session values."""
 
-    if "settings_market_cap" not in st.session_state:
-        st.session_state["settings_market_cap"] = "All Market Caps"
+    defaults = {
+        "rs_last_run": None,
+        "data_source": "NSE Primary + Yahoo Secondary",
+        "settings_exchange": "NSE",
+        "settings_start_date": None,
+        "settings_end_date": None,
+        "settings_benchmark": "Nifty 50",
+        "settings_sector": "All Sectors",
+        "settings_market_cap": "All Market Caps",
+        "rs_symbols": "",
+        "rs_universe_symbols": [],
+        "rs_windows": ["1M", "3M"],
+        "rs_custom_window_days": 45,
+        "rs_include_custom_window": False,
+    }
+
+    # Migrate previous scanner selections if shared Settings
+    # keys have not been initialized yet.
+    migrations = {
+        "settings_exchange": "rs_exchange",
+        "settings_benchmark": "rs_main_benchmark",
+        "settings_sector": "rs_sector",
+        "settings_start_date": "rs_start",
+        "settings_end_date": "rs_end",
+    }
+
+    for new_key, old_key in migrations.items():
+        if (
+            new_key not in st.session_state
+            and old_key in st.session_state
+        ):
+            st.session_state[new_key] = st.session_state[old_key]
+
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+    # If Settings dates are both empty, initialize a visible
+    # one-year default range for the Scanner.
+    if (
+        st.session_state["settings_start_date"] is None
+        and st.session_state["settings_end_date"] is None
+    ):
+        st.session_state["settings_start_date"] = (
+            date.today() - timedelta(days=365)
+        )
+        st.session_state["settings_end_date"] = date.today()
 
 
 def render_relative_strength_page():
@@ -73,67 +115,109 @@ def render_relative_strength_page():
 
     st.header("Relative Strength Scanner")
     st.caption(
-        "TradeLab Pro · Verified NSE Universe · "
-        "Stock vs Main Index vs Audited Sector"
+        "TradeLab Pro · Settings-driven configuration · "
+        "Verified NSE Universe"
     )
 
-    # 1. Exchange selection
+    # ---------------------------------------------------------
+    # 1. Shared Exchange setting
+    # ---------------------------------------------------------
+
     st.subheader("1. Exchange Selection")
 
     exchange = st.selectbox(
         "Select Exchange",
-        ["NSE", "BSE"],
-        key="rs_exchange",
+        EXCHANGE_OPTIONS,
+        key="settings_exchange",
     )
 
-    # BSE fail-closed guard
-    if exchange == "BSE":
+    if exchange != "NSE":
 
         st.session_state["rs_last_run"] = None
 
-        st.error(BSE_DISABLED_MESSAGE)
-
-        st.warning(
-            "BSE Universe Verification, Official ISIN Mapping এবং "
-            "BSE Data Adapter সম্পূর্ণভাবে যাচাই না হওয়া পর্যন্ত "
-            "এই Exchange নিষ্ক্রিয় থাকবে।"
+        st.error(
+            BSE_DISABLED_MESSAGE
+            if exchange == "BSE"
+            else UNSUPPORTED_EXCHANGE_MESSAGE
         )
 
-        st.info(
-            "বর্তমানে Relative Strength Scanner শুধু "
-            "Verified NSE EQ Universe-এর জন্য উপলব্ধ।"
+        st.warning(
+            "NSE ছাড়া অন্য Exchange-এর জন্য verified universe "
+            "এবং validated data adapter এখনো সক্রিয় নয়।"
         )
 
         return
 
-    # 2. Market Cap setting
+    st.success("NSE verified Scanner সক্রিয়।")
+
+    # ---------------------------------------------------------
+    # 2. Shared Market Cap setting
+    # ---------------------------------------------------------
+
     st.subheader("2. Market Capitalization")
 
-    # IMPORTANT:
-    # Settings page and Relative Strength use the SAME session key.
     market_cap_filter = st.selectbox(
         "Market Cap Filter",
         MARKET_CAP_OPTIONS,
         key="settings_market_cap",
         help=(
-            "AMFI-এর সর্বশেষ উপলব্ধ half-yearly classification "
-            "অনুযায়ী NSE stocks filter করা হবে।"
+            "Settings (Data) এবং Relative Strength একই "
+            "Market Cap setting ব্যবহার করছে।"
         ),
     )
 
     st.caption(
-        "AMFI classification half-yearly; এটি live daily market cap নয়। "
-        "শুধু ISIN এবং NSE Symbol উভয়টি মিলে গেলে stock eligible হবে।"
+        "AMFI-এর সর্বশেষ উপলব্ধ half-yearly classification "
+        "ব্যবহার করা হবে। ISIN এবং NSE Symbol verified match "
+        "না হলে Stock eligible হবে না।"
     )
 
-    # 3. Stock selection
-    st.subheader("3. Stock Selection")
+    # ---------------------------------------------------------
+    # 3. Shared Sector setting
+    # ---------------------------------------------------------
 
-    sector = st.selectbox(
+    st.subheader("3. Sector Selection")
+
+    sector_setting = st.selectbox(
         "Select Sector",
-        SECTORS,
-        key="rs_sector",
+        SETTINGS_SECTORS,
+        key="settings_sector",
     )
+
+    # All Sectors means no verified sector benchmark is selected.
+    sector = (
+        None
+        if sector_setting == "All Sectors"
+        else sector_setting
+    )
+
+    sector_benchmark_symbol = get_sector_benchmark(sector)
+
+    if sector_benchmark_symbol:
+
+        st.success(
+            f"Verified Sector Benchmark: "
+            f"{sector_setting} ({sector_benchmark_symbol})"
+        )
+
+        st.caption(
+            "Sector Comparison-এর আগে official constituent "
+            "membership এবং NSE MII Symbol/ISIN audit যাচাই হবে।"
+        )
+
+    else:
+
+        st.warning(
+            f"{sector_setting}-এর verified Sector Benchmark Mapping "
+            "নেই। Sector Comparison unavailable থাকবে। "
+            "Main Index Comparison চালানো যাবে।"
+        )
+
+    # ---------------------------------------------------------
+    # 4. Verified NSE universe
+    # ---------------------------------------------------------
+
+    st.subheader("4. Stock Selection")
 
     universe = None
     market_cap_universe = None
@@ -151,14 +235,12 @@ def render_relative_strength_page():
             get_cached_amfi_market_cap.clear()
 
     try:
-        with st.spinner("Verified NSE EQ Universe লোড হচ্ছে..."):
 
-            # Keep the complete NSE universe for sector membership audit.
+        with st.spinner("Verified NSE EQ Universe লোড হচ্ছে..."):
             universe = get_cached_nse_universe()
 
         eligible = universe.copy()
 
-        # Apply official AMFI classification only when requested.
         if market_cap_filter != "All Market Caps":
 
             with st.spinner(
@@ -180,7 +262,7 @@ def render_relative_strength_page():
             if eligible.empty:
                 raise ValueError(
                     f"{market_cap_filter}-এ কোনো verified NSE EQ "
-                    "stock পাওয়া যায়নি।"
+                    "Stock পাওয়া যায়নি।"
                 )
 
             st.info(
@@ -188,7 +270,6 @@ def render_relative_strength_page():
                 f"Verified Matches: {len(eligible):,}"
             )
 
-        # Only verified NSE EQ rows with ISIN are selectable.
         eligible = eligible[
             (
                 eligible["Series"]
@@ -222,8 +303,7 @@ def render_relative_strength_page():
             options=universe_symbols,
             default=[],
             help=(
-                "Symbol লিখে Search করুন এবং এক বা একাধিক "
-                "Stock নির্বাচন করুন।"
+                "এক বা একাধিক verified NSE Stock নির্বাচন করুন।"
             ),
             key="rs_universe_symbols",
         )
@@ -245,73 +325,81 @@ def render_relative_strength_page():
         "Manual Stock Symbols (Optional)",
         placeholder="MARICO, RELIANCE, INFY",
         help=(
-            "Manual Symbol দিলে সেটিই অগ্রাধিকার পাবে। "
-            "NSE Symbol অবশ্যই verified NSE EQ Universe-এ থাকতে হবে। "
-            "Market Cap filter সক্রিয় থাকলে নির্বাচিত category-তেও "
+            "Manual Symbol দিলে সেটি অগ্রাধিকার পাবে। "
+            "Symbol অবশ্যই verified NSE EQ Universe-এ থাকতে হবে। "
+            "Market Cap Filter সক্রিয় থাকলে নির্বাচিত category-তেও "
             "থাকতে হবে।"
         ),
         key="rs_symbols",
     )
 
-    if universe is not None:
-        st.caption(
-            "Manual Symbol না দিলে উপরে নির্বাচন করা NSE Stocks "
-            "বিশ্লেষণ হবে। কোনো Stock নির্বাচন না করলে নির্বাচিত "
-            "Sector-এর audited official membership থেকে Market Cap "
-            "অনুযায়ী eligible stocks নেওয়া হবে।"
-        )
+    # ---------------------------------------------------------
+    # 5. Shared Main Benchmark
+    # ---------------------------------------------------------
 
-    # 4. Benchmark selection
     st.divider()
-    st.subheader("4. Benchmark Selection")
+    st.subheader("5. Main Benchmark")
+
+    benchmarks = get_main_benchmarks()
+
+    if not benchmarks:
+        st.error("কোনো configured Main Benchmark পাওয়া যায়নি।")
+        return
+
+    if st.session_state["settings_benchmark"] not in benchmarks:
+        st.session_state["settings_benchmark"] = next(
+            iter(benchmarks)
+        )
 
     benchmark_name = st.selectbox(
         "Main Benchmark Index",
-        list(MAIN_BENCHMARKS.keys()),
-        key="rs_main_benchmark",
+        list(benchmarks.keys()),
+        key="settings_benchmark",
     )
 
-    sector_benchmark_symbol = get_sector_benchmark(sector)
+    st.caption(
+        f"Configured ticker: {benchmarks[benchmark_name]}"
+    )
 
-    if sector_benchmark_symbol:
+    # ---------------------------------------------------------
+    # 6. Shared Settings Date Range
+    # ---------------------------------------------------------
 
-        st.success(
-            f"Configured Sector Benchmark: "
-            f"{sector} ({sector_benchmark_symbol})"
-        )
-
-        st.caption(
-            "Sector Comparison চালানোর আগে official constituent "
-            "membership এবং NSE MII Symbol/ISIN audit যাচাই করা হবে।"
-        )
-
-    else:
-
-        st.warning(
-            "এই Sector-এর verified Index Mapping নেই। "
-            "Sector Comparison unavailable থাকবে; "
-            "Main Index Comparison চলতে পারবে।"
-        )
-
-    # 5. Return period
     st.divider()
-    st.subheader("5. Return Period")
+    st.subheader("6. Historical Date Range")
 
     col1, col2 = st.columns(2)
 
     with col1:
         start_date = st.date_input(
             "Start Date",
-            value=date.today() - timedelta(days=365),
-            key="rs_start",
+            value=st.session_state["settings_start_date"],
+            key="settings_start_date",
         )
 
     with col2:
         end_date = st.date_input(
             "End Date",
-            value=date.today(),
-            key="rs_end",
+            value=st.session_state["settings_end_date"],
+            key="settings_end_date",
         )
+
+    if start_date and end_date and start_date >= end_date:
+        st.error(
+            "Start Date অবশ্যই End Date-এর আগের হতে হবে।"
+        )
+
+    elif bool(start_date) != bool(end_date):
+        st.warning(
+            "Settings-এ Start Date এবং End Date দুটিই নির্বাচন করুন।"
+        )
+
+    # ---------------------------------------------------------
+    # 7. Return windows
+    # ---------------------------------------------------------
+
+    st.divider()
+    st.subheader("7. Return Period")
 
     custom_windows = st.multiselect(
         "Additional Return Windows",
@@ -320,8 +408,6 @@ def render_relative_strength_page():
         key="rs_windows",
     )
 
-    st.subheader("Custom Return Window")
-
     custom_days = st.number_input(
         "Custom Window (Calendar Days)",
         min_value=2,
@@ -329,10 +415,6 @@ def render_relative_strength_page():
         value=45,
         step=1,
         key="rs_custom_window_days",
-        help=(
-            "উদাহরণ: 45 দিলে শেষ তারিখ থেকে 45 Calendar Days-এর "
-            "Return Window তৈরি হবে।"
-        ),
     )
 
     include_custom_window = st.checkbox(
@@ -349,16 +431,33 @@ def render_relative_strength_page():
             custom_windows.append(custom_token)
 
         st.info(
-            f"Custom Window সক্রিয়: "
-            f"{int(custom_days)} Calendar Days"
+            f"Custom Window সক্রিয়: {int(custom_days)} Calendar Days"
         )
 
     st.caption(
-        "Selected Period, Standard Windows এবং সক্রিয় Custom Window "
+        "Selected Period, Standard Windows এবং Custom Window "
         "আলাদাভাবে বিশ্লেষণ করা হবে।"
     )
 
-    # 6. Run scanner
+    # ---------------------------------------------------------
+    # 8. Settings summary
+    # ---------------------------------------------------------
+
+    st.divider()
+    st.subheader("Active Scanner Configuration")
+
+    st.write(f"**Data Source:** {st.session_state['data_source']}")
+    st.write(f"**Exchange:** {exchange}")
+    st.write(f"**Market Cap:** {market_cap_filter}")
+    st.write(f"**Sector:** {sector_setting}")
+    st.write(f"**Main Benchmark:** {benchmark_name}")
+    st.write(f"**Start Date:** {start_date}")
+    st.write(f"**End Date:** {end_date}")
+
+    # ---------------------------------------------------------
+    # 9. Run scanner
+    # ---------------------------------------------------------
+
     st.divider()
 
     run_button = st.button(
@@ -369,7 +468,13 @@ def render_relative_strength_page():
 
     if run_button:
 
-        if start_date >= end_date:
+        if not start_date or not end_date:
+
+            st.error(
+                "Settings-এ সম্পূর্ণ Date Range নির্বাচন করুন।"
+            )
+
+        elif start_date >= end_date:
 
             st.error(
                 "Start Date অবশ্যই End Date-এর আগের হতে হবে।"
@@ -380,6 +485,19 @@ def render_relative_strength_page():
             st.error(
                 "Verified NSE Universe পাওয়া যায়নি। "
                 "প্রথমে Universe Connection ঠিক করুন।"
+            )
+
+        elif (
+            sector_setting != "FMCG"
+            and not manual_symbols.strip()
+            and not selected_symbols
+        ):
+
+            st.error(
+                "All Sectors অথবা Unverified Sector-এর জন্য "
+                "এক বা একাধিক Stock নির্বাচন করুন। "
+                "শুধু verified FMCG membership থেকে automatic "
+                "sector scan করা যাবে।"
             )
 
         else:
@@ -394,7 +512,7 @@ def render_relative_strength_page():
                     new_result = execute_scanner(
                         sector=sector,
                         manual_symbols=manual_symbols,
-                        exchange="NSE",
+                        exchange=exchange,
                         benchmark_name=benchmark_name,
                         sector_benchmark_symbol=sector_benchmark_symbol,
                         start_date=start_date,
@@ -419,7 +537,10 @@ def render_relative_strength_page():
                     f"Scanner চালানো যায়নি: {error}"
                 )
 
-    # 7. Persistent results
+    # ---------------------------------------------------------
+    # 10. Persistent results
+    # ---------------------------------------------------------
+
     saved_result = st.session_state.get("rs_last_run")
 
     if saved_result is not None:
@@ -437,8 +558,7 @@ def render_relative_strength_page():
     else:
 
         st.info(
-            "NSE Universe থেকে Stock নির্বাচন করুন অথবা "
-            "Manual Symbol দিন। অথবা FMCG নির্বাচন করে "
+            "Verified NSE Stock নির্বাচন করুন অথবা FMCG-এর "
             "audited official membership ব্যবহার করুন। "
             "তারপর Run চাপুন।"
         )
