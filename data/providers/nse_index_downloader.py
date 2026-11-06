@@ -1,6 +1,6 @@
 """NSE historical index downloader using current NSE API."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -39,21 +39,31 @@ RECORD_KEYS = (
 
 def _extract_index_records(payload, index_name):
     """Extract index records from supported NSE response structures."""
+
     if not isinstance(payload, dict):
         raise ValueError(
             f"Invalid NSE index response for {index_name}: "
             "expected a JSON object."
         )
 
+    if payload.get("error") or payload.get("showMessage"):
+        raise ValueError(
+            f"NSE index API rejected {index_name}: "
+            f"error={payload.get('error')!r}; "
+            f"message={payload.get('showMessage')!r}"
+        )
+
     data = payload.get("data")
 
     if isinstance(data, list):
         records = data
+
     elif isinstance(data, dict):
         records = None
 
         for key in RECORD_KEYS:
             candidate = data.get(key)
+
             if isinstance(candidate, list):
                 records = candidate
                 break
@@ -63,6 +73,7 @@ def _extract_index_records(payload, index_name):
                 f"NSE index response has no recognized records list "
                 f"for {index_name}. data keys: {list(data.keys())}"
             )
+
     else:
         raise ValueError(
             f"NSE index response has invalid data structure for "
@@ -78,6 +89,8 @@ def _extract_index_records(payload, index_name):
 
 
 def _clean_index_numeric(series, column, index_name):
+    """Convert NSE index numeric values without hiding invalid data."""
+
     cleaned = (
         series.astype("string")
         .str.replace(",", "", regex=False)
@@ -90,7 +103,13 @@ def _clean_index_numeric(series, column, index_name):
     converted = pd.to_numeric(cleaned, errors="coerce")
 
     if converted.isna().any():
-        samples = series.loc[converted.isna()].astype(str).head(5).tolist()
+        samples = (
+            series.loc[converted.isna()]
+            .astype(str)
+            .head(5)
+            .tolist()
+        )
+
         raise ValueError(
             f"Invalid NSE index {column} values for {index_name}. "
             f"Samples: {samples}"
@@ -99,25 +118,18 @@ def _clean_index_numeric(series, column, index_name):
     return converted
 
 
-def download_index_history(index_name, start_date, end_date):
-    """Download official NSE historical index OHLC."""
-    start = datetime.strptime(start_date, "%Y-%m-%d")
-    end = datetime.strptime(end_date, "%Y-%m-%d")
-
-    if start > end:
-        raise ValueError("Start date cannot be after end date.")
-
-    index_name = index_name.strip().upper()
-
-    if index_name not in INDEX_ALIASES:
-        raise ValueError(f"Unsupported NSE index: {index_name}")
-
-    session = create_nse_session()
+def _request_index_records(
+    session,
+    index_name,
+    chunk_start,
+    chunk_end,
+):
+    """Request one date range from the NSE historical index API."""
 
     params = {
         "indexType": INDEX_ALIASES[index_name],
-        "from": start.strftime("%d-%m-%Y"),
-        "to": end.strftime("%d-%m-%Y"),
+        "from": chunk_start.strftime("%d-%m-%Y"),
+        "to": chunk_end.strftime("%d-%m-%Y"),
     }
 
     response = session.get(
@@ -131,25 +143,76 @@ def download_index_history(index_name, start_date, end_date):
         },
         timeout=60,
     )
+
     response.raise_for_status()
 
     try:
         payload = response.json()
+
     except ValueError as exc:
         content_type = response.headers.get(
-            "content-type", "unknown"
+            "content-type",
+            "unknown",
         )
         preview = response.text[:160].replace("\n", " ")
+
         raise ValueError(
-            "NSE index API returned non-JSON response. "
+            "NSE index API returned a non-JSON response. "
             f"Content-Type: {content_type}. "
             f"Response preview: {preview}"
         ) from exc
 
-    records = _extract_index_records(payload, index_name)
-    raw = pd.DataFrame(records)
+    return _extract_index_records(payload, index_name)
+
+
+def download_index_history(index_name, start_date, end_date):
+    """Download official NSE historical index OHLC."""
+
+    start = datetime.strptime(start_date, "%Y-%m-%d")
+    end = datetime.strptime(end_date, "%Y-%m-%d")
+
+    if start > end:
+        raise ValueError("Start date cannot be after end date.")
+
+    index_name = index_name.strip().upper()
+
+    if index_name not in INDEX_ALIASES:
+        raise ValueError(f"Unsupported NSE index: {index_name}")
+
+    session = create_nse_session()
+
+    # Keep each NSE request within a maximum 365-calendar-day window.
+    # This avoids sending a multi-year range in one API request.
+    all_records = []
+    chunk_start = start
+
+    while chunk_start <= end:
+        chunk_end = min(
+            chunk_start + timedelta(days=364),
+            end,
+        )
+
+        chunk_records = _request_index_records(
+            session=session,
+            index_name=index_name,
+            chunk_start=chunk_start,
+            chunk_end=chunk_end,
+        )
+
+        all_records.extend(chunk_records)
+
+        chunk_start = chunk_end + timedelta(days=1)
+
+    if not all_records:
+        raise ValueError(
+            f"No NSE index records returned for {index_name} "
+            f"between {start.date()} and {end.date()}."
+        )
+
+    raw = pd.DataFrame(all_records)
 
     missing = set(INDEX_COLUMNS.values()).difference(raw.columns)
+
     if missing:
         raise ValueError(
             f"NSE index response missing fields for {index_name}: "
@@ -176,15 +239,19 @@ def download_index_history(index_name, start_date, end_date):
 
     for column in ["Open", "High", "Low", "Close"]:
         output[column] = _clean_index_numeric(
-            output[column], column, index_name
+            output[column],
+            column,
+            index_name,
         )
+
         if (output[column] <= 0).any():
             raise ValueError(
                 f"NSE index {column} must be positive."
             )
 
     if not output["Date"].between(
-        pd.Timestamp(start), pd.Timestamp(end)
+        pd.Timestamp(start),
+        pd.Timestamp(end),
     ).all():
         raise ValueError(
             "NSE index response contains dates outside requested range."
@@ -201,9 +268,15 @@ def download_index_history(index_name, start_date, end_date):
     if invalid_high.any() or invalid_low.any():
         raise ValueError("Invalid NSE index OHLC candles.")
 
-    # NSE index volume is not supplied or fabricated.
+    # NSE index volume is not supplied. Do not fabricate it.
     output["Volume"] = pd.NA
-    output = output.sort_values("Date").reset_index(drop=True)
+
+    output = (
+        output
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
     output["Source"] = "NSE"
     output["Symbol"] = index_name
 
@@ -212,6 +285,7 @@ def download_index_history(index_name, start_date, end_date):
 
 def save_nse_index_csv(df, index_name):
     """Save official NSE index data."""
+
     output_dir = Path("data/raw/nse")
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -219,5 +293,5 @@ def save_nse_index_csv(df, index_name):
     output_file = output_dir / f"{safe_name}_nse.csv"
 
     df.to_csv(output_file, index=False)
+
     return str(output_file)
-    
