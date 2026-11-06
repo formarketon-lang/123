@@ -1,9 +1,10 @@
-
 """
 TradeLab Pro - Relative Strength Page
 
 Select stocks from the verified NSE EQ universe,
 then run separate Main Index and audited Sector comparisons.
+
+Supports standard and custom calendar-day return windows.
 
 BSE scanner remains disabled until official BSE universe
 verification and a validated BSE data adapter are available.
@@ -22,8 +23,6 @@ from core.rs_scanner import execute_scanner
 from ui.rs_results import display_results
 
 
-# Only FMCG currently has an official constituent source
-# configured for live NSE MII membership auditing.
 SECTORS = [
     "None",
     "FMCG",
@@ -68,11 +67,8 @@ def render_relative_strength_page():
     )
 
     # BSE FAIL-CLOSED UI GUARD
-    # Do not display manual symbols, benchmark controls,
-    # date controls, or Run button for BSE.
     if exchange == "BSE":
 
-        # Hide any previously displayed result while BSE is selected.
         st.session_state["rs_last_run"] = None
 
         st.error(BSE_DISABLED_MESSAGE)
@@ -235,8 +231,39 @@ def render_relative_strength_page():
         key="rs_windows",
     )
 
+    st.subheader("Custom Return Window")
+
+    custom_days = st.number_input(
+        "Custom Window (Calendar Days)",
+        min_value=2,
+        max_value=3650,
+        value=45,
+        step=1,
+        key="rs_custom_window_days",
+        help=(
+            "উদাহরণ: 45 দিলে শেষ তারিখ থেকে 45 Calendar Days-এর "
+            "Return Window তৈরি হবে।"
+        ),
+    )
+
+    include_custom_window = st.checkbox(
+        "Include Custom Window",
+        value=False,
+        key="rs_include_custom_window",
+    )
+
+    if include_custom_window:
+        custom_token = f"CUSTOM_{int(custom_days)}D"
+
+        if custom_token not in custom_windows:
+            custom_windows.append(custom_token)
+
+        st.info(
+            f"Custom Window সক্রিয়: {int(custom_days)} Calendar Days"
+        )
+
     st.caption(
-        "Selected Period এবং নির্বাচিত অতিরিক্ত Windows "
+        "Selected Period, Standard Windows এবং সক্রিয় Custom Window "
         "আলাদাভাবে বিশ্লেষণ করা হবে।"
     )
 
@@ -316,3 +343,4 @@ def render_relative_strength_page():
             "live audited membership ব্যবহার করুন। "
             "তারপর Run চাপুন।"
         )
+        
