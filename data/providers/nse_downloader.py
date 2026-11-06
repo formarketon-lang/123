@@ -1,4 +1,3 @@
-
 """NSE historical equity downloader using current NSE historical API."""
 
 from datetime import datetime
@@ -9,11 +8,7 @@ import pandas as pd
 from curl_cffi import requests
 
 NSE_BASE_URL = "https://www.nseindia.com"
-
-NSE_BOOTSTRAP_URL = (
-    f"{NSE_BASE_URL}/report-detail/eq_security"
-)
-
+NSE_BOOTSTRAP_URL = f"{NSE_BASE_URL}/report-detail/eq_security"
 NSE_EQUITY_HISTORY_URL = (
     f"{NSE_BASE_URL}/api/historicalOR/"
     "generateSecurityWiseHistoricalData"
@@ -39,9 +34,7 @@ HEADERS = {
 
 def create_nse_session():
     """Initialize an NSE session using the historical reports page."""
-
     session = requests.Session(impersonate="chrome")
-
     session.headers.update(HEADERS)
 
     response = session.get(
@@ -52,17 +45,37 @@ def create_nse_session():
         },
         timeout=30,
     )
-
     response.raise_for_status()
-
     session.headers.update(HEADERS)
-
     return session
+
+
+def _to_numeric_clean(series, column):
+    """Convert NSE numeric strings safely without weakening validation."""
+    cleaned = (
+        series.astype("string")
+        .str.replace(",", "", regex=False)
+        .str.replace("\u00a0", "", regex=False)
+        .str.replace(" ", "", regex=False)
+        .str.strip()
+        .replace("", pd.NA)
+    )
+
+    converted = pd.to_numeric(cleaned, errors="coerce")
+
+    invalid = converted.isna()
+    if invalid.any():
+        samples = series.loc[invalid].astype(str).head(5).tolist()
+        raise ValueError(
+            f"Missing or invalid NSE {column} values. "
+            f"Invalid samples: {samples}"
+        )
+
+    return converted
 
 
 def _parse_equity_csv(response, symbol):
     """Parse and validate NSE's official historical CSV."""
-
     content_type = response.headers.get("content-type", "").lower()
     content = response.text
 
@@ -87,10 +100,7 @@ def _parse_equity_csv(response, symbol):
             f"Unable to parse NSE equity CSV: {exc}"
         ) from exc
 
-    raw.columns = [
-        str(column).strip()
-        for column in raw.columns
-    ]
+    raw.columns = [str(column).strip() for column in raw.columns]
 
     aliases = {
         "Date": ["Date", "CH_TIMESTAMP"],
@@ -98,9 +108,7 @@ def _parse_equity_csv(response, symbol):
         "High": ["High Price", "High", "CH_TRADE_HIGH_PRICE"],
         "Low": ["Low Price", "Low", "CH_TRADE_LOW_PRICE"],
         "Close": [
-            "Close Price",
-            "Close",
-            "CH_CLOSING_PRICE",
+            "Close Price", "Close", "CH_CLOSING_PRICE"
         ],
         "Volume": [
             "Total Traded Quantity",
@@ -110,28 +118,23 @@ def _parse_equity_csv(response, symbol):
     }
 
     selected = {}
-
     for standard, candidates in aliases.items():
         found = next(
             (name for name in candidates if name in raw.columns),
             None,
         )
-
         if found is None:
             raise ValueError(
                 f"NSE equity CSV missing {standard}. "
                 f"Received columns: {list(raw.columns)}"
             )
-
         selected[standard] = raw[found]
 
     result = pd.DataFrame(selected)
 
-    # The ALL series response can contain non-EQ series.
     if "Series" in raw.columns:
         equity_mask = (
-            raw["Series"].astype(str).str.strip().str.upper()
-            == "EQ"
+            raw["Series"].astype(str).str.strip().str.upper() == "EQ"
         )
         result = result.loc[equity_mask].copy()
 
@@ -164,27 +167,33 @@ def _parse_equity_csv(response, symbol):
         raise ValueError("Duplicate dates in NSE equity response.")
 
     for column in ["Open", "High", "Low", "Close", "Volume"]:
-        result[column] = pd.to_numeric(
-            result[column],
-            errors="coerce",
-        )
+        result[column] = _to_numeric_clean(result[column], column)
 
-        if result[column].isna().any():
+    for column in ["Open", "High", "Low", "Close"]:
+        if (result[column] <= 0).any():
             raise ValueError(
-                f"Missing or invalid NSE {column} values."
+                f"NSE equity {column} values must be positive."
             )
 
     if (result["Volume"] < 0).any():
         raise ValueError("Negative NSE equity volume detected.")
 
-    result = result.sort_values("Date").reset_index(drop=True)
+    invalid_high = result["High"] < result[
+        ["Open", "Low", "Close"]
+    ].max(axis=1)
 
-    return result
+    invalid_low = result["Low"] > result[
+        ["Open", "High", "Close"]
+    ].min(axis=1)
+
+    if invalid_high.any() or invalid_low.any():
+        raise ValueError("Invalid NSE equity OHLC candles.")
+
+    return result.sort_values("Date").reset_index(drop=True)
 
 
 def download_equity_history(symbol, start_date, end_date):
     """Download NSE official historical equity OHLCV."""
-
     if not isinstance(symbol, str) or not symbol.strip():
         raise ValueError("A valid NSE equity symbol is required.")
 
@@ -195,7 +204,6 @@ def download_equity_history(symbol, start_date, end_date):
         raise ValueError("Start date cannot be after end date.")
 
     symbol = symbol.strip().upper()
-
     session = create_nse_session()
 
     params = {
@@ -216,14 +224,12 @@ def download_equity_history(symbol, start_date, end_date):
         },
         timeout=60,
     )
-
     response.raise_for_status()
 
     result = _parse_equity_csv(response, symbol)
 
     if not result["Date"].between(
-        pd.Timestamp(start),
-        pd.Timestamp(end),
+        pd.Timestamp(start), pd.Timestamp(end)
     ).all():
         raise ValueError(
             "NSE equity response contains dates outside requested range."
@@ -234,12 +240,10 @@ def download_equity_history(symbol, start_date, end_date):
 
 def save_nse_csv(df, symbol):
     """Save NSE raw equity data."""
-
     output_dir = Path("data/raw/nse")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     output_file = output_dir / f"{symbol.upper()}_nse.csv"
-
     df.to_csv(output_file, index=False)
-
     return str(output_file)
+    
