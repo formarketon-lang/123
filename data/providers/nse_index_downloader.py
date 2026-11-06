@@ -1,4 +1,3 @@
-
 """NSE historical index downloader using current NSE API."""
 
 from datetime import datetime
@@ -11,9 +10,7 @@ from data.providers.nse_downloader import (
     create_nse_session,
 )
 
-NSE_INDEX_URL = (
-    f"{NSE_BASE_URL}/api/historicalOR/indicesHistory"
-)
+NSE_INDEX_URL = f"{NSE_BASE_URL}/api/historicalOR/indicesHistory"
 
 INDEX_ALIASES = {
     "NIFTY 50": "NIFTY 50",
@@ -32,10 +29,78 @@ INDEX_COLUMNS = {
     "Close": "EOD_CLOSE_INDEX_VAL",
 }
 
+RECORD_KEYS = (
+    "indexCloseOnlineRecords",
+    "indexCloseRecords",
+    "records",
+    "data",
+)
+
+
+def _extract_index_records(payload, index_name):
+    """Extract index records from supported NSE response structures."""
+    if not isinstance(payload, dict):
+        raise ValueError(
+            f"Invalid NSE index response for {index_name}: "
+            "expected a JSON object."
+        )
+
+    data = payload.get("data")
+
+    if isinstance(data, list):
+        records = data
+    elif isinstance(data, dict):
+        records = None
+
+        for key in RECORD_KEYS:
+            candidate = data.get(key)
+            if isinstance(candidate, list):
+                records = candidate
+                break
+
+        if records is None:
+            raise ValueError(
+                f"NSE index response has no recognized records list "
+                f"for {index_name}. data keys: {list(data.keys())}"
+            )
+    else:
+        raise ValueError(
+            f"NSE index response has invalid data structure for "
+            f"{index_name}. Top-level keys: {list(payload.keys())}"
+        )
+
+    if not records:
+        raise ValueError(
+            f"No NSE index records returned for {index_name}."
+        )
+
+    return records
+
+
+def _clean_index_numeric(series, column, index_name):
+    cleaned = (
+        series.astype("string")
+        .str.replace(",", "", regex=False)
+        .str.replace("\u00a0", "", regex=False)
+        .str.replace(" ", "", regex=False)
+        .str.strip()
+        .replace("", pd.NA)
+    )
+
+    converted = pd.to_numeric(cleaned, errors="coerce")
+
+    if converted.isna().any():
+        samples = series.loc[converted.isna()].astype(str).head(5).tolist()
+        raise ValueError(
+            f"Invalid NSE index {column} values for {index_name}. "
+            f"Samples: {samples}"
+        )
+
+    return converted
+
 
 def download_index_history(index_name, start_date, end_date):
     """Download official NSE historical index OHLC."""
-
     start = datetime.strptime(start_date, "%Y-%m-%d")
     end = datetime.strptime(end_date, "%Y-%m-%d")
 
@@ -45,9 +110,7 @@ def download_index_history(index_name, start_date, end_date):
     index_name = index_name.strip().upper()
 
     if index_name not in INDEX_ALIASES:
-        raise ValueError(
-            f"Unsupported NSE index: {index_name}"
-        )
+        raise ValueError(f"Unsupported NSE index: {index_name}")
 
     session = create_nse_session()
 
@@ -68,7 +131,6 @@ def download_index_history(index_name, start_date, end_date):
         },
         timeout=60,
     )
-
     response.raise_for_status()
 
     try:
@@ -78,31 +140,20 @@ def download_index_history(index_name, start_date, end_date):
             "content-type", "unknown"
         )
         preview = response.text[:160].replace("\n", " ")
-
         raise ValueError(
             "NSE index API returned non-JSON response. "
             f"Content-Type: {content_type}. "
             f"Response preview: {preview}"
         ) from exc
 
-    if not isinstance(payload, dict):
-        raise ValueError("Invalid NSE index response structure.")
-
-    records = payload.get("data")
-
-    if not isinstance(records, list) or not records:
-        raise ValueError(
-            f"No NSE index records returned for {index_name}."
-        )
-
+    records = _extract_index_records(payload, index_name)
     raw = pd.DataFrame(records)
 
-    required = set(INDEX_COLUMNS.values())
-    missing = required.difference(raw.columns)
-
+    missing = set(INDEX_COLUMNS.values()).difference(raw.columns)
     if missing:
         raise ValueError(
-            f"NSE index response missing fields: {sorted(missing)}"
+            f"NSE index response missing fields for {index_name}: "
+            f"{sorted(missing)}. Received: {list(raw.columns)}"
         )
 
     output = pd.DataFrame({
@@ -124,24 +175,16 @@ def download_index_history(index_name, start_date, end_date):
         raise ValueError("Duplicate NSE index trading dates.")
 
     for column in ["Open", "High", "Low", "Close"]:
-        output[column] = pd.to_numeric(
-            output[column],
-            errors="coerce",
+        output[column] = _clean_index_numeric(
+            output[column], column, index_name
         )
-
-        if output[column].isna().any():
-            raise ValueError(
-                f"Invalid NSE index {column} values."
-            )
-
         if (output[column] <= 0).any():
             raise ValueError(
                 f"NSE index {column} must be positive."
             )
 
     if not output["Date"].between(
-        pd.Timestamp(start),
-        pd.Timestamp(end),
+        pd.Timestamp(start), pd.Timestamp(end)
     ).all():
         raise ValueError(
             "NSE index response contains dates outside requested range."
@@ -158,11 +201,9 @@ def download_index_history(index_name, start_date, end_date):
     if invalid_high.any() or invalid_low.any():
         raise ValueError("Invalid NSE index OHLC candles.")
 
-    # Index traded volume is not assumed or fabricated.
+    # NSE index volume is not supplied or fabricated.
     output["Volume"] = pd.NA
-
     output = output.sort_values("Date").reset_index(drop=True)
-
     output["Source"] = "NSE"
     output["Symbol"] = index_name
 
@@ -171,14 +212,12 @@ def download_index_history(index_name, start_date, end_date):
 
 def save_nse_index_csv(df, index_name):
     """Save official NSE index data."""
-
     output_dir = Path("data/raw/nse")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     safe_name = index_name.upper().replace(" ", "_")
-
     output_file = output_dir / f"{safe_name}_nse.csv"
 
     df.to_csv(output_file, index=False)
-
     return str(output_file)
+    
