@@ -1,3 +1,4 @@
+
 """
 TradeLab Pro - Relative Strength Results
 
@@ -48,7 +49,6 @@ def _prepare_main_dataframe(data, result=None):
     if "Benchmark" not in df.columns:
         df["Benchmark"] = "Main Benchmark"
 
-    # Legacy result compatibility.
     if (
         "Main Index Return (%)" not in df.columns
         and "Benchmark Return (%)" in df.columns
