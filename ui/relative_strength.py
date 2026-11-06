@@ -1,8 +1,9 @@
+
 """
 TradeLab Pro - Relative Strength Page
 
 Verified NSE EQ universe with official AMFI Market Cap filtering.
-Separate Stock vs Main Index and Stock vs audited Sector comparisons.
+Separate Stock vs Main Index and audited Sector comparisons.
 Supports standard and custom calendar-day return windows.
 
 BSE remains disabled until its official universe and validated
@@ -108,29 +109,17 @@ def render_relative_strength_page():
     # 2. Market Cap setting
     st.subheader("2. Market Capitalization")
 
+    # IMPORTANT:
+    # Settings page and Relative Strength use the SAME session key.
     market_cap_filter = st.selectbox(
         "Market Cap Filter",
         MARKET_CAP_OPTIONS,
-        index=MARKET_CAP_OPTIONS.index(
-            st.session_state.get(
-                "settings_market_cap",
-                "All Market Caps",
-            )
-        )
-        if st.session_state.get(
-            "settings_market_cap",
-            "All Market Caps",
-        ) in MARKET_CAP_OPTIONS
-        else 0,
-        key="rs_market_cap_filter",
+        key="settings_market_cap",
         help=(
             "AMFI-এর সর্বশেষ উপলব্ধ half-yearly classification "
             "অনুযায়ী NSE stocks filter করা হবে।"
         ),
     )
-
-    # Settings page and scanner share the selected setting.
-    st.session_state["settings_market_cap"] = market_cap_filter
 
     st.caption(
         "AMFI classification half-yearly; এটি live daily market cap নয়। "
