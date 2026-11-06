@@ -1,10 +1,10 @@
-
 """
 TradeLab Pro - Relative Strength Results
 
-Displays independent rankings for each Main Benchmark and
-return window. Sector comparison remains separately guarded.
-CSV exports preserve Benchmark identity.
+Independent rankings for each Main Benchmark and window.
+Backward-compatible with historical single-benchmark results.
+Sector comparison remains separately guarded.
+CSV exports preserve benchmark identity.
 """
 
 import pandas as pd
@@ -38,42 +38,86 @@ SECTOR_REQUIRED_COLUMNS = [
 ]
 
 
-def build_ranked_results(data, windows, sort_column):
-    """Build independent ranking for every benchmark and window."""
+def _prepare_main_dataframe(data, result=None):
+    """Normalize legacy and current Main Benchmark result columns."""
     if not data:
         return pd.DataFrame()
 
-    df = pd.DataFrame(data)
+    df = pd.DataFrame(data).copy()
+
+    if "Benchmark" not in df.columns:
+        df["Benchmark"] = "Main Benchmark"
+
+    # Legacy result compatibility.
+    if (
+        "Main Index Return (%)" not in df.columns
+        and "Benchmark Return (%)" in df.columns
+    ):
+        df["Main Index Return (%)"] = df["Benchmark Return (%)"]
+
+    defaults = {
+        "Common Sessions": 0,
+        "Start Date": (
+            result.get("start_date", "")
+            if result else ""
+        ),
+        "End Date": (
+            result.get("end_date", "")
+            if result else ""
+        ),
+    }
+
+    for column, default in defaults.items():
+        if column not in df.columns:
+            df[column] = default
+
+    return df
+
+
+def build_ranked_results(data, windows, sort_column):
+    """Build independent ranking for each benchmark and window."""
+    if data is None or len(data) == 0:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(data).copy()
 
     if sort_column not in df.columns or "Window" not in df.columns:
         raise ValueError(
             f"Required ranking columns missing: {sort_column}, Window"
         )
 
-    # Backward compatibility for historical single-benchmark results.
     if sort_column == MAIN_SORT_COLUMN and "Benchmark" not in df.columns:
         df["Benchmark"] = "Main Benchmark"
 
     group_columns = []
+
     if "Benchmark" in df.columns:
         group_columns.append("Benchmark")
-    group_columns.append("Window")
 
+    group_columns.append("Window")
     ranked_parts = []
 
-    group_values = df[group_columns].drop_duplicates().to_dict("records")
+    group_values = (
+        df[group_columns]
+        .drop_duplicates()
+        .to_dict("records")
+    )
 
     for group in group_values:
         mask = pd.Series(True, index=df.index)
+
         for column, value in group.items():
             mask &= df[column] == value
 
         view = df.loc[mask].copy()
+
         view[sort_column] = pd.to_numeric(
             view[sort_column],
             errors="coerce",
         )
+
         view = view.dropna(subset=[sort_column])
+
         view = view.sort_values(
             sort_column,
             ascending=False,
@@ -93,7 +137,7 @@ def build_ranked_results(data, windows, sort_column):
 
 
 def _display_main_results(result):
-    """Display Main Index results grouped by benchmark and window."""
+    """Display and export Main Benchmark rankings."""
     main_results = result.get("main_results", [])
     windows = result.get("windows", [])
 
@@ -104,8 +148,13 @@ def _display_main_results(result):
         return
 
     try:
-        ranked = build_ranked_results(
+        normalized = _prepare_main_dataframe(
             main_results,
+            result,
+        )
+
+        ranked = build_ranked_results(
+            normalized.to_dict("records"),
             windows,
             MAIN_SORT_COLUMN,
         )
@@ -118,6 +167,7 @@ def _display_main_results(result):
             column for column in MAIN_REQUIRED_COLUMNS
             if column not in ranked.columns
         ]
+
         if missing:
             st.error(
                 "Main Results-এ প্রয়োজনীয় ডেটা পাওয়া যায়নি: "
@@ -152,14 +202,16 @@ def _display_main_results(result):
                     hide_index=True,
                 )
 
-        csv_data = ranked.to_csv(index=False).encode("utf-8-sig")
+        csv_data = ranked.to_csv(
+            index=False
+        ).encode("utf-8-sig")
 
         st.download_button(
-            "Download All Main Benchmark Rankings CSV",
+            "Download Main Index CSV",
             data=csv_data,
-            file_name="tradelab_multi_benchmark_rs.csv",
+            file_name="tradelab_main_index_rs.csv",
             mime="text/csv",
-            key="rs_multi_main_csv",
+            key="rs_main_csv",
             on_click="ignore",
         )
 
@@ -168,35 +220,49 @@ def _display_main_results(result):
 
 
 def _display_sector_results(result):
-    """Display guarded Sector Comparison and its CSV export."""
+    """Display guarded Sector Comparison and CSV export."""
     sector_results = result.get("sector_results", [])
+
     sector_available = result.get(
         "sector_comparison_available",
         bool(sector_results),
     )
-    sector_reason = result.get("sector_comparison_reason", "")
+
+    sector_reason = str(
+        result.get("sector_comparison_reason", "") or ""
+    )
 
     if not sector_available:
-        if sector_reason:
+        reason_lower = sector_reason.lower()
+
+        membership_failed = (
+            "unverified" in reason_lower
+            or "not verified" in reason_lower
+            or "membership is not verified" in reason_lower
+        )
+
+        if membership_failed:
             st.warning(
-                "Sector Comparison বন্ধ রাখা হয়েছে। কারণ: "
-                + sector_reason
+                "Sector Membership Guard: Sector Comparison বন্ধ। "
+                "কারণ: " + sector_reason
             )
         else:
             st.info(
-                "Sector Comparison-এর জন্য verified এবং "
-                "তুলনাযোগ্য ফলাফল পাওয়া যায়নি।"
+                "Sector Membership Guard: Membership যাচাই করা হয়েছে, "
+                "কিন্তু তুলনাযোগ্য ফলাফল পাওয়া যায়নি।"
             )
+
         return
 
     if not sector_results:
         st.info(
             "Sector Membership Guard পাস করেছে, কিন্তু "
-            "Sector Comparison-এর ফলাফল পাওয়া যায়নি।"
+            "তুলনাযোগ্য ফলাফল পাওয়া যায়নি।"
         )
         return
 
     sector_df = pd.DataFrame(sector_results)
+
     missing = [
         column for column in SECTOR_REQUIRED_COLUMNS
         if column not in sector_df.columns
@@ -229,18 +295,22 @@ def _display_sector_results(result):
                 continue
 
             st.markdown(f"**{window_name} Sector Ranking**")
+
             st.caption(
                 "Actual Comparison Period: "
                 f"{view['Start Date'].iloc[0]} to "
                 f"{view['End Date'].iloc[0]}"
             )
+
             st.dataframe(
                 view[["Rank"] + SECTOR_REQUIRED_COLUMNS],
                 use_container_width=True,
                 hide_index=True,
             )
 
-        csv_data = ranked.to_csv(index=False).encode("utf-8-sig")
+        csv_data = ranked.to_csv(
+            index=False
+        ).encode("utf-8-sig")
 
         st.download_button(
             "Download Sector Comparison CSV",
@@ -274,16 +344,24 @@ def display_results(result):
     )
 
     benchmark_errors = result.get("benchmark_errors", {})
+
     if benchmark_errors:
-        st.error("এক বা একাধিক Main Benchmark-এর Data পাওয়া যায়নি।")
+        st.error(
+            "এক বা একাধিক Main Benchmark-এর Data পাওয়া যায়নি।"
+        )
+
         st.dataframe(
             pd.DataFrame([
-                {"Benchmark": name, "Reason": reason}
+                {
+                    "Benchmark": name,
+                    "Reason": reason,
+                }
                 for name, reason in benchmark_errors.items()
             ]),
             use_container_width=True,
             hide_index=True,
         )
+
     elif result.get("benchmark_error"):
         st.error(
             "Main Benchmark Data পাওয়া যায়নি: "
@@ -294,12 +372,15 @@ def display_results(result):
 
     st.divider()
     st.subheader("Stock vs Sector Index")
+
     _display_sector_results(result)
 
     errors = result.get("errors", [])
+
     if errors:
         st.divider()
         st.subheader("Data Retrieval / Comparison Errors")
+
         st.dataframe(
             pd.DataFrame(errors),
             use_container_width=True,
