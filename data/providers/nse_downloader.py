@@ -1,5 +1,7 @@
+
 """NSE historical equity downloader using current NSE historical API."""
 
+import csv
 from datetime import datetime
 from io import StringIO
 from pathlib import Path
@@ -74,6 +76,76 @@ def _to_numeric_clean(series, column):
     return converted
 
 
+def _read_nse_equity_csv(content):
+    """Read NSE CSV and safely repair unquoted volume thousands separators."""
+    try:
+        rows = list(csv.reader(StringIO(content)))
+    except csv.Error as exc:
+        raise ValueError(
+            f"Unable to parse NSE equity CSV: {exc}"
+        ) from exc
+
+    if not rows:
+        raise ValueError("NSE returned an empty equity CSV.")
+
+    headers = [str(column).strip() for column in rows[0]]
+
+    if not headers:
+        raise ValueError("NSE equity CSV has no header.")
+
+    volume_aliases = {
+        "Total Traded Quantity",
+        "Volume",
+        "CH_TOT_TRADED_QTY",
+    }
+
+    volume_index = next(
+        (
+            index
+            for index, name in enumerate(headers)
+            if name in volume_aliases
+        ),
+        None,
+    )
+
+    normalized_rows = []
+
+    for row_number, row in enumerate(rows[1:], start=2):
+        if not row or all(not str(value).strip() for value in row):
+            continue
+
+        if len(row) > len(headers):
+            can_repair_volume = (
+                volume_index == len(headers) - 1
+                and len(row[volume_index:]) >= 2
+                and all(
+                    part.strip().isdigit()
+                    for part in row[volume_index:]
+                )
+            )
+
+            if not can_repair_volume:
+                raise ValueError(
+                    "Malformed NSE equity CSV row "
+                    f"{row_number}: unexpected extra columns."
+                )
+
+            row = row[:volume_index] + [
+                ",".join(row[volume_index:])
+            ]
+
+        if len(row) != len(headers):
+            raise ValueError(
+                "Malformed NSE equity CSV row "
+                f"{row_number}: expected {len(headers)} columns, "
+                f"received {len(row)}."
+            )
+
+        normalized_rows.append(row)
+
+    return pd.DataFrame(normalized_rows, columns=headers)
+
+
 def _parse_equity_csv(response, symbol):
     """Parse and validate NSE's official historical CSV."""
     content_type = response.headers.get("content-type", "").lower()
@@ -93,13 +165,7 @@ def _parse_equity_csv(response, symbol):
             "Session or access was rejected."
         )
 
-    try:
-        raw = pd.read_csv(StringIO(content))
-    except Exception as exc:
-        raise ValueError(
-            f"Unable to parse NSE equity CSV: {exc}"
-        ) from exc
-
+    raw = _read_nse_equity_csv(content)
     raw.columns = [str(column).strip() for column in raw.columns]
 
     aliases = {
@@ -246,4 +312,3 @@ def save_nse_csv(df, symbol):
     output_file = output_dir / f"{symbol.upper()}_nse.csv"
     df.to_csv(output_file, index=False)
     return str(output_file)
-    
