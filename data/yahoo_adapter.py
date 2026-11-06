@@ -1,4 +1,3 @@
-
 """Yahoo Finance historical market-data adapter."""
 
 import pandas as pd
@@ -290,12 +289,12 @@ def fetch_yahoo_history(
     # 1. INPUT VALIDATION
 
     if not isinstance(symbol, str):
-        raise ValueError("Symbol must be a string.")
+        raise ValueError("Stock symbol must be a string.")
 
     symbol = symbol.strip().upper()
 
     if not symbol:
-        raise ValueError("Symbol must not be empty.")
+        raise ValueError("Stock symbol must not be empty.")
 
     if exchange not in {"NSE", "BSE"}:
         raise ValueError("Exchange must be NSE or BSE.")
