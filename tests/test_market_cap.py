@@ -1,4 +1,3 @@
-
 import pandas as pd
 import pytest
 
@@ -68,6 +67,19 @@ def test_normalize_rejects_duplicate_isin():
         normalize_amfi_market_cap(data)
 
 
+def test_normalize_allows_duplicate_symbol_with_different_isin():
+    data = sample_amfi_data()
+
+    data.loc[1, "NSE Symbol"] = "RELIANCE"
+    data.loc[1, "ISIN"] = "INE030A01027"
+
+    result = normalize_amfi_market_cap(data)
+
+    assert len(result) == 3
+    assert result["AMFI NSE Symbol"].tolist().count("RELIANCE") == 2
+    assert result["ISIN"].nunique() == 3
+
+
 def test_enrichment_requires_both_isin_and_symbol():
     amfi = normalize_amfi_market_cap(sample_amfi_data())
     universe = sample_nse_universe()
@@ -92,6 +104,31 @@ def test_enrichment_matches_verified_nse_eq_rows():
 
     assert row["Market Cap Match Status"] == "MATCHED"
     assert row["Market Cap Category"] == "LARGE CAP"
+
+
+def test_duplicate_symbol_does_not_cross_match_categories():
+    data = sample_amfi_data()
+
+    data.loc[1, "NSE Symbol"] = "RELIANCE"
+
+    amfi = normalize_amfi_market_cap(data)
+
+    universe = pd.DataFrame({
+        "Symbol": ["RELIANCE", "RELIANCE"],
+        "ISIN": ["INE002A01018", "INE030A01027"],
+        "Series": ["EQ", "EQ"],
+    })
+
+    result = enrich_nse_universe_with_amfi(universe, amfi)
+
+    large = result[result["ISIN"] == "INE002A01018"].iloc[0]
+    mid = result[result["ISIN"] == "INE030A01027"].iloc[0]
+
+    assert large["Market Cap Match Status"] == "MATCHED"
+    assert large["Market Cap Category"] == "LARGE CAP"
+
+    assert mid["Market Cap Match Status"] == "MATCHED"
+    assert mid["Market Cap Category"] == "MID CAP"
 
 
 def test_unmatched_symbol_has_no_approved_category():
@@ -121,5 +158,5 @@ def test_filter_rejects_unavailable_classification():
         filter_by_market_cap(
             sample_nse_universe(),
             "Large Cap",
-        )
-      
+    )
+    
