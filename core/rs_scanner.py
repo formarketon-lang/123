@@ -3,7 +3,10 @@ TradeLab Pro - Relative Strength Scanner Engine
 
 NSE Primary market data with Yahoo Secondary fallback.
 Official AMFI Market Cap filtering.
-Separate Main Index and audited Sector comparisons.
+Compares each stock against multiple Main Benchmarks.
+Stock data is fetched once per scan and reused across benchmarks.
+Sector comparison remains independently guarded by verified
+sector membership and benchmark mapping.
 
 BSE scanning remains disabled until its official universe
 and validated data adapter are implemented.
@@ -12,21 +15,17 @@ and validated data adapter are implemented.
 from datetime import timedelta
 
 from data.market_data_adapter import fetch_market_history
-
 from data.universe import (
     get_sector_symbols,
     load_nse_universe,
     validate_symbols_against_universe,
     validate_sector_membership,
 )
-
 from data.market_cap import filter_by_market_cap
-
 from data.benchmark_mapping import (
     MAIN_BENCHMARKS,
     get_sector_benchmark,
 )
-
 from core.rs_windows import build_windows
 from rs_engine import compare_on_common_dates
 
@@ -38,7 +37,6 @@ BSE_SCANNER_DISABLED_MESSAGE = (
     "পাঠানো হবে না।"
 )
 
-
 VALID_MARKET_CAP_FILTERS = {
     "All Market Caps",
     "Large Cap",
@@ -49,7 +47,6 @@ VALID_MARKET_CAP_FILTERS = {
 
 def get_market_data(symbol, start_date, end_date, exchange):
     """Fetch data using NSE Primary and Yahoo Secondary."""
-
     return fetch_market_history(
         symbol=symbol,
         start_date=start_date,
@@ -61,7 +58,6 @@ def get_market_data(symbol, start_date, end_date, exchange):
 
 def _source_info(data):
     """Extract source and fallback information from a dataset."""
-
     if data is None or data.empty:
         return {
             "source": "Unavailable",
@@ -73,13 +69,11 @@ def _source_info(data):
 
     if "Source" in data.columns:
         values = data["Source"].dropna().unique()
-
         if len(values):
             source = str(values[0])
 
     if "Fallback Reason" in data.columns:
         values = data["Fallback Reason"].dropna().unique()
-
         if len(values):
             fallback_reason = str(values[0])
 
@@ -91,7 +85,6 @@ def _source_info(data):
 
 def _eligible_symbols(universe):
     """Return verified NSE EQ symbols from a supplied universe."""
-
     if universe is None or universe.empty:
         raise ValueError("Eligible NSE universe is empty.")
 
@@ -132,17 +125,7 @@ def resolve_symbols(
     exchange="NSE",
     eligible_universe=None,
 ):
-    """
-    Resolve and validate scanner stock selection.
-
-    `universe`:
-        Full verified NSE universe. Retained for sector audit.
-
-    `eligible_universe`:
-        Optional market-cap-filtered universe. Used to validate
-        manual and selected symbols.
-    """
-
+    """Resolve and validate scanner stock selection."""
     if exchange == "BSE":
         raise ValueError(BSE_SCANNER_DISABLED_MESSAGE)
 
@@ -157,48 +140,34 @@ def resolve_symbols(
         if eligible_universe is not None
         else universe
     )
-
     available_symbols = _eligible_symbols(validation_universe)
 
-    # Manual symbols have first priority.
     if manual_symbols and manual_symbols.strip():
-
         requested = [
             item.strip().upper()
             for item in manual_symbols.replace("\n", ",").split(",")
             if item.strip()
         ]
-
         requested = list(dict.fromkeys(requested))
         source = "Manual selection"
 
-    # User-selected symbols have second priority.
     elif selected_symbols:
-
         requested = list(dict.fromkeys(
             str(item).strip().upper()
             for item in selected_symbols
             if str(item).strip()
         ))
-
         source = "Verified NSE Universe selection"
 
-    # Otherwise use audited official sector membership.
     else:
-
         requested = get_sector_symbols(
             sector,
             universe=universe,
         )
-
-        # For automatic sector selection, intersect the official
-        # sector membership with the eligible market-cap universe.
         requested = [
-            symbol
-            for symbol in requested
+            symbol for symbol in requested
             if symbol in available_symbols
         ]
-
         source = "Live audited official sector membership"
 
     if not requested:
@@ -207,14 +176,42 @@ def resolve_symbols(
             "কোনো eligible Stock পাওয়া যায়নি।"
         )
 
-    # This validation also blocks manual symbols outside the
-    # selected AMFI category.
-    requested = validate_symbols_against_universe(
+    return validate_symbols_against_universe(
         requested,
         validation_universe,
-    )
+    ), source
 
-    return requested, source
+
+def _normalize_benchmark_names(benchmark_name, benchmark_names):
+    """Validate and preserve the requested benchmark order."""
+    requested = benchmark_names
+
+    if requested is None:
+        requested = [benchmark_name]
+
+    if isinstance(requested, str):
+        requested = [requested]
+
+    normalized = list(dict.fromkeys(
+        str(name).strip()
+        for name in requested
+        if str(name).strip()
+    ))
+
+    if not normalized:
+        raise ValueError("কমপক্ষে একটি Main Benchmark নির্বাচন করুন।")
+
+    invalid = [
+        name for name in normalized
+        if name not in MAIN_BENCHMARKS
+    ]
+    if invalid:
+        raise ValueError(
+            "Invalid Main Benchmark selection: "
+            + ", ".join(invalid)
+        )
+
+    return normalized
 
 
 def execute_scanner(
@@ -230,16 +227,12 @@ def execute_scanner(
     universe=None,
     market_cap_filter="All Market Caps",
     market_cap_universe=None,
+    benchmark_names=None,
 ):
     """
-    Run NSE Main Index and guarded Sector comparisons.
-
-    Market Cap validation is applied before stock market-data
-    requests. The full NSE universe is retained for official
-    sector membership verification.
+    Run multiple Main Index comparisons and one guarded Sector
+    comparison. Legacy benchmark_name remains supported.
     """
-
-    # Security guard before any universe or market-data request.
     if exchange == "BSE":
         raise ValueError(BSE_SCANNER_DISABLED_MESSAGE)
 
@@ -249,16 +242,17 @@ def execute_scanner(
     if market_cap_filter not in VALID_MARKET_CAP_FILTERS:
         raise ValueError("Invalid Market Cap selection.")
 
+    selected_benchmarks = _normalize_benchmark_names(
+        benchmark_name,
+        benchmark_names,
+    )
+
     if universe is None:
         universe = load_nse_universe()
 
-    # Market Cap eligibility gate.
     if market_cap_filter == "All Market Caps":
-
         eligible_universe = universe
-
     else:
-
         if market_cap_universe is None:
             raise ValueError(
                 "Verified AMFI Market Cap data is required "
@@ -276,8 +270,6 @@ def execute_scanner(
                 f"{market_cap_filter}."
             )
 
-    # Resolve and validate symbols against the filtered universe.
-    # Sector membership audit still receives the full universe.
     symbols, selection_source = resolve_symbols(
         sector=sector,
         manual_symbols=manual_symbols,
@@ -292,223 +284,225 @@ def execute_scanner(
         end_date,
         custom_windows,
     )
-
-    if benchmark_name not in MAIN_BENCHMARKS:
-        raise ValueError("Invalid Main Benchmark selection.")
-
-    benchmark_symbol = MAIN_BENCHMARKS[benchmark_name]
     fetch_start = start_date - timedelta(days=10)
 
-    main_results = []
-    sector_results = []
-    errors = []
-    benchmark_error = None
-
-    # Sector membership is always audited against the full universe.
+    # Verify sector membership against the full NSE universe.
     sector_allowed, sector_reason = validate_sector_membership(
         sector,
         symbols,
         universe=universe,
     )
-
     configured_sector_benchmark = get_sector_benchmark(sector)
 
     if not configured_sector_benchmark:
-
         sector_allowed = False
-
         sector_reason = (
             f"No configured sector benchmark exists for {sector}."
         )
-
     elif sector_benchmark_symbol != configured_sector_benchmark:
-
         sector_allowed = False
-
         sector_reason = (
             "Selected sector benchmark does not match the configured "
             "sector benchmark."
         )
 
-    sector_data = None
+    # Fetch each selected Main Benchmark independently.
+    benchmark_data = {}
+    benchmark_sources = {}
+    benchmark_errors = {}
 
-    # Main benchmark.
-    try:
-
-        main_benchmark_data = get_market_data(
-            benchmark_symbol,
-            fetch_start,
-            end_date,
-            "NSE",
-        )
-
-        main_benchmark_source = _source_info(
-            main_benchmark_data
-        )
-
-    except Exception as error:
-
-        main_benchmark_data = None
-        main_benchmark_source = _source_info(None)
-        benchmark_error = str(error)
-
-        errors.append({
-            "Stock": "MAIN INDEX",
-            "Reason": str(error),
-        })
-
-    # Sector benchmark.
-    if sector_allowed:
-
+    for name in selected_benchmarks:
+        symbol = MAIN_BENCHMARKS[name]
         try:
+            data = get_market_data(
+                symbol,
+                fetch_start,
+                end_date,
+                "NSE",
+            )
+            if data is None or data.empty:
+                raise ValueError("Benchmark returned empty market data.")
 
+            benchmark_data[name] = data
+            benchmark_sources[name] = _source_info(data)
+        except Exception as error:
+            benchmark_errors[name] = str(error)
+            benchmark_sources[name] = _source_info(None)
+
+    # Fetch the verified sector benchmark only when both guards pass.
+    sector_data = None
+    sector_source = _source_info(None)
+
+    if sector_allowed:
+        try:
             sector_data = get_market_data(
                 configured_sector_benchmark,
                 fetch_start,
                 end_date,
                 "NSE",
             )
-
+            if sector_data is None or sector_data.empty:
+                raise ValueError("Sector benchmark returned empty data.")
             sector_source = _source_info(sector_data)
-
         except Exception as error:
-
             sector_data = None
-            sector_source = _source_info(None)
-
             sector_reason = (
                 "Sector benchmark data could not be fetched: "
                 + str(error)
             )
 
+    # Fetch each stock exactly once and reuse it for every benchmark.
+    stock_data_cache = {}
+    stock_sources = {}
+    errors = []
+
+    for symbol in symbols:
+        try:
+            data = get_market_data(
+                symbol,
+                fetch_start,
+                end_date,
+                "NSE",
+            )
+            if data is None or data.empty:
+                raise ValueError("Stock returned empty market data.")
+
+            stock_data_cache[symbol] = data
+            stock_sources[symbol] = _source_info(data)
+        except Exception as error:
             errors.append({
-                "Stock": "SECTOR INDEX",
+                "Stock": symbol,
                 "Reason": str(error),
             })
 
-    else:
+    main_results = []
+    sector_results = []
 
-        sector_source = _source_info(None)
+    for benchmark in selected_benchmarks:
+        benchmark_frame = benchmark_data.get(benchmark)
+        if benchmark_frame is None:
+            continue
 
-    # Stock comparisons.
-    if main_benchmark_data is not None:
+        benchmark_source = benchmark_sources[benchmark]
 
-        for symbol in symbols:
+        for symbol, stock_data in stock_data_cache.items():
+            stock_source = stock_sources[symbol]
 
-            try:
+            for window_name, dates in windows.items():
+                window_start, window_end = dates
 
-                stock_data = get_market_data(
-                    symbol,
-                    fetch_start,
-                    end_date,
-                    "NSE",
-                )
-
-                stock_source = _source_info(stock_data)
-
-                for window_name, dates in windows.items():
-
-                    window_start, window_end = dates
-
-                    # Stock vs Main Index.
-                    main_comparison = compare_on_common_dates(
+                try:
+                    comparison = compare_on_common_dates(
                         stock_data=stock_data,
-                        benchmark_data=main_benchmark_data,
+                        benchmark_data=benchmark_frame,
                         start_date=window_start,
                         end_date=window_end,
                     )
 
                     main_results.append({
+                        "Benchmark": benchmark,
                         "Stock": symbol,
                         "Window": window_name,
                         "Stock Return (%)": round(
-                            main_comparison["stock_return_pct"],
-                            2,
+                            comparison["stock_return_pct"], 2
                         ),
                         "Main Index Return (%)": round(
-                            main_comparison["benchmark_return_pct"],
-                            2,
+                            comparison["benchmark_return_pct"], 2
                         ),
                         "Excess Return (%)": round(
-                            main_comparison["stock_vs_benchmark_pct"],
-                            2,
+                            comparison["stock_vs_benchmark_pct"], 2
                         ),
                         "Common Sessions": (
-                            main_comparison["common_trading_sessions"]
+                            comparison["common_trading_sessions"]
                         ),
-                        "Start Date": main_comparison["start_date"],
-                        "End Date": main_comparison["end_date"],
+                        "Start Date": comparison["start_date"],
+                        "End Date": comparison["end_date"],
                         "Stock Source": stock_source["source"],
-                        "Main Index Source": (
-                            main_benchmark_source["source"]
-                        ),
+                        "Main Index Source": benchmark_source["source"],
                         "Stock Fallback Reason": (
                             stock_source["fallback_reason"]
                         ),
                         "Main Index Fallback Reason": (
-                            main_benchmark_source["fallback_reason"]
+                            benchmark_source["fallback_reason"]
                         ),
                     })
+                except Exception as error:
+                    errors.append({
+                        "Stock": symbol,
+                        "Benchmark": benchmark,
+                        "Window": window_name,
+                        "Reason": str(error),
+                    })
 
-                    # Stock vs Sector Index.
-                    if sector_data is not None:
+    # Sector comparison is independent of Main Benchmark selection.
+    if sector_data is not None:
+        for symbol, stock_data in stock_data_cache.items():
+            stock_source = stock_sources[symbol]
 
-                        sector_comparison = compare_on_common_dates(
-                            stock_data=stock_data,
-                            benchmark_data=sector_data,
-                            start_date=window_start,
-                            end_date=window_end,
-                        )
+            for window_name, dates in windows.items():
+                window_start, window_end = dates
+                try:
+                    comparison = compare_on_common_dates(
+                        stock_data=stock_data,
+                        benchmark_data=sector_data,
+                        start_date=window_start,
+                        end_date=window_end,
+                    )
 
-                        sector_results.append({
-                            "Stock": symbol,
-                            "Window": window_name,
-                            "Stock Return (%)": round(
-                                sector_comparison["stock_return_pct"],
-                                2,
-                            ),
-                            "Sector Return (%)": round(
-                                sector_comparison["benchmark_return_pct"],
-                                2,
-                            ),
-                            "Sector Excess Return (%)": round(
-                                sector_comparison["stock_vs_benchmark_pct"],
-                                2,
-                            ),
-                            "Common Sessions": (
-                                sector_comparison[
-                                    "common_trading_sessions"
-                                ]
-                            ),
-                            "Start Date": sector_comparison["start_date"],
-                            "End Date": sector_comparison["end_date"],
-                            "Stock Source": stock_source["source"],
-                            "Sector Index Source": (
-                                sector_source["source"]
-                            ),
-                            "Stock Fallback Reason": (
-                                stock_source["fallback_reason"]
-                            ),
-                            "Sector Index Fallback Reason": (
-                                sector_source["fallback_reason"]
-                            ),
-                        })
+                    sector_results.append({
+                        "Stock": symbol,
+                        "Window": window_name,
+                        "Stock Return (%)": round(
+                            comparison["stock_return_pct"], 2
+                        ),
+                        "Sector Return (%)": round(
+                            comparison["benchmark_return_pct"], 2
+                        ),
+                        "Sector Excess Return (%)": round(
+                            comparison["stock_vs_benchmark_pct"], 2
+                        ),
+                        "Common Sessions": (
+                            comparison["common_trading_sessions"]
+                        ),
+                        "Start Date": comparison["start_date"],
+                        "End Date": comparison["end_date"],
+                        "Stock Source": stock_source["source"],
+                        "Sector Index Source": sector_source["source"],
+                        "Stock Fallback Reason": (
+                            stock_source["fallback_reason"]
+                        ),
+                        "Sector Index Fallback Reason": (
+                            sector_source["fallback_reason"]
+                        ),
+                    })
+                except Exception as error:
+                    errors.append({
+                        "Stock": symbol,
+                        "Benchmark": "SECTOR",
+                        "Window": window_name,
+                        "Reason": str(error),
+                    })
 
-            except Exception as error:
+    benchmark_error = None
+    if benchmark_errors:
+        benchmark_error = "; ".join(
+            f"{name}: {reason}"
+            for name, reason in benchmark_errors.items()
+        )
 
-                errors.append({
-                    "Stock": symbol,
-                    "Reason": str(error),
-                })
+    first_benchmark = selected_benchmarks[0]
 
     return {
         "main_results": main_results,
         "sector_results": sector_results,
         "errors": errors,
         "benchmark_error": benchmark_error,
+        "benchmark_errors": benchmark_errors,
+        "benchmark_names": selected_benchmarks,
+        "benchmark_name": first_benchmark,
+        "benchmark_sources": benchmark_sources,
         "sector": sector,
         "selection_source": selection_source,
-        "benchmark_name": benchmark_name,
         "start_date": str(start_date),
         "end_date": str(end_date),
         "windows": list(windows.keys()),
@@ -520,6 +514,10 @@ def execute_scanner(
             sector_data is not None and bool(sector_results)
         ),
         "sector_comparison_reason": sector_reason,
-        "main_index_source": main_benchmark_source,
+        "main_index_source": benchmark_sources.get(
+            first_benchmark,
+            _source_info(None),
+        ),
         "sector_index_source": sector_source,
-    }
+        }
+            
