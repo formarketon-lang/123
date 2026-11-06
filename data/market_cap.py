@@ -1,8 +1,10 @@
-
 """TradeLab Pro - AMFI Market Capitalization Classification.
 
 Official AMFI half-yearly classification.
 This is not live daily market capitalization.
+
+AMFI ISIN is the unique matching key. Duplicate NSE symbols
+are permitted when they belong to different ISIN records.
 """
 
 from io import BytesIO
@@ -178,11 +180,25 @@ def normalize_amfi_market_cap(data):
     if result["Market Cap Category"].isna().any():
         raise ValueError("AMFI category is missing.")
 
+    # ISIN must be unique because it is the authoritative join key.
     if result["ISIN"].duplicated().any():
-        raise ValueError("Duplicate ISIN values in AMFI data.")
+        duplicates = (
+            result.loc[
+                result["ISIN"].duplicated(keep=False),
+                "ISIN",
+            ]
+            .dropna()
+            .unique()
+            .tolist()
+        )
+        raise ValueError(
+            "Duplicate ISIN values in AMFI data: "
+            + ", ".join(duplicates[:10])
+        )
 
-    if result["AMFI NSE Symbol"].duplicated().any():
-        raise ValueError("Duplicate NSE symbols in AMFI data.")
+    # IMPORTANT:
+    # Duplicate NSE symbols are allowed when ISIN values differ.
+    # Enrichment validates both ISIN and NSE Symbol before approval.
 
     return result.reset_index(drop=True)
 
@@ -249,8 +265,6 @@ def enrich_nse_universe_with_amfi(universe, amfi_data):
     if amfi["ISIN"].duplicated().any():
         raise ValueError("Duplicate ISIN in AMFI data.")
 
-    # Remove previous AMFI columns before merge.
-    # This prevents Pandas _x / _y suffix collisions.
     enrichment_columns = [
         "AMFI NSE Symbol",
         "Market Cap Category",
@@ -295,7 +309,7 @@ def enrich_nse_universe_with_amfi(universe, amfi_data):
         "Market Cap Match Status",
     ] = "MATCHED"
 
-    # No category is approved unless BOTH identifiers match.
+    # Approve category only when BOTH identifiers match.
     merged["Market Cap Category"] = (
         merged["Market Cap Category"].where(exact_match)
     )
@@ -303,7 +317,6 @@ def enrich_nse_universe_with_amfi(universe, amfi_data):
     merged["AMFI Period"] = AMFI_PERIOD
     merged["AMFI Source"] = AMFI_SOURCE_NAME
 
-    # Rebuild enrichment fields cleanly in the output.
     output = output.drop(
         columns=[
             column for column in enrichment_columns
@@ -382,4 +395,4 @@ def filter_by_market_cap(universe, selected_category):
     )
 
     return universe.loc[mask].copy()
-    
+            
