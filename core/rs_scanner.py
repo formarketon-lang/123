@@ -3,10 +3,9 @@ TradeLab Pro - Relative Strength Scanner Engine
 
 NSE Primary market data with Yahoo Secondary fallback.
 Official AMFI Market Cap filtering.
-Compares each stock against multiple Main Benchmarks.
-Stock data is fetched once per scan and reused across benchmarks.
-Sector comparison remains independently guarded by verified
-sector membership and benchmark mapping.
+Multiple Main Benchmark comparisons.
+Stock data is fetched once and reused.
+Sector comparison is independently guarded.
 
 BSE scanning remains disabled until its official universe
 and validated data adapter are implemented.
@@ -57,7 +56,7 @@ def get_market_data(symbol, start_date, end_date, exchange):
 
 
 def _source_info(data):
-    """Extract source and fallback information from a dataset."""
+    """Extract source and fallback information."""
     if data is None or data.empty:
         return {
             "source": "Unavailable",
@@ -84,7 +83,7 @@ def _source_info(data):
 
 
 def _eligible_symbols(universe):
-    """Return verified NSE EQ symbols from a supplied universe."""
+    """Return verified NSE EQ symbols."""
     if universe is None or universe.empty:
         raise ValueError("Eligible NSE universe is empty.")
 
@@ -183,7 +182,7 @@ def resolve_symbols(
 
 
 def _normalize_benchmark_names(benchmark_name, benchmark_names):
-    """Validate and preserve the requested benchmark order."""
+    """Validate and preserve requested benchmark order."""
     requested = benchmark_names
 
     if requested is None:
@@ -205,6 +204,7 @@ def _normalize_benchmark_names(benchmark_name, benchmark_names):
         name for name in normalized
         if name not in MAIN_BENCHMARKS
     ]
+
     if invalid:
         raise ValueError(
             "Invalid Main Benchmark selection: "
@@ -230,8 +230,8 @@ def execute_scanner(
     benchmark_names=None,
 ):
     """
-    Run multiple Main Index comparisons and one guarded Sector
-    comparison. Legacy benchmark_name remains supported.
+    Run multiple Main Index comparisons and one guarded
+    Sector comparison. Legacy benchmark_name is supported.
     """
     if exchange == "BSE":
         raise ValueError(BSE_SCANNER_DISABLED_MESSAGE)
@@ -286,12 +286,13 @@ def execute_scanner(
     )
     fetch_start = start_date - timedelta(days=10)
 
-    # Verify sector membership against the full NSE universe.
+    # Sector membership guard.
     sector_allowed, sector_reason = validate_sector_membership(
         sector,
         symbols,
         universe=universe,
     )
+
     configured_sector_benchmark = get_sector_benchmark(sector)
 
     if not configured_sector_benchmark:
@@ -306,13 +307,14 @@ def execute_scanner(
             "sector benchmark."
         )
 
-    # Fetch each selected Main Benchmark independently.
+    # Fetch each Main Benchmark independently.
     benchmark_data = {}
     benchmark_sources = {}
     benchmark_errors = {}
 
     for name in selected_benchmarks:
         symbol = MAIN_BENCHMARKS[name]
+
         try:
             data = get_market_data(
                 symbol,
@@ -320,16 +322,20 @@ def execute_scanner(
                 end_date,
                 "NSE",
             )
+
             if data is None or data.empty:
-                raise ValueError("Benchmark returned empty market data.")
+                raise ValueError(
+                    "Benchmark returned empty market data."
+                )
 
             benchmark_data[name] = data
             benchmark_sources[name] = _source_info(data)
+
         except Exception as error:
             benchmark_errors[name] = str(error)
             benchmark_sources[name] = _source_info(None)
 
-    # Fetch the verified sector benchmark only when both guards pass.
+    # Fetch Sector Benchmark independently.
     sector_data = None
     sector_source = _source_info(None)
 
@@ -341,9 +347,14 @@ def execute_scanner(
                 end_date,
                 "NSE",
             )
+
             if sector_data is None or sector_data.empty:
-                raise ValueError("Sector benchmark returned empty data.")
+                raise ValueError(
+                    "Sector benchmark returned empty data."
+                )
+
             sector_source = _source_info(sector_data)
+
         except Exception as error:
             sector_data = None
             sector_reason = (
@@ -351,11 +362,18 @@ def execute_scanner(
                 + str(error)
             )
 
-    # Fetch each stock exactly once and reuse it for every benchmark.
     stock_data_cache = {}
     stock_sources = {}
     errors = []
 
+    # Record Sector Index failure explicitly in the error report.
+    if sector_allowed and sector_data is None:
+        errors.append({
+            "Stock": "SECTOR INDEX",
+            "Reason": sector_reason,
+        })
+
+    # Fetch every stock only once.
     for symbol in symbols:
         try:
             data = get_market_data(
@@ -364,11 +382,13 @@ def execute_scanner(
                 end_date,
                 "NSE",
             )
+
             if data is None or data.empty:
                 raise ValueError("Stock returned empty market data.")
 
             stock_data_cache[symbol] = data
             stock_sources[symbol] = _source_info(data)
+
         except Exception as error:
             errors.append({
                 "Stock": symbol,
@@ -378,8 +398,10 @@ def execute_scanner(
     main_results = []
     sector_results = []
 
+    # Main Benchmark comparisons.
     for benchmark in selected_benchmarks:
         benchmark_frame = benchmark_data.get(benchmark)
+
         if benchmark_frame is None:
             continue
 
@@ -426,6 +448,7 @@ def execute_scanner(
                             benchmark_source["fallback_reason"]
                         ),
                     })
+
                 except Exception as error:
                     errors.append({
                         "Stock": symbol,
@@ -434,13 +457,14 @@ def execute_scanner(
                         "Reason": str(error),
                     })
 
-    # Sector comparison is independent of Main Benchmark selection.
+    # Sector comparisons remain separate.
     if sector_data is not None:
         for symbol, stock_data in stock_data_cache.items():
             stock_source = stock_sources[symbol]
 
             for window_name, dates in windows.items():
                 window_start, window_end = dates
+
                 try:
                     comparison = compare_on_common_dates(
                         stock_data=stock_data,
@@ -475,6 +499,7 @@ def execute_scanner(
                             sector_source["fallback_reason"]
                         ),
                     })
+
                 except Exception as error:
                     errors.append({
                         "Stock": symbol,
@@ -484,6 +509,7 @@ def execute_scanner(
                     })
 
     benchmark_error = None
+
     if benchmark_errors:
         benchmark_error = "; ".join(
             f"{name}: {reason}"
@@ -520,4 +546,3 @@ def execute_scanner(
         ),
         "sector_index_source": sector_source,
         }
-            
