@@ -307,7 +307,7 @@ def execute_scanner(
             "sector benchmark."
         )
 
-    # Fetch each Main Benchmark independently.
+    # Fetch Main Benchmarks.
     benchmark_data = {}
     benchmark_sources = {}
     benchmark_errors = {}
@@ -366,7 +366,6 @@ def execute_scanner(
     stock_sources = {}
     errors = []
 
-    # Record Sector Index failure explicitly in the error report.
     if sector_allowed and sector_data is None:
         errors.append({
             "Stock": "SECTOR INDEX",
@@ -545,4 +544,5 @@ def execute_scanner(
             _source_info(None),
         ),
         "sector_index_source": sector_source,
-        }
+    }
+    
