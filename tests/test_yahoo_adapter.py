@@ -631,3 +631,31 @@ def test_reports_no_valid_rows_in_requested_date_range():
         "NO_VALID_ROWS_IN_DATE_RANGE",
             )
     
+def test_excludes_only_trailing_incomplete_daily_candle():
+    fake_data = pd.DataFrame(
+        {
+            "Open": [100.0, 105.0, 110.0],
+            "High": [103.0, 108.0, 113.0],
+            "Low": [99.0, 104.0, 109.0],
+            "Close": [102.0, 107.0, float("nan")],
+            "Volume": [1000, 1200, 1400],
+        },
+        index=pd.DatetimeIndex(
+            ["2026-10-05", "2026-10-06", "2026-10-07"],
+            name="Date",
+        ),
+    )
+
+    with patch(
+        "data.yahoo_adapter.yf.download",
+        return_value=fake_data,
+    ):
+        result = fetch_yahoo_history(
+            "NIFTY 50",
+            "2026-10-01",
+            "2026-10-10",
+        )
+
+    assert len(result) == 2
+    assert result["Close"].tolist() == [102.0, 107.0]
+    
