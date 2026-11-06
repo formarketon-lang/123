@@ -1,15 +1,30 @@
+
 """
 TradeLab Pro - Relative Strength Results
 
-Displays verified rankings and correctly ranked CSV exports.
+Displays independent rankings for each Main Benchmark and
+return window. Sector comparison remains separately guarded.
+CSV exports preserve Benchmark identity.
 """
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
 
 MAIN_SORT_COLUMN = "Excess Return (%)"
 SECTOR_SORT_COLUMN = "Sector Excess Return (%)"
+
+MAIN_REQUIRED_COLUMNS = [
+    "Benchmark",
+    "Stock",
+    "Window",
+    "Stock Return (%)",
+    "Main Index Return (%)",
+    "Excess Return (%)",
+    "Common Sessions",
+    "Start Date",
+    "End Date",
+]
 
 SECTOR_REQUIRED_COLUMNS = [
     "Stock",
@@ -24,8 +39,7 @@ SECTOR_REQUIRED_COLUMNS = [
 
 
 def build_ranked_results(data, windows, sort_column):
-    """Build independent ranking for every return window."""
-
+    """Build independent ranking for every benchmark and window."""
     if not data:
         return pd.DataFrame()
 
@@ -36,26 +50,38 @@ def build_ranked_results(data, windows, sort_column):
             f"Required ranking columns missing: {sort_column}, Window"
         )
 
+    # Backward compatibility for historical single-benchmark results.
+    if sort_column == MAIN_SORT_COLUMN and "Benchmark" not in df.columns:
+        df["Benchmark"] = "Main Benchmark"
+
+    group_columns = []
+    if "Benchmark" in df.columns:
+        group_columns.append("Benchmark")
+    group_columns.append("Window")
+
     ranked_parts = []
 
-    for window_name in windows:
-        view = df[df["Window"] == window_name].copy()
+    group_values = df[group_columns].drop_duplicates().to_dict("records")
 
-        if view.empty:
-            continue
+    for group in group_values:
+        mask = pd.Series(True, index=df.index)
+        for column, value in group.items():
+            mask &= df[column] == value
 
+        view = df.loc[mask].copy()
         view[sort_column] = pd.to_numeric(
             view[sort_column],
             errors="coerce",
         )
-
         view = view.dropna(subset=[sort_column])
-
         view = view.sort_values(
             sort_column,
             ascending=False,
             kind="stable",
         ).reset_index(drop=True)
+
+        if view.empty:
+            continue
 
         view.insert(0, "Rank", range(1, len(view) + 1))
         ranked_parts.append(view)
@@ -66,200 +92,216 @@ def build_ranked_results(data, windows, sort_column):
     return pd.concat(ranked_parts, ignore_index=True)
 
 
-def display_results(result):
-    """Render Main Index and guarded Sector results with CSV exports."""
+def _display_main_results(result):
+    """Display Main Index results grouped by benchmark and window."""
+    main_results = result.get("main_results", [])
+    windows = result.get("windows", [])
 
-    st.divider()
-    st.subheader("4. Stock vs Main Index")
-
-    st.write(
-        f"**Sector:** {result['sector']}  \n"
-        f"**Selection:** {result['selection_source']}  \n"
-        f"**Main Benchmark:** {result['benchmark_name']}  \n"
-        f"**Last Run Period:** {result['start_date']} to "
-        f"{result['end_date']}"
-    )
-
-    if result["benchmark_error"]:
-        st.error(
-            "Main Benchmark Data পাওয়া যায়নি: "
-            + result["benchmark_error"]
-        )
-
-    main_results = result["main_results"]
-    windows = result["windows"]
-
-    if main_results:
-        try:
-            ranked_main = build_ranked_results(
-                main_results,
-                windows,
-                MAIN_SORT_COLUMN,
-            )
-
-            if ranked_main.empty:
-                st.warning("Main Index Ranking তৈরি করা যায়নি।")
-
-            else:
-                for window_name in windows:
-                    st.markdown(f"**{window_name} Ranking**")
-
-                    view = ranked_main[
-                        ranked_main["Window"] == window_name
-                    ].copy()
-
-                    if not view.empty:
-                        st.dataframe(
-                            view,
-                            use_container_width=True,
-                            hide_index=True,
-                        )
-
-                main_csv = ranked_main.to_csv(
-                    index=False,
-                ).encode("utf-8-sig")
-
-                st.download_button(
-                    "Download Main Index CSV",
-                    data=main_csv,
-                    file_name="tradelab_main_index_rs.csv",
-                    mime="text/csv",
-                    key="rs_main_csv",
-                    on_click="ignore",
-                )
-
-        except ValueError as error:
-            st.error(f"Main Ranking Error: {error}")
-
-    else:
+    if not main_results:
         st.warning(
             "Main Index-এর সঙ্গে তুলনাযোগ্য ফলাফল পাওয়া যায়নি।"
         )
+        return
 
-    # -------------------------------------------------
-    # Sector Comparison and Membership Guard
-    # -------------------------------------------------
+    try:
+        ranked = build_ranked_results(
+            main_results,
+            windows,
+            MAIN_SORT_COLUMN,
+        )
 
-    st.divider()
-    st.subheader("5. Stock vs Sector Index")
+        if ranked.empty:
+            st.warning("Main Index Ranking তৈরি করা যায়নি।")
+            return
 
+        missing = [
+            column for column in MAIN_REQUIRED_COLUMNS
+            if column not in ranked.columns
+        ]
+        if missing:
+            st.error(
+                "Main Results-এ প্রয়োজনীয় ডেটা পাওয়া যায়নি: "
+                + ", ".join(missing)
+            )
+            return
+
+        benchmark_names = (
+            result.get("benchmark_names")
+            or ranked["Benchmark"].drop_duplicates().tolist()
+        )
+
+        for benchmark in benchmark_names:
+            st.markdown(f"### {benchmark} Ranking")
+
+            benchmark_view = ranked[
+                ranked["Benchmark"] == benchmark
+            ]
+
+            for window_name in windows:
+                view = benchmark_view[
+                    benchmark_view["Window"] == window_name
+                ].copy()
+
+                if view.empty:
+                    continue
+
+                st.markdown(f"**{window_name}**")
+                st.dataframe(
+                    view,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+        csv_data = ranked.to_csv(index=False).encode("utf-8-sig")
+
+        st.download_button(
+            "Download All Main Benchmark Rankings CSV",
+            data=csv_data,
+            file_name="tradelab_multi_benchmark_rs.csv",
+            mime="text/csv",
+            key="rs_multi_main_csv",
+            on_click="ignore",
+        )
+
+    except ValueError as error:
+        st.error(f"Main Ranking Error: {error}")
+
+
+def _display_sector_results(result):
+    """Display guarded Sector Comparison and its CSV export."""
     sector_results = result.get("sector_results", [])
-
     sector_available = result.get(
         "sector_comparison_available",
         bool(sector_results),
     )
-
-    sector_reason = result.get(
-        "sector_comparison_reason",
-        "",
-    )
+    sector_reason = result.get("sector_comparison_reason", "")
 
     if not sector_available:
-        # Guard failed or sector data could not be retrieved.
-        if sector_reason and not sector_reason.startswith(
-            "All selected stocks"
-        ):
+        if sector_reason:
             st.warning(
-                "Sector Comparison বন্ধ রাখা হয়েছে। "
-                "কারণ: " + sector_reason
+                "Sector Comparison বন্ধ রাখা হয়েছে। কারণ: "
+                + sector_reason
             )
         else:
-            if sector_reason:
-                st.info(
-                    "Sector Membership Guard: "
-                    + sector_reason
-                )
-
             st.info(
-                "Guard যাচাইয়ের পরও Sector Comparison-এর জন্য "
-                "তুলনাযোগ্য ফলাফল পাওয়া যায়নি। "
-                "Main Index ফলাফল আলাদাভাবে উপলব্ধ থাকলে তা ব্যবহার করুন।"
+                "Sector Comparison-এর জন্য verified এবং "
+                "তুলনাযোগ্য ফলাফল পাওয়া যায়নি।"
             )
+        return
 
-    elif not sector_results:
+    if not sector_results:
         st.info(
-            "Sector Membership Guard পাস করেছে, "
-            "কিন্তু Sector Comparison-এর ফলাফল পাওয়া যায়নি।"
+            "Sector Membership Guard পাস করেছে, কিন্তু "
+            "Sector Comparison-এর ফলাফল পাওয়া যায়নি।"
+        )
+        return
+
+    sector_df = pd.DataFrame(sector_results)
+    missing = [
+        column for column in SECTOR_REQUIRED_COLUMNS
+        if column not in sector_df.columns
+    ]
+
+    if missing:
+        st.error(
+            "Sector Results-এ প্রয়োজনীয় ডেটা পাওয়া যায়নি: "
+            + ", ".join(missing)
+        )
+        return
+
+    try:
+        ranked = build_ranked_results(
+            sector_results,
+            result.get("windows", []),
+            SECTOR_SORT_COLUMN,
         )
 
-    else:
-        sector_df = pd.DataFrame(sector_results)
+        if ranked.empty:
+            st.warning("Sector Ranking তৈরি করা যায়নি।")
+            return
 
-        missing_columns = [
-            column
-            for column in SECTOR_REQUIRED_COLUMNS
-            if column not in sector_df.columns
-        ]
+        for window_name in result.get("windows", []):
+            view = ranked[
+                ranked["Window"] == window_name
+            ].copy()
 
-        if missing_columns:
-            st.error(
-                "Sector Results-এ প্রয়োজনীয় ডেটা পাওয়া যায়নি: "
-                + ", ".join(missing_columns)
+            if view.empty:
+                continue
+
+            st.markdown(f"**{window_name} Sector Ranking**")
+            st.caption(
+                "Actual Comparison Period: "
+                f"{view['Start Date'].iloc[0]} to "
+                f"{view['End Date'].iloc[0]}"
+            )
+            st.dataframe(
+                view[["Rank"] + SECTOR_REQUIRED_COLUMNS],
+                use_container_width=True,
+                hide_index=True,
             )
 
-        else:
-            try:
-                ranked_sector = build_ranked_results(
-                    sector_results,
-                    windows,
-                    SECTOR_SORT_COLUMN,
-                )
+        csv_data = ranked.to_csv(index=False).encode("utf-8-sig")
 
-                if ranked_sector.empty:
-                    st.warning(
-                        "Sector Ranking তৈরি করা যায়নি।"
-                    )
+        st.download_button(
+            "Download Sector Comparison CSV",
+            data=csv_data,
+            file_name="tradelab_sector_rs.csv",
+            mime="text/csv",
+            key="rs_sector_csv",
+            on_click="ignore",
+        )
 
-                else:
-                    for window_name in windows:
-                        st.markdown(
-                            f"**{window_name} Sector Ranking**"
-                        )
+    except ValueError as error:
+        st.error(f"Sector Ranking Error: {error}")
 
-                        view = ranked_sector[
-                            ranked_sector["Window"] == window_name
-                        ].copy()
 
-                        if not view.empty:
-                            st.caption(
-                                "Actual Comparison Period: "
-                                f"{view['Start Date'].iloc[0]} to "
-                                f"{view['End Date'].iloc[0]}"
-                            )
+def display_results(result):
+    """Render Main Benchmark and guarded Sector results."""
+    st.divider()
+    st.subheader("Stock vs Main Benchmarks")
 
-                            st.dataframe(
-                                view[["Rank"] + SECTOR_REQUIRED_COLUMNS],
-                                use_container_width=True,
-                                hide_index=True,
-                            )
+    benchmark_names = (
+        result.get("benchmark_names")
+        or [result.get("benchmark_name", "Main Benchmark")]
+    )
 
-                    sector_csv = ranked_sector.to_csv(
-                        index=False,
-                    ).encode("utf-8-sig")
+    st.write(
+        f"**Sector:** {result.get('sector')}  \n"
+        f"**Selection:** {result.get('selection_source')}  \n"
+        f"**Main Benchmarks:** {', '.join(benchmark_names)}  \n"
+        f"**Last Run Period:** {result.get('start_date')} to "
+        f"{result.get('end_date')}"
+    )
 
-                    st.download_button(
-                        "Download Sector Comparison CSV",
-                        data=sector_csv,
-                        file_name="tradelab_sector_rs.csv",
-                        mime="text/csv",
-                        key="rs_sector_csv",
-                        on_click="ignore",
-                    )
-
-            except ValueError as error:
-                st.error(f"Sector Ranking Error: {error}")
-
-    # -------------------------------------------------
-    # Data Retrieval Errors
-    # -------------------------------------------------
-
-    if result["errors"]:
-        st.divider()
-        st.subheader("6. Data Retrieval Errors")
-
+    benchmark_errors = result.get("benchmark_errors", {})
+    if benchmark_errors:
+        st.error("এক বা একাধিক Main Benchmark-এর Data পাওয়া যায়নি।")
         st.dataframe(
-            pd.DataFrame(result["errors"]),
+            pd.DataFrame([
+                {"Benchmark": name, "Reason": reason}
+                for name, reason in benchmark_errors.items()
+            ]),
+            use_container_width=True,
+            hide_index=True,
+        )
+    elif result.get("benchmark_error"):
+        st.error(
+            "Main Benchmark Data পাওয়া যায়নি: "
+            + str(result["benchmark_error"])
+        )
+
+    _display_main_results(result)
+
+    st.divider()
+    st.subheader("Stock vs Sector Index")
+    _display_sector_results(result)
+
+    errors = result.get("errors", [])
+    if errors:
+        st.divider()
+        st.subheader("Data Retrieval / Comparison Errors")
+        st.dataframe(
+            pd.DataFrame(errors),
             use_container_width=True,
             hide_index=True,
         )
@@ -267,4 +309,5 @@ def display_results(result):
     st.caption(
         "Excess Return = Stock Return − Benchmark Return. "
         "এটি percentage-point difference, ভবিষ্যৎ Return-এর পূর্বাভাস নয়।"
-    )
+        )
+        
