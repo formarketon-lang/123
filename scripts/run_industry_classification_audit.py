@@ -1,11 +1,11 @@
 
 """Audit company classification with provenance, licensing and taxonomy gates.
 
-NSE mapping requires:
-1. Authorized NSE official classification source.
-2. Primary NSE MII Symbol + ISIN match.
-3. Exact eight-field official taxonomy match.
-4. Recorded taxonomy source provenance.
+Production NSE sector mapping is blocked until classification-source
+authenticity can be independently verified by a trusted verifier.
+
+An operator-declared source type, source name, URL/reference, licence
+status, or SHA-256 hash is not proof of NSE origin or authenticity.
 
 Sector mapping remains disabled.
 """
@@ -36,8 +36,6 @@ DEFAULT_INPUT = (
     / "industry_classification.csv"
 )
 
-REPORT_DIR = PROJECT_ROOT / "reports" / "industry_classification"
-
 SOURCE_TYPES = (
     "NSE_OFFICIAL",
     "BSE_OFFICIAL",
@@ -50,6 +48,8 @@ LICENSE_STATUSES = (
     "NOT_REQUIRED",
     "REJECTED",
 )
+
+SOURCE_AUTHENTICITY_UNVERIFIED = "UNVERIFIED"
 
 
 def _clean(series: pd.Series) -> pd.Series:
@@ -154,10 +154,16 @@ def build_source_provenance(
         "file_size_bytes": len(content),
         "file_sha256": hashlib.sha256(content).hexdigest(),
         "source_type_is_operator_declared": True,
+        "source_authenticity_status": SOURCE_AUTHENTICITY_UNVERIFIED,
+        "source_authenticity_verified": False,
+        "source_authorized_for_nse_mapping": False,
         "note": (
-            "Source type and licence status are operator-declared. "
-            "SHA-256 identifies file content but does not prove "
-            "authenticity or licensing."
+            "Source type, source name, source reference and licence "
+            "status are operator-declared. SHA-256 identifies file "
+            "content but does not prove origin, authenticity or "
+            "licensing. No trusted independent authenticity verifier "
+            "is implemented; production NSE mapping authorization "
+            "therefore remains blocked."
         ),
     }
 
@@ -234,7 +240,7 @@ def build_industry_classification_audit(
     license_status: str = "NOT_REQUIRED",
     official_taxonomy: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict]:
-    """Reconcile company identity and require exact taxonomy validation."""
+    """Reconcile identity and taxonomy while blocking unverified sources."""
 
     if not isinstance(classification, pd.DataFrame) or classification.empty:
         raise ValueError("Industry classification data is empty.")
@@ -371,13 +377,21 @@ def build_industry_classification_audit(
         "Audit_Status",
     ] = "NSE_EQ_SYMBOL_AMBIGUOUS"
 
-    source_authorized = (
-        classification_source_type == "NSE_OFFICIAL"
-        and license_status in {"APPROVED", "NOT_REQUIRED"}
-    )
+    # IMPORTANT:
+    # NSE_OFFICIAL is an operator-declared label, not proof of origin.
+    # No trusted independent authenticity verifier exists yet.
+    source_authenticity_status = SOURCE_AUTHENTICITY_UNVERIFIED
+    source_authenticity_verified = False
+    source_authorized = False
 
     result["Classification_Source_Type"] = classification_source_type
     result["Classification_License_Status"] = license_status
+    result["Source_Authenticity_Status"] = (
+        source_authenticity_status
+    )
+    result["Source_Authenticity_Verified"] = (
+        source_authenticity_verified
+    )
 
     result["Approved"] = (
         result["Audit_Status"].eq("MATCH")
@@ -420,6 +434,13 @@ def build_industry_classification_audit(
         "nse_source_status": nse_source_status,
         "classification_source_type": classification_source_type,
         "classification_license_status": license_status,
+        "source_authenticity_status": source_authenticity_status,
+        "source_authenticity_verified": source_authenticity_verified,
+        "source_authenticity_reason": (
+            "No trusted independent source-authenticity verifier "
+            "is implemented. Operator-declared labels and file hashes "
+            "cannot authorize production NSE mapping."
+        ),
         "source_authorized_for_nse_mapping": source_authorized,
         "classification_rows": total,
         "nse_eq_matched": matched,
@@ -449,7 +470,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Audit classification with source, licensing, MII, "
-            "taxonomy and provenance gates."
+            "taxonomy and source-authenticity gates."
         )
     )
 
@@ -569,8 +590,8 @@ def main() -> None:
 
     if not summary["mapping_eligible"]:
         raise SystemExit(
-            "IDENTITY AUDIT PASS, BUT TAXONOMY OR SOURCE GATE "
-            "BLOCKED PRODUCTION MAPPING."
+            "IDENTITY AUDIT PASS, BUT SOURCE AUTHENTICITY OR "
+            "TAXONOMY GATE BLOCKED PRODUCTION MAPPING."
         )
 
     print("\nAUDIT PASS: all required gates passed.")
