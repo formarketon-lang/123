@@ -1,22 +1,26 @@
-"""Extract the official four-level NSE Indices taxonomy from its PDF."""
+"""Extract the official four-level NSE taxonomy from the Structure PDF."""
 
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
 
-import fitz
+import pymupdf
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 SOURCE_PDF = (
-    ROOT / "data/raw/nse/industry_classification_sources/"
+    ROOT
+    / "data/raw/nse/industry_classification_sources/"
     "nse_industry_classification_structure.pdf"
 )
-OUTPUT_DIR = ROOT / "data/raw/nse/industry_classification_sources"
+
+OUTPUT_DIR = (
+    ROOT / "data/raw/nse/industry_classification_sources"
+)
 REPORT_DIR = ROOT / "reports/industry_classification"
 
 LEVELS = [
@@ -25,6 +29,19 @@ LEVELS = [
     "Industry",
     "Basic Industry",
 ]
+
+# Official NSE Structure PDF columns:
+# 0 MES_Code
+# 1 Macro Economic Sector
+# 2 Sect_Code
+# 3 Sector
+# 4 Ind_Code
+# 5 Industry
+# 6 Basic_Ind_Code
+# 7 Basic Industry
+# 8 Definition
+
+STRUCTURE_COLUMN_INDEXES = (1, 3, 5, 7)
 
 EXPECTED_COUNTS = {
     "Macro Economic Sector": 12,
@@ -37,24 +54,66 @@ EXPECTED_COUNTS = {
 def clean(value):
     if value is None:
         return ""
+
     return " ".join(str(value).replace("\n", " ").split())
 
 
 def header_key(value):
-    return re.sub(r"[^a-z]", "", clean(value).lower())
+    return "".join(
+        character
+        for character in clean(value).lower()
+        if character.isalnum()
+    )
 
 
-HEADER_ALIASES = {
-    "macroeconomicindicator": "Macro Economic Sector",
-    "macroeconomicsector": "Macro Economic Sector",
-    "sector": "Sector",
-    "industry": "Industry",
-    "basicindustry": "Basic Industry",
-}
+def is_structure_header(row):
+    if not row or len(row) < 8:
+        return False
+
+    return (
+        header_key(row[1]) == "macroeconomicsector"
+        and header_key(row[3]) == "sector"
+        and header_key(row[5]) == "industry"
+        and header_key(row[7]) == "basicindustry"
+    )
+
+
+def extract_structure_table_rows(rows):
+    """Read only the four hierarchy columns from NSE's 9-column table."""
+
+    header_index = None
+
+    for index, row in enumerate(rows):
+        if is_structure_header(row):
+            header_index = index
+            break
+
+    if header_index is None:
+        return []
+
+    extracted = []
+
+    for row in rows[header_index + 1:]:
+        if not row or len(row) < 8:
+            continue
+
+        if is_structure_header(row):
+            continue
+
+        hierarchy = [
+            clean(row[index])
+            for index in STRUCTURE_COLUMN_INDEXES
+        ]
+
+        if any(hierarchy):
+            extracted.append(hierarchy)
+
+    return extracted
 
 
 def normalize_taxonomy_rows(rows):
-    """Normalize table rows and forward-fill merged hierarchy cells."""
+    """Forward-fill merged hierarchy cells without inventing values."""
+
     output = []
     current = {level: "" for level in LEVELS}
 
@@ -64,28 +123,10 @@ def normalize_taxonomy_rows(rows):
         if not row or not any(row):
             continue
 
-        mapped_headers = [
-            HEADER_ALIASES.get(header_key(value))
-            for value in row
-        ]
-
-        if all(
-            level in mapped_headers
-            for level in LEVELS
-        ):
-            continue
-
         if len(row) < 4:
             row += [""] * (4 - len(row))
 
         row = row[:4]
-
-        # Skip repeated table headings.
-        if any(
-            header_key(value) in HEADER_ALIASES
-            for value in row
-        ):
-            continue
 
         for index, level in enumerate(LEVELS):
             value = row[index]
@@ -93,12 +134,8 @@ def normalize_taxonomy_rows(rows):
             if value:
                 current[level] = value
 
-                # A new parent invalidates old child values.
                 for child in LEVELS[index + 1:]:
                     current[child] = ""
-
-        if not current["Basic Industry"]:
-            continue
 
         if not all(current.values()):
             continue
@@ -112,31 +149,47 @@ def normalize_taxonomy_rows(rows):
 
 
 def extract_pdf_tables(pdf_path):
-    """Extract tables from all pages using PyMuPDF."""
+    """Extract the 9-column official NSE Structure PDF."""
+
     if not pdf_path.is_file():
         raise FileNotFoundError(
             f"Official Structure PDF not found: {pdf_path}"
         )
 
-    rows = []
+    hierarchy_rows = []
+    header_tables_found = 0
 
-    with fitz.open(pdf_path) as document:
-        for page_number, page in enumerate(document, start=1):
+    with pymupdf.open(pdf_path) as document:
+        for page in document:
             finder = page.find_tables()
 
             for table in finder.tables:
                 extracted = table.extract()
 
-                if extracted:
-                    rows.extend(extracted)
+                if not extracted:
+                    continue
 
-    if not rows:
+                page_rows = extract_structure_table_rows(
+                    extracted
+                )
+
+                if page_rows:
+                    header_tables_found += 1
+                    hierarchy_rows.extend(page_rows)
+
+    if header_tables_found == 0:
         raise ValueError(
-            "No tables were extracted from the official PDF. "
-            "Manual review is required; no taxonomy was fabricated."
+            "Could not identify the official 9-column NSE "
+            "Structure table. Extraction stopped safely."
         )
 
-    return normalize_taxonomy_rows(rows)
+    if not hierarchy_rows:
+        raise ValueError(
+            "No hierarchy rows were extracted. "
+            "No taxonomy was fabricated."
+        )
+
+    return normalize_taxonomy_rows(hierarchy_rows)
 
 
 def run_extraction():
@@ -149,8 +202,6 @@ def run_extraction():
         raise RuntimeError(
             "PDF extraction produced zero valid taxonomy records."
         )
-
-    import pandas as pd
 
     frame = pd.DataFrame(records, columns=LEVELS)
 
@@ -168,22 +219,29 @@ def run_extraction():
         for level, expected in EXPECTED_COUNTS.items()
     }
 
-    taxonomy_path = OUTPUT_DIR / "nse_official_taxonomy.csv"
+    taxonomy_path = (
+        OUTPUT_DIR / "nse_official_taxonomy.csv"
+    )
+
     frame.to_csv(
         taxonomy_path,
         index=False,
         encoding="utf-8-sig",
     )
 
+    all_counts_match = all(
+        item["match"]
+        for item in count_check.values()
+    )
+
     report = {
         "source_file": str(SOURCE_PDF.relative_to(ROOT)),
+        "source_type": "OFFICIAL_NSE_STRUCTURE_PDF",
         "records_extracted": len(frame),
         "unique_counts": counts,
         "expected_count_check": count_check,
         "taxonomy_status": (
-            "PASS"
-            if all(item["match"] for item in count_check.values())
-            else "REVIEW"
+            "PASS" if all_counts_match else "REVIEW"
         ),
         "company_mapping_status": "PENDING",
         "sector_mapping_enabled": False,
@@ -191,7 +249,8 @@ def run_extraction():
     }
 
     report_path = (
-        REPORT_DIR / "nse_official_taxonomy_extraction.json"
+        REPORT_DIR
+        / "nse_official_taxonomy_extraction.json"
     )
 
     report_path.write_text(
@@ -201,10 +260,10 @@ def run_extraction():
 
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
-    if report["taxonomy_status"] != "PASS":
+    if not all_counts_match:
         raise RuntimeError(
-            "Taxonomy extraction completed but count verification "
-            "requires review. Company mapping remains disabled."
+            "NSE taxonomy count verification failed. "
+            "Company mapping remains disabled."
         )
 
     return report
