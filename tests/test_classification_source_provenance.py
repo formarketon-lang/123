@@ -65,6 +65,9 @@ def test_provenance_records_file_hash_and_source(tmp_path):
     assert len(result["file_sha256"]) == 64
     assert result["file_size_bytes"] > 0
     assert result["source_type_is_operator_declared"] is True
+    assert result["source_authenticity_status"] == "UNVERIFIED"
+    assert result["source_authenticity_verified"] is False
+    assert result["source_authorized_for_nse_mapping"] is False
 
 
 def test_vendor_import_is_blocked_when_license_is_pending(tmp_path):
@@ -111,6 +114,7 @@ def test_vendor_import_accepts_approved_license_reference(tmp_path):
     assert result["source_type"] == "THIRD_PARTY_VENDOR"
     assert result["license_status"] == "APPROVED"
     assert result["license_reference"] == "Contract approval reference"
+    assert result["source_authorized_for_nse_mapping"] is False
 
 
 def test_rejected_license_blocks_import(tmp_path):
@@ -155,6 +159,7 @@ def test_vendor_rows_never_become_nse_official_approved_rows():
     assert summary["nse_eq_matched"] == 2
     assert summary["approved_rows"] == 0
     assert summary["source_authorized_for_nse_mapping"] is False
+    assert summary["source_authenticity_verified"] is False
     assert summary["mapping_eligible"] is False
     assert not detail["Approved"].any()
     assert summary["sector_mapping_activated"] is False
@@ -185,7 +190,7 @@ def test_bse_source_cannot_be_approved_as_nse_mapping():
     assert not detail["Approved"].any()
 
 
-def test_nse_official_source_passes_all_three_gates():
+def test_nse_official_operator_label_does_not_pass_authenticity_gate():
     detail, summary = build_industry_classification_audit(
         classification_data(),
         nse_mii_data(),
@@ -198,10 +203,14 @@ def test_nse_official_source_passes_all_three_gates():
     assert summary["taxonomy_status"] == "PASS"
     assert summary["nse_eq_matched"] == 2
     assert summary["taxonomy_matched_rows"] == 2
-    assert summary["approved_rows"] == 2
-    assert summary["source_authorized_for_nse_mapping"] is True
-    assert summary["mapping_eligible"] is True
-    assert detail["Approved"].all()
+
+    assert summary["source_authenticity_status"] == "UNVERIFIED"
+    assert summary["source_authenticity_verified"] is False
+    assert summary["source_authorized_for_nse_mapping"] is False
+
+    assert summary["approved_rows"] == 0
+    assert summary["mapping_eligible"] is False
+    assert not detail["Approved"].any()
     assert summary["sector_mapping_activated"] is False
 
 
@@ -236,10 +245,11 @@ def test_unknown_taxonomy_path_blocks_mapping():
 
     assert summary["status"] == "PASS"
     assert summary["taxonomy_status"] == "REVIEW"
-    assert summary["approved_rows"] == 1
+    assert summary["approved_rows"] == 0
+    assert summary["source_authorized_for_nse_mapping"] is False
     assert summary["mapping_eligible"] is False
     assert marico["Taxonomy_Status"] == "NOT_IN_OFFICIAL_TAXONOMY"
-    assert not marico["Approved"]
+    assert not detail["Approved"].any()
 
 
 def test_wrong_sector_parent_blocks_mapping():
@@ -257,9 +267,11 @@ def test_wrong_sector_parent_blocks_mapping():
     marico = detail.loc[detail["Symbol"].eq("MARICO")].iloc[0]
 
     assert summary["taxonomy_status"] == "REVIEW"
+    assert summary["approved_rows"] == 0
+    assert summary["source_authorized_for_nse_mapping"] is False
     assert summary["mapping_eligible"] is False
     assert marico["Taxonomy_Status"] == "NOT_IN_OFFICIAL_TAXONOMY"
-    assert not marico["Approved"]
+    assert not detail["Approved"].any()
 
 
 def test_file_hash_changes_when_file_content_changes(tmp_path):
