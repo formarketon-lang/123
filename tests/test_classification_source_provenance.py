@@ -1,3 +1,4 @@
+
 """Tests for provenance, licensing and integrated taxonomy gates."""
 
 import pandas as pd
@@ -231,11 +232,14 @@ def test_unknown_taxonomy_path_blocks_mapping():
         official_taxonomy=taxonomy,
     )
 
+    marico = detail.loc[detail["Symbol"].eq("MARICO")].iloc[0]
+
     assert summary["status"] == "PASS"
     assert summary["taxonomy_status"] == "REVIEW"
     assert summary["approved_rows"] == 1
     assert summary["mapping_eligible"] is False
-    assert not detail.loc[0, "Approved"]
+    assert marico["Taxonomy_Status"] == "NOT_IN_OFFICIAL_TAXONOMY"
+    assert not marico["Approved"]
 
 
 def test_wrong_sector_parent_blocks_mapping():
@@ -250,9 +254,12 @@ def test_wrong_sector_parent_blocks_mapping():
         official_taxonomy=taxonomy,
     )
 
+    marico = detail.loc[detail["Symbol"].eq("MARICO")].iloc[0]
+
     assert summary["taxonomy_status"] == "REVIEW"
     assert summary["mapping_eligible"] is False
-    assert not detail.loc[0, "Approved"]
+    assert marico["Taxonomy_Status"] == "NOT_IN_OFFICIAL_TAXONOMY"
+    assert not marico["Approved"]
 
 
 def test_file_hash_changes_when_file_content_changes(tmp_path):
