@@ -1,10 +1,12 @@
+
 """Audit company classification with provenance, licensing and taxonomy gates.
 
-No inferred classification is approved.
 NSE mapping requires:
 1. Authorized NSE official classification source.
 2. Primary NSE MII Symbol + ISIN match.
 3. Exact eight-field official taxonomy match.
+4. Recorded taxonomy source provenance.
+
 Sector mapping remains disabled.
 """
 
@@ -160,8 +162,53 @@ def build_source_provenance(
     }
 
 
+def build_taxonomy_provenance(
+    input_path: str | Path,
+    source_reference: str,
+) -> dict:
+    """Record taxonomy file identity and its operator-declared reference."""
+
+    path = Path(input_path)
+
+    if not path.exists() or not path.is_file():
+        raise FileNotFoundError(
+            f"Official taxonomy reference not found: {path}"
+        )
+
+    if path.suffix.lower() != ".csv":
+        raise ValueError("Taxonomy reference must be a CSV file.")
+
+    if (
+        not isinstance(source_reference, str)
+        or not source_reference.strip()
+    ):
+        raise ValueError(
+            "Taxonomy source reference is required."
+        )
+
+    content = path.read_bytes()
+
+    if not content:
+        raise ValueError("Taxonomy reference file is empty.")
+
+    return {
+        "file_name": path.name,
+        "file_sha256": hashlib.sha256(content).hexdigest(),
+        "file_size_bytes": len(content),
+        "source_reference": source_reference.strip(),
+        "source_reference_is_operator_declared": True,
+        "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+        "note": (
+            "The source reference is operator-declared. "
+            "File hash identifies content but does not prove "
+            "NSE origin, official status, authenticity or licensing."
+        ),
+    }
+
+
 def _load_taxonomy_file(path: str | Path) -> pd.DataFrame:
     """Load an explicitly supplied taxonomy reference CSV."""
+
     file_path = Path(path)
 
     if not file_path.exists() or not file_path.is_file():
@@ -170,9 +217,7 @@ def _load_taxonomy_file(path: str | Path) -> pd.DataFrame:
         )
 
     if file_path.suffix.lower() != ".csv":
-        raise ValueError(
-            "Taxonomy reference must be a CSV file."
-        )
+        raise ValueError("Taxonomy reference must be a CSV file.")
 
     return pd.read_csv(
         file_path,
@@ -264,7 +309,6 @@ def build_industry_classification_audit(
             )
         )
 
-    # Taxonomy gate: missing reference means no row can be approved.
     if official_taxonomy is None:
         classification_data["Taxonomy_Status"] = (
             "TAXONOMY_REFERENCE_NOT_PROVIDED"
@@ -404,8 +448,8 @@ def build_industry_classification_audit(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit classification with source, licensing, MII "
-            "and official taxonomy gates."
+            "Audit classification with source, licensing, MII, "
+            "taxonomy and provenance gates."
         )
     )
 
@@ -422,10 +466,27 @@ def main() -> None:
         "--taxonomy-input",
         type=Path,
         default=None,
-        help="Official taxonomy reference CSV. Required for mapping approval.",
+        help="Taxonomy reference CSV.",
+    )
+    parser.add_argument(
+        "--taxonomy-source-reference",
+        default=None,
+        help="Operator-declared source URL or document reference for taxonomy.",
     )
 
     args = parser.parse_args()
+
+    if args.taxonomy_input is not None and not args.taxonomy_source_reference:
+        parser.error(
+            "--taxonomy-source-reference is required when "
+            "--taxonomy-input is supplied."
+        )
+
+    if args.taxonomy_input is None and args.taxonomy_source_reference:
+        parser.error(
+            "--taxonomy-source-reference cannot be used without "
+            "--taxonomy-input."
+        )
 
     provenance = build_source_provenance(
         input_path=args.input,
@@ -449,18 +510,10 @@ def main() -> None:
 
     if args.taxonomy_input is not None:
         taxonomy = _load_taxonomy_file(args.taxonomy_input)
-        taxonomy_bytes = args.taxonomy_input.read_bytes()
-
-        taxonomy_provenance = {
-            "file_name": args.taxonomy_input.name,
-            "file_sha256": hashlib.sha256(taxonomy_bytes).hexdigest(),
-            "file_size_bytes": len(taxonomy_bytes),
-            "source_reference": str(args.taxonomy_input),
-            "note": (
-                "File identity recorded. Official origin must be "
-                "verified independently; a hash does not prove authority."
-            ),
-        }
+        taxonomy_provenance = build_taxonomy_provenance(
+            input_path=args.taxonomy_input,
+            source_reference=args.taxonomy_source_reference,
+        )
 
     print("Downloading NSE MII security master...")
     nse_universe = fetch_nse_equity_universe()
@@ -488,6 +541,7 @@ def main() -> None:
         json.dumps(summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
+
     provenance_path.write_text(
         json.dumps(
             {
