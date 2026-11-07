@@ -1,169 +1,137 @@
-TradeLab Pro — Industry Classification Source Evidence Register
+TradeLab Pro — Independent Source Authenticity Verification
 
 Project ID: TLP-MASTER-001
 Part: 04
 Chapter: 25
-Step: 20 — Independent Source Evidence & Verification Design
-Status: DOCUMENTATION PREPARED — AWAITING GITHUB COMMIT
-Last Updated: 2026-11-07
+Step: 21
+Status: REVIEW COMPLETE — HOLD
+Date: 2026-11-07
 
----
+1. Objective
 
-1. Purpose
+Verify the authenticity, ownership, company-level coverage and commercial authorization of candidate industry-classification sources.
 
-This document records the independent evidence status of the company-level industry classification source required by TradeLab Pro.
+2. NSE Official Classification
 
-The objective is to establish a verifiable, authorized and commercially permissible source for NSE company-level classification before enabling sector mapping.
+Official source:
+https://www.nseindia.com/static/products-services/industry-classification
 
-TradeLab Pro supports NSE and BSE cash equities only. It does not include an F&O scanner.
+Findings:
 
-2. Official NSE Classification Sources
+- NSE Indices Ltd. owns the classification framework.
+- Four-tier taxonomy: Macro Economic Sector, Sector, Industry and Basic Industry.
+- Classification methodology uses company business activity and revenue.
 
-Source A — NSE Indices Industry Classification
+Result: Official taxonomy verified.
 
-URL: https://www.niftyindices.com/resources/industry-classification
+Limitation: Complete downloadable company-level Symbol and ISIN mapping is not established.
 
-Verified information:
+3. GFDL API Assessment
 
-- NSE Indices publishes a four-tier industry classification framework.
-- Macro Economic Sectors: 12
-- Sectors: 22
-- Industries: 59
-- Basic Industries: 197
+Provider: Global Financial Datafeeds LLP
 
-Verification result: OFFICIAL TAXONOMY FRAMEWORK VERIFIED
+API documentation:
+https://docs.globaldatafeeds.in/getsectoralclassification-15575605e0
 
-Limitation: This framework does not itself establish a complete downloadable company-level Symbol and ISIN mapping.
+Documented fields:
 
-Source B — NSE Indices Industry Classification Guideline, July 2023
+- Symbol
+- ScripCode
+- CompanyName
+- ISIN
+- MacroEconomicIndicator
+- Sector
+- Industry
+- BasicIndustry
+- AllotedFrom
 
-URL: https://www.niftyindices.com/docs/default-source/default-document-library/industry-classification/nse-indices_industry-classification-guideline-2023-07.pdf?sfvrsn=d89dd39_1
+Result: Required field structure documented.
 
-Verified information:
+However:
 
-- Classification methodology is based on company business activities and revenue.
-- Audited consolidated annual financial statements are a primary information source.
-- Classification may be reviewed periodically or following relevant corporate events.
-- The document includes restrictions concerning commercial use and unauthorized dissemination.
+- Complete NSE/BSE universe coverage is not verified.
+- Record-level official provenance is not independently authenticated.
+- Live production API data has not been validated.
+- Commercial authorization is not established.
 
-Verification result: METHODOLOGY DOCUMENT VERIFIED
+Support Ticket: 39451
 
-Commercial use and licensing: NOT AUTHORIZED / NOT VERIFIED
+Acknowledgement recorded: 2026-11-07.
+Substantive response pending.
 
-Official contact: indices@nse.co.in
+4. Commercial Licensing
 
-Source C — NSE Indices Industry Classification Structure, July 2023
+Provider purchase conditions:
+https://globaldatafeeds.in/global-datafeeds-apis/global-datafeeds-apis/pricing-sales/who-can-purchase/
 
-URL: https://www.niftyindices.com/docs/default-source/default-document-library/industry-classification/nse-indices_industry-classification-structure-2023-07.pdf?sfvrsn=c89dd39_1
+Provider terms:
+https://globaldatafeeds.in/terms-and-conditions/
 
-Verified information:
+Findings:
 
-- Provides classification hierarchy, codes and definitions.
-- Supports exact taxonomy-path validation.
+- Public API purchase conditions specify personal-use restrictions.
+- Commercial use requires applicable exchange agreements and fees.
+- Redistribution requires explicit written permission.
 
-Limitation: Does not establish complete company-level Symbol and ISIN assignments.
+Result: Commercial authorization NOT VERIFIED.
 
-Verification result: TAXONOMY STRUCTURE VERIFIED — COMPANY MAPPING NOT VERIFIED
+5. Independent Corroboration
 
-Source D — NSE Securities Available for Trading
+AMFI source:
+https://www.amfiindia.com/research-information/list-of-group-companies
 
-URL: https://www.nseindia.com/static/market-data/securities-available-for-trading
+AMFI provides company identity, ISIN and sector information for a limited group-company dataset.
 
-Purpose:
+Result: Partial corroboration only.
 
-- Security identity and trading-availability evidence.
-- Can support NSE security master verification.
+This dataset cannot establish complete NSE/BSE coverage.
 
-Limitation: Security identity data is not company-level industry classification.
+6. Evidence Decision Matrix
 
-Verification result: IDENTITY SOURCE ONLY
+Requirement| Status
+Official NSE taxonomy| VERIFIED
+Official methodology| VERIFIED
+GFDL API field documentation| DOCUMENTED
+Complete company coverage| NOT VERIFIED
+Symbol + ISIN coverage| PARTIAL
+Record-level provenance| NOT VERIFIED
+Commercial authorization| NOT AUTHORIZED
+Redistribution rights| NOT AUTHORIZED
+Production API validation| NOT TESTED
 
-3. External Provider Evidence — Global Datafeeds
-
-Provider: Global Datafeeds
-
-API information requested: "GetSectoralClassification"
-
-Support ticket: 39451
-
-Acknowledgement received: 2026-11-07
-
-Email subject: TradeLab Pro – Enquiry for NSE/BSE Official Company-Level Sectoral Classification API and Commercial Licensing
-
-Current status:
-
-- Support request acknowledged.
-- Substantive technical response pending.
-- Official source provenance not independently verified.
-- Company-level Symbol and ISIN coverage not verified.
-- Commercial licensing not verified.
-- Redistribution and display rights not verified.
-
-Decision: DO NOT APPROVE AS NSE OFFICIAL SOURCE YET
-
-4. NSE Communication Status
-
-Recipient: indices@nse.co.in
-
-Subject: Request for Official Company-Level NSE Industry Classification Dataset / API
-
-Status as of 2026-11-07:
-
-- Request sent.
-- No incoming response verified yet.
-- Official company-level dataset/API availability remains unconfirmed.
-- Commercial permission remains unconfirmed.
-
-5. Independent Evidence Decision Matrix
-
-Requirement| Current Status
-Official NSE taxonomy framework| VERIFIED
-Official classification methodology| VERIFIED
-Complete company-level classification dataset| NOT VERIFIED
-Symbol + ISIN coverage| NOT VERIFIED
-Independent source authenticity| NOT VERIFIED
-API access and documentation| NOT VERIFIED
-Commercial usage authorization| NOT VERIFIED
-Redistribution/display rights| NOT VERIFIED
-Independent authenticity verifier| NOT IMPLEMENTED
-
-6. Production Safety Controls
-
-The following controls must remain enforced until independent evidence is available:
+7. Mandatory Production Controls
 
 source_authenticity_status = "UNVERIFIED"
 source_authenticity_verified = False
 source_authorized_for_nse_mapping = False
+commercial_use_authorized = False
+redistribution_authorized = False
 mapping_eligible = False
 sector_mapping_activated = False
 
-No source may be approved solely because an operator declares it to be official.
+No inferred mapping from company names, tickers, index membership or third-party labels is permitted.
 
-A filename, URL, source label, API response, or SHA-256 hash alone does not establish official authenticity or commercial authorization.
+8. Required Next Actions
 
-No inferred mapping from company names, tickers, third-party sector labels or index membership is permitted.
+1. Obtain written GFDL source-provenance confirmation.
+2. Obtain complete company-level Symbol and ISIN coverage details.
+3. Obtain API documentation and sample production response.
+4. Obtain commercial-use and redistribution permissions.
+5. Validate records against official NSE identity and taxonomy evidence.
+6. Run automated tests and GitHub Actions.
+7. Keep Sector Mapping disabled until every approval condition passes.
 
-7. Step 20 Completion Conditions
+9. Final Decision
 
-Step 20 can be closed only after:
+HOLD — DO NOT ENABLE SECTOR MAPPING.
 
-1. Independent evidence of the source owner and authenticity is obtained.
-2. Written confirmation of company-level Symbol and ISIN coverage is obtained.
-3. Technical API or dataset documentation is obtained and reviewed.
-4. Commercial usage, storage, display and redistribution rights are confirmed in writing.
-5. The source is independently validated against NSE identity and official taxonomy evidence.
-6. Required audit tests and GitHub Actions pass.
+GFDL remains a candidate source, not an approved production source.
 
-8. Final Decision
-
-Current decision: HOLD — DO NOT ENABLE SECTOR MAPPING.
-
-Official NSE taxonomy and methodology are verified, but a complete authorized company-level classification source has not yet been established.
-
-TradeLab Pro must continue operating with sector mapping disabled until all required evidence and authorization conditions are satisfied.
+Public API documentation does not establish commercial licensing or official record-level provenance.
 
 ---
 
-Project Checkpoint: "TLP-CP-2026-11-07-PHASE-04-CH25-STEP-20-EVIDENCE-REGISTER-PREPARED"
+Project Checkpoint:
+TLP-CP-2026-11-07-PHASE-04-CH25-STEP-21-SOURCE-AUTHENTICITY-REVIEW-COMPLETE-HOLD
 
-Next Action: Commit this evidence register to the main repository and verify GitHub Actions.
+Next: Complete source authorization and coverage verification before Step 22 approval.
