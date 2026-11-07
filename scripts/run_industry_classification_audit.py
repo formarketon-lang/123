@@ -1,8 +1,8 @@
+"""Audit full NSE EQ classification coverage with provenance,
+licensing and taxonomy gates.
 
-"""Audit company classification with provenance, licensing and taxonomy gates.
-
-Production NSE sector mapping remains blocked until source authenticity
-can be independently verified by a trusted verifier.
+Production NSE sector mapping remains blocked until source
+authenticity can be independently verified by a trusted verifier.
 """
 
 from __future__ import annotations
@@ -46,7 +46,9 @@ SOURCE_AUTHENTICITY_UNVERIFIED = "UNVERIFIED"
 
 
 def _clean(series: pd.Series) -> pd.Series:
-    return series.astype("string").str.strip().str.upper()
+    """Normalize identity fields without converting blanks to valid IDs."""
+    cleaned = series.astype("string").str.strip().str.upper()
+    return cleaned.replace("", pd.NA)
 
 
 def _source_status(data: pd.DataFrame) -> str:
@@ -227,6 +229,12 @@ def build_industry_classification_audit(
     license_status: str = "NOT_REQUIRED",
     official_taxonomy: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict]:
+    """Reconcile classification in both directions against NSE EQ.
+
+    A full-universe pass requires every NSE EQ row to have exactly
+    one classification identity with matching Symbol and ISIN.
+    """
+
     if not isinstance(classification, pd.DataFrame) or classification.empty:
         raise ValueError("Industry classification data is empty.")
 
@@ -285,18 +293,19 @@ def build_industry_classification_audit(
     if classification_data["ISIN"].isna().any():
         raise ValueError("Classification contains missing ISIN values.")
 
-    duplicate_classification = (
+    duplicate_classification_symbol = (
         classification_data["Symbol"].duplicated(keep=False)
     )
 
-    if duplicate_classification.any():
+    if duplicate_classification_symbol.any():
         duplicates = classification_data.loc[
-            duplicate_classification, "Symbol"
-        ].unique().tolist()
+            duplicate_classification_symbol, "Symbol"
+        ].dropna().unique().tolist()
         raise ValueError(
             "Duplicate classification symbols: " + ", ".join(duplicates)
         )
 
+    # Taxonomy validation applies only to supplied classification rows.
     if official_taxonomy is None:
         classification_data["Taxonomy_Status"] = (
             "TAXONOMY_REFERENCE_NOT_PROVIDED"
@@ -321,15 +330,55 @@ def build_industry_classification_audit(
             )
         )
 
+    # Only NSE EQ securities form the denominator for full coverage.
     nse_eq = nse_data[nse_data["Series"].eq("EQ")].copy()
-    duplicate_nse = nse_eq["Symbol"].duplicated(keep=False)
+    nse_eq_total = len(nse_eq)
+
+    if nse_eq.empty:
+        raise ValueError("NSE universe contains no EQ series records.")
+
+    nse_invalid_identity_mask = (
+        nse_eq["Symbol"].isna() | nse_eq["ISIN"].isna()
+    )
+    nse_invalid_identity_rows = int(nse_invalid_identity_mask.sum())
+
+    duplicate_nse_symbol_mask = nse_eq["Symbol"].duplicated(keep=False)
     ambiguous_symbols = set(
-        nse_eq.loc[duplicate_nse, "Symbol"].dropna().tolist()
+        nse_eq.loc[
+            duplicate_nse_symbol_mask, "Symbol"
+        ].dropna().tolist()
     )
 
-    nse_unique = nse_eq[~duplicate_nse][
-        ["Symbol", "ISIN"]
-    ].rename(columns={"ISIN": "NSE_ISIN"})
+    duplicate_nse_isin_mask = nse_eq["ISIN"].duplicated(keep=False)
+    duplicate_nse_isin_values = set(
+        nse_eq.loc[
+            duplicate_nse_isin_mask, "ISIN"
+        ].dropna().tolist()
+    )
+    duplicate_nse_isin_rows = int(duplicate_nse_isin_mask.sum())
+
+    duplicate_classification_isin_mask = (
+        classification_data["ISIN"].duplicated(keep=False)
+    )
+    duplicate_classification_isin_values = set(
+        classification_data.loc[
+            duplicate_classification_isin_mask, "ISIN"
+        ].dropna().tolist()
+    )
+    duplicate_classification_isin_rows = int(
+        duplicate_classification_isin_mask.sum()
+    )
+
+    classification_symbols = set(
+        classification_data["Symbol"].dropna().tolist()
+    )
+
+    # Forward reconciliation: classification -> NSE EQ.
+    nse_unique = nse_eq[
+        ~duplicate_nse_symbol_mask
+    ][["Symbol", "ISIN"]].rename(
+        columns={"ISIN": "NSE_ISIN"}
+    )
 
     result = classification_data.merge(
         nse_unique,
@@ -338,7 +387,9 @@ def build_industry_classification_audit(
         validate="one_to_one",
     )
 
-    symbol_missing = result["NSE_ISIN"].isna()
+    nse_symbol_set = set(nse_eq["Symbol"].dropna().tolist())
+    symbol_missing_from_nse = ~result["Symbol"].isin(nse_symbol_set)
+
     isin_match = (
         result["ISIN"].notna()
         & result["NSE_ISIN"].notna()
@@ -348,59 +399,131 @@ def build_industry_classification_audit(
     result["Audit_Status"] = "ISIN_MISMATCH"
     result.loc[isin_match, "Audit_Status"] = "MATCH"
     result.loc[
-        symbol_missing, "Audit_Status"
+        symbol_missing_from_nse, "Audit_Status"
     ] = "NSE_EQ_SYMBOL_MISSING"
     result.loc[
         result["Symbol"].isin(ambiguous_symbols),
         "Audit_Status",
     ] = "NSE_EQ_SYMBOL_AMBIGUOUS"
 
+    result["Classification_ISIN_Duplicate"] = (
+        result["ISIN"].isin(duplicate_classification_isin_values)
+    )
+    result["NSE_ISIN_Duplicate"] = (
+        result["NSE_ISIN"].isin(duplicate_nse_isin_values)
+    )
+
+    # Reverse reconciliation: every NSE EQ row must have classification.
+    # Preserve every missing NSE EQ record in the detail report.
+    missing_classification_nse = nse_eq[
+        ~nse_eq["Symbol"].isin(classification_symbols)
+    ].copy()
+
+    missing_detail = pd.DataFrame(
+        pd.NA,
+        index=range(len(missing_classification_nse)),
+        columns=classification_data.columns,
+    )
+
+    if not missing_classification_nse.empty:
+        missing_detail["Symbol"] = (
+            missing_classification_nse["Symbol"].to_numpy()
+        )
+        missing_detail["ISIN"] = (
+            missing_classification_nse["ISIN"].to_numpy()
+        )
+        missing_detail["Taxonomy_Status"] = "CLASSIFICATION_MISSING"
+        missing_detail["Taxonomy_Validated"] = False
+
+        missing_detail["NSE_ISIN"] = (
+            missing_classification_nse["ISIN"].to_numpy()
+        )
+        missing_detail["Audit_Status"] = "CLASSIFICATION_MISSING"
+        missing_detail["Classification_ISIN_Duplicate"] = False
+        missing_detail["NSE_ISIN_Duplicate"] = (
+            missing_classification_nse["ISIN"]
+            .isin(duplicate_nse_isin_values)
+            .to_numpy()
+        )
+
     # Operator-declared NSE_OFFICIAL labels are not authenticity evidence.
     source_authenticity_status = SOURCE_AUTHENTICITY_UNVERIFIED
     source_authenticity_verified = False
     source_authorized = False
 
-    result["Classification_Source_Type"] = classification_source_type
-    result["Classification_License_Status"] = license_status
-    result["Source_Authenticity_Status"] = source_authenticity_status
-    result["Source_Authenticity_Verified"] = source_authenticity_verified
+    for frame in (result, missing_detail):
+        frame["Classification_Source_Type"] = classification_source_type
+        frame["Classification_License_Status"] = license_status
+        frame["Source_Authenticity_Status"] = (
+            source_authenticity_status
+        )
+        frame["Source_Authenticity_Verified"] = (
+            source_authenticity_verified
+        )
 
     result["Approved"] = (
         result["Audit_Status"].eq("MATCH")
         & result["Taxonomy_Validated"].eq(True)
+        & ~result["Classification_ISIN_Duplicate"]
+        & ~result["NSE_ISIN_Duplicate"]
         & (nse_source_status == "PRIMARY_MII")
         & source_authorized
     )
+    missing_detail["Approved"] = False
 
-    total = len(result)
+    # Counts for the classification -> NSE direction.
+    classification_rows = len(classification_data)
     matched = int(result["Audit_Status"].eq("MATCH").sum())
     mismatches = int(result["Audit_Status"].eq("ISIN_MISMATCH").sum())
-    missing = int(
+    classification_symbols_missing_from_nse = int(
         result["Audit_Status"].eq("NSE_EQ_SYMBOL_MISSING").sum()
     )
     ambiguous = int(
         result["Audit_Status"].eq("NSE_EQ_SYMBOL_AMBIGUOUS").sum()
     )
-    taxonomy_matched = int(result["Taxonomy_Validated"].sum())
+
+    # Counts for the NSE EQ -> classification direction.
+    nse_eq_missing_classification = len(missing_classification_nse)
+
+    taxonomy_matched = int(
+        classification_data["Taxonomy_Validated"].sum()
+    )
+
+    coverage_pct = (
+        round((matched / nse_eq_total) * 100, 4)
+        if nse_eq_total
+        else 0.0
+    )
+
+    full_universe_coverage_passed = (
+        nse_eq_total > 0
+        and matched == nse_eq_total
+        and nse_eq_missing_classification == 0
+        and mismatches == 0
+        and classification_symbols_missing_from_nse == 0
+        and ambiguous == 0
+        and nse_invalid_identity_rows == 0
+        and duplicate_nse_isin_rows == 0
+        and duplicate_classification_isin_rows == 0
+        and classification_rows == nse_eq_total
+    )
 
     identity_audit_passed = (
-        total > 0
+        full_universe_coverage_passed
         and nse_source_status == "PRIMARY_MII"
-        and matched == total
-        and mismatches == 0
-        and missing == 0
-        and ambiguous == 0
     )
 
     taxonomy_passed = (
         taxonomy_summary["status"] == "PASS"
-        and taxonomy_matched == total
+        and taxonomy_matched == classification_rows
     )
 
     approved_rows = int(result["Approved"].sum())
 
     summary = {
-        "audit_id": datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
+        "audit_id": datetime.now(timezone.utc).strftime(
+            "%Y%m%d_%H%M%S"
+        ),
         "audit_time_utc": datetime.now(timezone.utc).isoformat(),
         "status": "PASS" if identity_audit_passed else "REVIEW",
         "nse_source_status": nse_source_status,
@@ -414,42 +537,75 @@ def build_industry_classification_audit(
             "cannot authorize production NSE mapping."
         ),
         "source_authorized_for_nse_mapping": source_authorized,
-        "classification_rows": total,
+        "classification_rows": classification_rows,
+        "nse_eq_universe_rows": nse_eq_total,
         "nse_eq_matched": matched,
+        "nse_eq_coverage_pct": coverage_pct,
+        "full_universe_coverage_passed": (
+            full_universe_coverage_passed
+        ),
+        "nse_eq_missing_classification": (
+            nse_eq_missing_classification
+        ),
+        "classification_symbols_missing_from_nse": (
+            classification_symbols_missing_from_nse
+        ),
         "isin_mismatches": mismatches,
-        "nse_eq_missing": missing,
+        "nse_eq_missing": classification_symbols_missing_from_nse,
         "ambiguous_nse_symbols": ambiguous,
+        "nse_eq_invalid_identity_rows": nse_invalid_identity_rows,
+        "duplicate_nse_isin_rows": duplicate_nse_isin_rows,
+        "duplicate_classification_isin_rows": (
+            duplicate_classification_isin_rows
+        ),
         "taxonomy_status": "PASS" if taxonomy_passed else "REVIEW",
         "taxonomy_matched_rows": taxonomy_matched,
-        "taxonomy_unmatched_rows": total - taxonomy_matched,
+        "taxonomy_unmatched_rows": (
+            classification_rows - taxonomy_matched
+        ),
         "taxonomy_summary": taxonomy_summary,
         "approved_rows": approved_rows,
         "mapping_eligible": bool(
             identity_audit_passed
             and source_authorized
             and taxonomy_passed
-            and approved_rows == total
+            and approved_rows == classification_rows
         ),
         "sector_mapping_activated": False,
     }
 
-    return result.sort_values("Symbol").reset_index(drop=True), summary
+    detail = pd.concat(
+        [result, missing_detail],
+        ignore_index=True,
+        sort=False,
+    )
+
+    return detail.sort_values(
+        "Symbol",
+        na_position="last",
+    ).reset_index(drop=True), summary
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit classification with source, licensing, MII, "
-            "taxonomy and source-authenticity gates."
+            "Audit full NSE EQ classification coverage with source, "
+            "licensing, MII, taxonomy and authenticity gates."
         )
     )
 
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
-    parser.add_argument("--source-type", required=True, choices=SOURCE_TYPES)
+    parser.add_argument(
+        "--source-type",
+        required=True,
+        choices=SOURCE_TYPES,
+    )
     parser.add_argument("--source-name", required=True)
     parser.add_argument("--source-reference", required=True)
     parser.add_argument(
-        "--license-status", required=True, choices=LICENSE_STATUSES
+        "--license-status",
+        required=True,
+        choices=LICENSE_STATUSES,
     )
     parser.add_argument("--license-reference", default=None)
     parser.add_argument("--as-of-date", default=None)
@@ -457,110 +613,4 @@ def main() -> None:
     parser.add_argument(
         "--taxonomy-source-reference",
         default=None,
-        help="Operator-declared source reference for taxonomy.",
-    )
-
-    args = parser.parse_args()
-
-    if args.taxonomy_input is not None and not args.taxonomy_source_reference:
-        parser.error(
-            "--taxonomy-source-reference is required when "
-            "--taxonomy-input is supplied."
-        )
-
-    if args.taxonomy_input is None and args.taxonomy_source_reference:
-        parser.error(
-            "--taxonomy-source-reference cannot be used without "
-            "--taxonomy-input."
-        )
-
-    provenance = build_source_provenance(
-        input_path=args.input,
-        source_type=args.source_type,
-        source_name=args.source_name,
-        source_reference=args.source_reference,
-        license_status=args.license_status,
-        license_reference=args.license_reference,
-        effective_date=args.as_of_date,
-    )
-
-    classification = load_industry_classification_file(
-        file_path=args.input,
-        source_name=args.source_name,
-        source_reference=args.source_reference,
-        as_of_date=args.as_of_date,
-    )
-
-    taxonomy = None
-    taxonomy_provenance = None
-
-    if args.taxonomy_input is not None:
-        taxonomy = _load_taxonomy_file(args.taxonomy_input)
-        taxonomy_provenance = build_taxonomy_provenance(
-            input_path=args.taxonomy_input,
-            source_reference=args.taxonomy_source_reference,
-        )
-
-    print("Downloading NSE MII security master...")
-    nse_universe = fetch_nse_equity_universe()
-
-    detail, summary = build_industry_classification_audit(
-        classification=classification,
-        nse_universe=nse_universe,
-        classification_source_type=args.source_type,
-        license_status=args.license_status,
-        official_taxonomy=taxonomy,
-    )
-
-    REPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-    detail_path = REPORT_DIR / "nse_industry_classification_audit.csv"
-    summary_path = REPORT_DIR / "nse_industry_classification_summary.json"
-    provenance_path = REPORT_DIR / "classification_source_provenance.json"
-
-    detail.to_csv(detail_path, index=False)
-
-    summary["source_provenance"] = provenance
-    summary["taxonomy_provenance"] = taxonomy_provenance
-
-    summary_path.write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-    provenance_path.write_text(
-        json.dumps(
-            {
-                "classification_source": provenance,
-                "taxonomy_source": taxonomy_provenance,
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    print("\n========== INDUSTRY CLASSIFICATION AUDIT ==========")
-    for key, value in summary.items():
-        if key not in {"source_provenance", "taxonomy_provenance"}:
-            print(f"{key}: {value}")
-
-    print("\nDetail:", detail_path)
-    print("Summary:", summary_path)
-    print("Provenance:", provenance_path)
-
-    if summary["status"] != "PASS":
-        raise SystemExit("AUDIT REVIEW: NSE MII reconciliation failed.")
-
-    if not summary["mapping_eligible"]:
-        raise SystemExit(
-            "IDENTITY AUDIT PASS, BUT SOURCE AUTHENTICITY OR "
-            "TAXONOMY GATE BLOCKED PRODUCTION MAPPING."
-        )
-
-    print("\nAUDIT PASS: all required gates passed.")
-    print("Sector Mapping remains disabled.")
-
-
-if __name__ == "__main__":
-    main()
+        help=
