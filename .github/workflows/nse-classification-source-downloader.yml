@@ -5,7 +5,10 @@ on:
   push:
     paths:
       - "scripts/run_industry_classification_source_downloader.py"
+      - "scripts/run_nse_classification_taxonomy_extraction.py"
       - "tests/test_industry_classification_source_downloader.py"
+      - "tests/test_nse_classification_taxonomy_extraction.py"
+      - "requirements.txt"
       - ".github/workflows/nse-classification-source-downloader.yml"
 
 permissions:
@@ -29,30 +32,41 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run downloader unit tests
+      - name: Run downloader tests
         run: |
           python -m pytest -v \
             tests/test_industry_classification_source_downloader.py
 
-      - name: Download official NSE classification sources
+      - name: Run taxonomy extraction tests
+        run: |
+          python -m pytest -v \
+            tests/test_nse_classification_taxonomy_extraction.py
+
+      - name: Download official NSE sources
         run: |
           python -m scripts.run_industry_classification_source_downloader
 
-      - name: Verify downloaded source files
+      - name: Extract official NSE taxonomy
         run: |
-          echo "========== CLASSIFICATION SOURCE FILES =========="
-          find data/raw/nse/industry_classification_sources \
-            -maxdepth 1 -type f -print
+          python -m scripts.run_nse_classification_taxonomy_extraction
 
-          echo "========== AUDIT REPORT =========="
+      - name: Verify audit reports
+        run: |
+          echo "========== SOURCE AUDIT =========="
           cat reports/industry_classification/nse_official_classification_source_audit.json
 
-      - name: Upload source collection artifact
+          echo "========== TAXONOMY AUDIT =========="
+          cat reports/industry_classification/nse_official_taxonomy_extraction.json
+
+          echo "========== TAXONOMY CSV =========="
+          head -20 data/raw/nse/industry_classification_sources/nse_official_taxonomy.csv
+
+      - name: Upload classification audit artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: tlp-nse-classification-source-audit
+          name: tlp-nse-official-taxonomy-audit
           path: |
             data/raw/nse/industry_classification_sources/
-            reports/industry_classification/nse_official_classification_source_audit.json
+            reports/industry_classification/
           if-no-files-found: error
           retention-days: 30
