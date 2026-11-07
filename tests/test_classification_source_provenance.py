@@ -1,4 +1,4 @@
-"""Tests for classification source provenance and licensing gates."""
+"""Tests for provenance, licensing and integrated taxonomy gates."""
 
 import pandas as pd
 import pytest
@@ -13,13 +13,24 @@ def classification_data():
     return pd.DataFrame({
         "Symbol": ["MARICO", "HINDUNILVR"],
         "ISIN": ["INE196A01026", "INE030A01027"],
-        "Sector": ["FMCG", "FMCG"],
-        "Industry": ["Personal Care", "Household Products"],
-        "Basic Industry": [
-            "Other Personal Products",
-            "Household Products",
+        "Sector": ["Consumer Products", "Consumer Products"],
+        "Industry": ["Personal Products", "Household Products"],
+        "Basic Industry": ["Personal Care", "Household Products"],
+        "Macro Economic Sector Code": ["10", "10"],
+        "Macro Economic Sector": [
+            "Consumer Discretionary",
+            "Consumer Discretionary",
         ],
+        "Sector Code": ["1010", "1010"],
+        "Industry Code": ["101001", "101002"],
+        "Basic Industry Code": ["10100101", "10100201"],
     })
+
+
+def official_taxonomy_data():
+    return classification_data().drop(
+        columns=["Symbol", "ISIN"]
+    ).copy()
 
 
 def nse_mii_data():
@@ -136,6 +147,7 @@ def test_vendor_rows_never_become_nse_official_approved_rows():
         nse_mii_data(),
         classification_source_type="THIRD_PARTY_VENDOR",
         license_status="APPROVED",
+        official_taxonomy=official_taxonomy_data(),
     )
 
     assert summary["status"] == "PASS"
@@ -163,6 +175,7 @@ def test_bse_source_cannot_be_approved_as_nse_mapping():
         nse_mii_data(),
         classification_source_type="BSE_OFFICIAL",
         license_status="NOT_REQUIRED",
+        official_taxonomy=official_taxonomy_data(),
     )
 
     assert summary["status"] == "PASS"
@@ -171,7 +184,27 @@ def test_bse_source_cannot_be_approved_as_nse_mapping():
     assert not detail["Approved"].any()
 
 
-def test_nse_official_source_can_pass_exact_mii_match():
+def test_nse_official_source_passes_all_three_gates():
+    detail, summary = build_industry_classification_audit(
+        classification_data(),
+        nse_mii_data(),
+        classification_source_type="NSE_OFFICIAL",
+        license_status="NOT_REQUIRED",
+        official_taxonomy=official_taxonomy_data(),
+    )
+
+    assert summary["status"] == "PASS"
+    assert summary["taxonomy_status"] == "PASS"
+    assert summary["nse_eq_matched"] == 2
+    assert summary["taxonomy_matched_rows"] == 2
+    assert summary["approved_rows"] == 2
+    assert summary["source_authorized_for_nse_mapping"] is True
+    assert summary["mapping_eligible"] is True
+    assert detail["Approved"].all()
+    assert summary["sector_mapping_activated"] is False
+
+
+def test_missing_taxonomy_reference_blocks_all_approvals():
     detail, summary = build_industry_classification_audit(
         classification_data(),
         nse_mii_data(),
@@ -180,11 +213,46 @@ def test_nse_official_source_can_pass_exact_mii_match():
     )
 
     assert summary["status"] == "PASS"
-    assert summary["approved_rows"] == 2
-    assert summary["source_authorized_for_nse_mapping"] is True
-    assert summary["mapping_eligible"] is True
-    assert detail["Approved"].all()
-    assert summary["sector_mapping_activated"] is False
+    assert summary["taxonomy_status"] == "REVIEW"
+    assert summary["approved_rows"] == 0
+    assert summary["mapping_eligible"] is False
+    assert not detail["Approved"].any()
+
+
+def test_unknown_taxonomy_path_blocks_mapping():
+    taxonomy = official_taxonomy_data()
+    taxonomy.loc[0, "Basic Industry"] = "Unverified Industry"
+
+    detail, summary = build_industry_classification_audit(
+        classification_data(),
+        nse_mii_data(),
+        classification_source_type="NSE_OFFICIAL",
+        license_status="NOT_REQUIRED",
+        official_taxonomy=taxonomy,
+    )
+
+    assert summary["status"] == "PASS"
+    assert summary["taxonomy_status"] == "REVIEW"
+    assert summary["approved_rows"] == 1
+    assert summary["mapping_eligible"] is False
+    assert not detail.loc[0, "Approved"]
+
+
+def test_wrong_sector_parent_blocks_mapping():
+    taxonomy = official_taxonomy_data()
+    taxonomy.loc[0, "Sector Code"] = "9999"
+
+    detail, summary = build_industry_classification_audit(
+        classification_data(),
+        nse_mii_data(),
+        classification_source_type="NSE_OFFICIAL",
+        license_status="NOT_REQUIRED",
+        official_taxonomy=taxonomy,
+    )
+
+    assert summary["taxonomy_status"] == "REVIEW"
+    assert summary["mapping_eligible"] is False
+    assert not detail.loc[0, "Approved"]
 
 
 def test_file_hash_changes_when_file_content_changes(tmp_path):
