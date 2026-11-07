@@ -1,7 +1,10 @@
-"""Audit company-level classification with explicit source provenance.
+"""Audit company classification with provenance, licensing and taxonomy gates.
 
-No third-party vendor is treated as an official NSE source.
-Third-party imports require an approved commercial licence reference.
+No inferred classification is approved.
+NSE mapping requires:
+1. Authorized NSE official classification source.
+2. Primary NSE MII Symbol + ISIN match.
+3. Exact eight-field official taxonomy match.
 Sector mapping remains disabled.
 """
 
@@ -15,6 +18,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from data.providers.classification_taxonomy_validator import (
+    validate_classification_taxonomy,
+)
 from data.providers.nse_industry_classification import (
     load_industry_classification_file,
 )
@@ -24,10 +30,7 @@ from data.providers.nse_universe import fetch_nse_equity_universe
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 DEFAULT_INPUT = (
-    PROJECT_ROOT
-    / "data"
-    / "raw"
-    / "nse"
+    PROJECT_ROOT / "data" / "raw" / "nse"
     / "industry_classification.csv"
 )
 
@@ -48,22 +51,15 @@ LICENSE_STATUSES = (
 
 
 def _clean(series: pd.Series) -> pd.Series:
-    """Normalize identifiers for exact matching."""
     return series.astype("string").str.strip().str.upper()
 
 
 def _source_status(data: pd.DataFrame) -> str:
-    """Identify whether the NSE universe came from primary MII."""
     if "Source" not in data.columns:
         return "UNKNOWN_SOURCE"
 
     sources = (
-        data["Source"]
-        .dropna()
-        .astype(str)
-        .str.upper()
-        .unique()
-        .tolist()
+        data["Source"].dropna().astype(str).str.upper().unique().tolist()
     )
 
     if sources and all("MII" in source for source in sources):
@@ -87,8 +83,6 @@ def build_source_provenance(
     license_reference: str | None = None,
     effective_date: str | None = None,
 ) -> dict:
-    """Build an auditable source record and enforce vendor licensing."""
-
     path = Path(input_path)
 
     if not path.exists() or not path.is_file():
@@ -97,15 +91,10 @@ def build_source_provenance(
         )
 
     if source_type not in SOURCE_TYPES:
-        raise ValueError(
-            f"Invalid source type. Choose one of: {', '.join(SOURCE_TYPES)}"
-        )
+        raise ValueError("Invalid source type.")
 
     if license_status not in LICENSE_STATUSES:
-        raise ValueError(
-            "Invalid license status. Choose one of: "
-            + ", ".join(LICENSE_STATUSES)
-        )
+        raise ValueError("Invalid license status.")
 
     if not isinstance(source_name, str) or not source_name.strip():
         raise ValueError("A source name is required.")
@@ -114,20 +103,17 @@ def build_source_provenance(
         not isinstance(source_reference, str)
         or not source_reference.strip()
     ):
-        raise ValueError("A source URL or document reference is required.")
+        raise ValueError("A source reference is required.")
 
     if license_status == "REJECTED":
-        raise PermissionError(
-            "Import blocked: the source licence has been rejected."
-        )
+        raise PermissionError("The source licence has been rejected.")
 
     if (
         source_type == "THIRD_PARTY_VENDOR"
         and license_status != "APPROVED"
     ):
         raise PermissionError(
-            "Vendor import blocked: commercial licence status "
-            "must be APPROVED."
+            "Vendor import blocked: licence status must be APPROVED."
         )
 
     if (
@@ -137,9 +123,7 @@ def build_source_provenance(
             and license_reference.strip()
         )
     ):
-        raise ValueError(
-            "Vendor import requires a licence approval reference."
-        )
+        raise ValueError("Vendor licence approval reference is required.")
 
     if effective_date:
         try:
@@ -149,15 +133,13 @@ def build_source_provenance(
                 "Effective date must use YYYY-MM-DD format."
             ) from exc
 
-    file_bytes = path.read_bytes()
+    content = path.read_bytes()
 
     return {
         "source_type": source_type,
         "source_name": source_name.strip(),
         "source_reference": source_reference.strip(),
-        "downloaded_at_utc": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "downloaded_at_utc": datetime.now(timezone.utc).isoformat(),
         "effective_date": effective_date or None,
         "license_status": license_status,
         "license_reference": (
@@ -167,15 +149,37 @@ def build_source_provenance(
             else None
         ),
         "file_name": path.name,
-        "file_size_bytes": len(file_bytes),
-        "file_sha256": hashlib.sha256(file_bytes).hexdigest(),
+        "file_size_bytes": len(content),
+        "file_sha256": hashlib.sha256(content).hexdigest(),
         "source_type_is_operator_declared": True,
         "note": (
             "Source type and licence status are operator-declared. "
-            "The hash identifies file content but does not independently "
-            "prove source authenticity or licensing."
+            "SHA-256 identifies file content but does not prove "
+            "authenticity or licensing."
         ),
     }
+
+
+def _load_taxonomy_file(path: str | Path) -> pd.DataFrame:
+    """Load an explicitly supplied taxonomy reference CSV."""
+    file_path = Path(path)
+
+    if not file_path.exists() or not file_path.is_file():
+        raise FileNotFoundError(
+            f"Official taxonomy reference not found: {file_path}"
+        )
+
+    if file_path.suffix.lower() != ".csv":
+        raise ValueError(
+            "Taxonomy reference must be a CSV file."
+        )
+
+    return pd.read_csv(
+        file_path,
+        dtype="string",
+        encoding="utf-8-sig",
+        low_memory=False,
+    )
 
 
 def build_industry_classification_audit(
@@ -183,8 +187,9 @@ def build_industry_classification_audit(
     nse_universe: pd.DataFrame,
     classification_source_type: str = "NSE_OFFICIAL",
     license_status: str = "NOT_REQUIRED",
+    official_taxonomy: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict]:
-    """Compare classification with NSE MII EQ without inferring sectors."""
+    """Reconcile company identity and require exact taxonomy validation."""
 
     if not isinstance(classification, pd.DataFrame) or classification.empty:
         raise ValueError("Industry classification data is empty.")
@@ -206,15 +211,11 @@ def build_industry_classification_audit(
         and license_status != "APPROVED"
     ):
         raise PermissionError(
-            "Third-party vendor classification is not licensed for import."
+            "Third-party vendor classification is not licensed."
         )
 
     required_classification = {
-        "Symbol",
-        "ISIN",
-        "Sector",
-        "Industry",
-        "Basic Industry",
+        "Symbol", "ISIN", "Sector", "Industry", "Basic Industry",
     }
     required_nse = {"Symbol", "ISIN", "Series"}
 
@@ -225,9 +226,7 @@ def build_industry_classification_audit(
         )
 
     if not required_nse.issubset(nse_universe.columns):
-        raise ValueError(
-            "NSE universe requires Symbol, ISIN and Series."
-        )
+        raise ValueError("NSE universe requires Symbol, ISIN and Series.")
 
     nse_source_status = _source_status(nse_universe)
 
@@ -265,9 +264,32 @@ def build_industry_classification_audit(
             )
         )
 
-    nse_eq = nse_data[
-        nse_data["Series"].eq("EQ")
-    ].copy()
+    # Taxonomy gate: missing reference means no row can be approved.
+    if official_taxonomy is None:
+        classification_data["Taxonomy_Status"] = (
+            "TAXONOMY_REFERENCE_NOT_PROVIDED"
+        )
+        classification_data["Taxonomy_Validated"] = False
+
+        taxonomy_summary = {
+            "status": "REVIEW",
+            "classification_rows": len(classification_data),
+            "taxonomy_matched_rows": 0,
+            "missing_hierarchy_rows": 0,
+            "unknown_hierarchy_rows": 0,
+            "official_taxonomy_paths": 0,
+            "matching_method": "NOT_RUN",
+            "reason": "Official taxonomy reference was not provided.",
+        }
+    else:
+        classification_data, taxonomy_summary = (
+            validate_classification_taxonomy(
+                classification=classification_data,
+                official_taxonomy=official_taxonomy,
+            )
+        )
+
+    nse_eq = nse_data[nse_data["Series"].eq("EQ")].copy()
 
     duplicate_nse = nse_eq["Symbol"].duplicated(keep=False)
 
@@ -275,11 +297,9 @@ def build_industry_classification_audit(
         nse_eq.loc[duplicate_nse, "Symbol"].dropna().tolist()
     )
 
-    nse_unique = nse_eq[
-        ~duplicate_nse
-    ][["Symbol", "ISIN"]].rename(
-        columns={"ISIN": "NSE_ISIN"}
-    )
+    nse_unique = nse_eq[~duplicate_nse][
+        ["Symbol", "ISIN"]
+    ].rename(columns={"ISIN": "NSE_ISIN"})
 
     result = classification_data.merge(
         nse_unique,
@@ -317,23 +337,23 @@ def build_industry_classification_audit(
 
     result["Approved"] = (
         result["Audit_Status"].eq("MATCH")
+        & result["Taxonomy_Validated"].eq(True)
         & (nse_source_status == "PRIMARY_MII")
         & source_authorized
     )
 
     total = len(result)
     matched = int(result["Audit_Status"].eq("MATCH").sum())
-    mismatches = int(
-        result["Audit_Status"].eq("ISIN_MISMATCH").sum()
-    )
+    mismatches = int(result["Audit_Status"].eq("ISIN_MISMATCH").sum())
     missing = int(
         result["Audit_Status"].eq("NSE_EQ_SYMBOL_MISSING").sum()
     )
     ambiguous = int(
         result["Audit_Status"].eq("NSE_EQ_SYMBOL_AMBIGUOUS").sum()
     )
+    taxonomy_matched = int(result["Taxonomy_Validated"].sum())
 
-    audit_passed = (
+    identity_audit_passed = (
         total > 0
         and nse_source_status == "PRIMARY_MII"
         and matched == total
@@ -342,14 +362,17 @@ def build_industry_classification_audit(
         and ambiguous == 0
     )
 
+    taxonomy_passed = (
+        taxonomy_summary["status"] == "PASS"
+        and taxonomy_matched == total
+    )
+
+    approved_rows = int(result["Approved"].sum())
+
     summary = {
-        "audit_id": datetime.now(
-            timezone.utc
-        ).strftime("%Y%m%d_%H%M%S"),
-        "audit_time_utc": datetime.now(
-            timezone.utc
-        ).isoformat(),
-        "status": "PASS" if audit_passed else "REVIEW",
+        "audit_id": datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"),
+        "audit_time_utc": datetime.now(timezone.utc).isoformat(),
+        "status": "PASS" if identity_audit_passed else "REVIEW",
         "nse_source_status": nse_source_status,
         "classification_source_type": classification_source_type,
         "classification_license_status": license_status,
@@ -359,66 +382,47 @@ def build_industry_classification_audit(
         "isin_mismatches": mismatches,
         "nse_eq_missing": missing,
         "ambiguous_nse_symbols": ambiguous,
-        "approved_rows": int(result["Approved"].sum()),
+        "taxonomy_status": (
+            "PASS" if taxonomy_passed else "REVIEW"
+        ),
+        "taxonomy_matched_rows": taxonomy_matched,
+        "taxonomy_unmatched_rows": total - taxonomy_matched,
+        "taxonomy_summary": taxonomy_summary,
+        "approved_rows": approved_rows,
         "mapping_eligible": bool(
-            audit_passed
+            identity_audit_passed
             and source_authorized
-            and int(result["Approved"].sum()) == total
+            and taxonomy_passed
+            and approved_rows == total
         ),
         "sector_mapping_activated": False,
     }
 
-    return (
-        result.sort_values("Symbol").reset_index(drop=True),
-        summary,
-    )
+    return result.sort_values("Symbol").reset_index(drop=True), summary
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit company-level classification with source "
-            "provenance and licensing controls."
+            "Audit classification with source, licensing, MII "
+            "and official taxonomy gates."
         )
     )
 
+    parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument("--source-type", required=True, choices=SOURCE_TYPES)
+    parser.add_argument("--source-name", required=True)
+    parser.add_argument("--source-reference", required=True)
     parser.add_argument(
-        "--input",
+        "--license-status", required=True, choices=LICENSE_STATUSES
+    )
+    parser.add_argument("--license-reference", default=None)
+    parser.add_argument("--as-of-date", default=None)
+    parser.add_argument(
+        "--taxonomy-input",
         type=Path,
-        default=DEFAULT_INPUT,
-        help="Classification CSV or XLSX file.",
-    )
-    parser.add_argument(
-        "--source-type",
-        required=True,
-        choices=SOURCE_TYPES,
-        help="Declared source authority.",
-    )
-    parser.add_argument(
-        "--source-name",
-        required=True,
-        help="Name of the source or vendor.",
-    )
-    parser.add_argument(
-        "--source-reference",
-        required=True,
-        help="Official URL, vendor document, or source reference.",
-    )
-    parser.add_argument(
-        "--license-status",
-        required=True,
-        choices=LICENSE_STATUSES,
-        help="Explicit licence review status.",
-    )
-    parser.add_argument(
-        "--license-reference",
         default=None,
-        help="Contract, approval email, or licence document reference.",
-    )
-    parser.add_argument(
-        "--as-of-date",
-        default=None,
-        help="Classification effective date in YYYY-MM-DD format.",
+        help="Official taxonomy reference CSV. Required for mapping approval.",
     )
 
     args = parser.parse_args()
@@ -440,8 +444,25 @@ def main() -> None:
         as_of_date=args.as_of_date,
     )
 
-    print("Downloading NSE MII security master...")
+    taxonomy = None
+    taxonomy_provenance = None
 
+    if args.taxonomy_input is not None:
+        taxonomy = _load_taxonomy_file(args.taxonomy_input)
+        taxonomy_bytes = args.taxonomy_input.read_bytes()
+
+        taxonomy_provenance = {
+            "file_name": args.taxonomy_input.name,
+            "file_sha256": hashlib.sha256(taxonomy_bytes).hexdigest(),
+            "file_size_bytes": len(taxonomy_bytes),
+            "source_reference": str(args.taxonomy_input),
+            "note": (
+                "File identity recorded. Official origin must be "
+                "verified independently; a hash does not prove authority."
+            ),
+        }
+
+    print("Downloading NSE MII security master...")
     nse_universe = fetch_nse_equity_universe()
 
     detail, summary = build_industry_classification_audit(
@@ -449,38 +470,40 @@ def main() -> None:
         nse_universe=nse_universe,
         classification_source_type=args.source_type,
         license_status=args.license_status,
+        official_taxonomy=taxonomy,
     )
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    detail_path = (
-        REPORT_DIR / "nse_industry_classification_audit.csv"
-    )
-    summary_path = (
-        REPORT_DIR / "nse_industry_classification_summary.json"
-    )
-    provenance_path = (
-        REPORT_DIR / "classification_source_provenance.json"
-    )
+    detail_path = REPORT_DIR / "nse_industry_classification_audit.csv"
+    summary_path = REPORT_DIR / "nse_industry_classification_summary.json"
+    provenance_path = REPORT_DIR / "classification_source_provenance.json"
 
     detail.to_csv(detail_path, index=False)
 
     summary["source_provenance"] = provenance
+    summary["taxonomy_provenance"] = taxonomy_provenance
 
     summary_path.write_text(
         json.dumps(summary, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-
     provenance_path.write_text(
-        json.dumps(provenance, indent=2, ensure_ascii=False),
+        json.dumps(
+            {
+                "classification_source": provenance,
+                "taxonomy_source": taxonomy_provenance,
+            },
+            indent=2,
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 
     print("\n========== INDUSTRY CLASSIFICATION AUDIT ==========")
 
     for key, value in summary.items():
-        if key != "source_provenance":
+        if key not in {"source_provenance", "taxonomy_provenance"}:
             print(f"{key}: {value}")
 
     print("\nDetail:", detail_path)
@@ -488,17 +511,15 @@ def main() -> None:
     print("Provenance:", provenance_path)
 
     if summary["status"] != "PASS":
-        raise SystemExit(
-            "AUDIT REVIEW: NSE MII reconciliation requires review."
-        )
+        raise SystemExit("AUDIT REVIEW: NSE MII reconciliation failed.")
 
     if not summary["mapping_eligible"]:
         raise SystemExit(
-            "AUDIT PASS, BUT SOURCE IS NOT AUTHORIZED "
-            "FOR NSE PRODUCTION MAPPING."
+            "IDENTITY AUDIT PASS, BUT TAXONOMY OR SOURCE GATE "
+            "BLOCKED PRODUCTION MAPPING."
         )
 
-    print("\nAUDIT PASS: source and NSE MII reconciliation passed.")
+    print("\nAUDIT PASS: all required gates passed.")
     print("Sector Mapping remains disabled.")
 
 
