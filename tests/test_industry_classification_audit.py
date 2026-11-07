@@ -34,7 +34,7 @@ def nse_mii_data():
     })
 
 
-def test_exact_symbol_and_isin_match_is_approved():
+def test_exact_symbol_and_isin_match_requires_taxonomy_approval():
     detail, summary = build_industry_classification_audit(
         classification_data(),
         nse_mii_data(),
@@ -42,9 +42,11 @@ def test_exact_symbol_and_isin_match_is_approved():
 
     assert summary["status"] == "PASS"
     assert summary["nse_eq_matched"] == 2
-    assert summary["approved_rows"] == 2
+    assert summary["taxonomy_status"] == "REVIEW"
+    assert summary["approved_rows"] == 0
+    assert summary["mapping_eligible"] is False
     assert detail["Audit_Status"].eq("MATCH").all()
-    assert detail["Approved"].all()
+    assert not detail["Approved"].any()
     assert summary["sector_mapping_activated"] is False
 
 
@@ -167,4 +169,3 @@ def test_missing_nse_column_is_rejected():
             classification_data(),
             nse,
         )
-      
