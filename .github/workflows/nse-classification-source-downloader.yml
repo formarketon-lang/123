@@ -1,0 +1,58 @@
+name: TLP NSE Classification Source Downloader
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/run_industry_classification_source_downloader.py"
+      - "tests/test_industry_classification_source_downloader.py"
+      - ".github/workflows/nse-classification-source-downloader.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  classification-source-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run downloader unit tests
+        run: |
+          python -m pytest -v \
+            tests/test_industry_classification_source_downloader.py
+
+      - name: Download official NSE classification sources
+        run: |
+          python -m scripts.run_industry_classification_source_downloader
+
+      - name: Verify downloaded source files
+        run: |
+          echo "========== CLASSIFICATION SOURCE FILES =========="
+          find data/raw/nse/industry_classification_sources \
+            -maxdepth 1 -type f -print
+
+          echo "========== AUDIT REPORT =========="
+          cat reports/industry_classification/nse_official_classification_source_audit.json
+
+      - name: Upload source collection artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tlp-nse-classification-source-audit
+          path: |
+            data/raw/nse/industry_classification_sources/
+            reports/industry_classification/nse_official_classification_source_audit.json
+          if-no-files-found: error
+          retention-days: 30
