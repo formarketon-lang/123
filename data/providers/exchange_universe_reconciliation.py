@@ -1,4 +1,4 @@
-"""Independent NSE and BSE cash-equity universe reconciliation."""
+"""Independent NSE and BSE universe reconciliation."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import pandas as pd
 
 
 REQUIRED = {"Symbol", "ISIN", "Company"}
+
 METADATA_FIELDS = {
     "exchange", "source_url", "filename",
     "downloaded_at_utc", "trading_date", "sha256",
@@ -18,9 +19,10 @@ METADATA_FIELDS = {
 ALIASES = {
     "SYMBOL": "Symbol",
     "SECURITY ID": "Symbol",
-    "SCRIP CD": "Symbol",
-    "SCRIP CODE": "Symbol",
     "TCKRSYMB": "Symbol",
+    "SCRIP CODE": "Security_Code",
+    "SCRIP CD": "Security_Code",
+    "SECURITY CODE": "Security_Code",
     "ISIN": "ISIN",
     "ISIN NO": "ISIN",
     "ISIN NUMBER": "ISIN",
@@ -55,9 +57,13 @@ def normalize_snapshot(data: pd.DataFrame) -> pd.DataFrame:
             + ", ".join(sorted(missing))
         )
 
-    frame = frame[["Symbol", "ISIN", "Company"]].copy()
+    columns = ["Symbol", "ISIN", "Company"]
+    if "Security_Code" in frame.columns:
+        columns.append("Security_Code")
 
-    for column in REQUIRED:
+    frame = frame[columns].copy()
+
+    for column in columns:
         frame[column] = (
             frame[column].astype("string").str.strip()
         )
@@ -92,7 +98,9 @@ def validate_metadata(metadata: dict, exchange: str) -> bool:
 
     try:
         timestamp = datetime.fromisoformat(
-            str(metadata["downloaded_at_utc"]).replace("Z", "+00:00")
+            str(metadata["downloaded_at_utc"]).replace(
+                "Z", "+00:00"
+            )
         )
         if timestamp.tzinfo is None:
             return False
@@ -114,7 +122,8 @@ def audit_one_exchange(
 
     missing_identity = (
         frame[["Symbol", "ISIN", "Company"]].isna().any(axis=1)
-        | frame[["Symbol", "ISIN", "Company"]].eq("").any(axis=1)
+        | frame[["Symbol", "ISIN", "Company"]]
+        .eq("").any(axis=1)
     )
 
     valid_isin = frame["ISIN"].str.fullmatch(
@@ -126,6 +135,7 @@ def audit_one_exchange(
 
     detail = frame.copy()
     detail["Exchange"] = exchange
+
     detail["Duplicate_Symbol"] = (
         detail["Symbol"].map(symbol_count).gt(1)
     )
@@ -136,15 +146,17 @@ def audit_one_exchange(
     detail["Missing_Identity"] = missing_identity
 
     detail["Audit_Status"] = "PASS"
+
     detail.loc[~valid_isin, "Audit_Status"] = "INVALID_ISIN"
-    detail.loc[missing_identity, "Audit_Status"] = "MISSING_IDENTITY"
+    detail.loc[missing_identity, "Audit_Status"] = (
+        "MISSING_IDENTITY"
+    )
     detail.loc[
         detail["Duplicate_Symbol"] | detail["Duplicate_ISIN"],
         "Audit_Status",
     ] = "DUPLICATE_IDENTITY"
 
     metadata_valid = validate_metadata(metadata, exchange)
-
     issue_rows = int(detail["Audit_Status"].ne("PASS").sum())
 
     summary = {
@@ -184,19 +196,16 @@ def build_exchange_universe_reconciliation(
     nse_detail, nse_summary = audit_one_exchange(
         nse, "NSE", nse_metadata
     )
+
     bse_detail, bse_summary = audit_one_exchange(
         bse, "BSE", bse_metadata
     )
 
     nse_isins = set(
-        nse_detail.loc[
-            nse_detail["Valid_ISIN"], "ISIN"
-        ]
+        nse_detail.loc[nse_detail["Valid_ISIN"], "ISIN"]
     )
     bse_isins = set(
-        bse_detail.loc[
-            bse_detail["Valid_ISIN"], "ISIN"
-        ]
+        bse_detail.loc[bse_detail["Valid_ISIN"], "ISIN"]
     )
 
     common_isins = nse_isins.intersection(bse_isins)
