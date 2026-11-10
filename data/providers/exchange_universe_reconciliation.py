@@ -235,15 +235,32 @@ def load_nse_cm_diagnostic(
     }
 
 
+def verify_zip_integrity(path: str | Path) -> bool:
+    """Verify ZIP structure and every member CRC."""
+    file_path = Path(path)
+
+    if not file_path.is_file() or not zipfile.is_zipfile(file_path):
+        return False
+
+    try:
+        with zipfile.ZipFile(file_path) as archive:
+            if archive.testzip() is not None:
+                return False
+    except (OSError, zipfile.BadZipFile, RuntimeError):
+        return False
+
+    return True
+
+
 def load_bse_equity_universe(
     path: str | Path,
 ) -> tuple[pd.DataFrame, dict]:
     """Read BSE security-master ZIP and retain active equities."""
     path = Path(path)
 
-    if not zipfile.is_zipfile(path):
+    if not verify_zip_integrity(path):
         raise ValueError(
-            f"BSE input is not a valid ZIP archive: {path}"
+            f"BSE ZIP integrity verification failed: {path}"
         )
 
     with zipfile.ZipFile(path) as archive:
@@ -448,6 +465,58 @@ def verify_snapshot_checksum(
         return False
 
     return digest.hexdigest() == expected
+
+
+def verify_snapshot_file(
+    path: str | Path,
+    exchange: str,
+    expected_sha256: str | None = None,
+) -> dict:
+    """Verify snapshot bytes and optional independent expected hash."""
+    file_path = Path(path)
+
+    if not file_path.is_file():
+        raise ValueError(f"Snapshot file not found: {file_path}")
+
+    if exchange not in ("NSE", "BSE"):
+        raise ValueError(f"Unsupported exchange: {exchange}")
+
+    if exchange == "BSE" and not verify_zip_integrity(file_path):
+        raise ValueError("BSE ZIP integrity verification failed.")
+
+    digest = hashlib.sha256()
+
+    with file_path.open("rb") as handle:
+        for chunk in iter(
+            lambda: handle.read(1024 * 1024),
+            b"",
+        ):
+            digest.update(chunk)
+
+    actual = digest.hexdigest()
+
+    if expected_sha256 is not None:
+        expected = expected_sha256.strip().lower()
+
+        if not re.fullmatch(r"[a-f0-9]{64}", expected):
+            raise ValueError(
+                "Expected SHA-256 must contain 64 hex characters."
+            )
+
+        if actual != expected:
+            raise ValueError(
+                "Snapshot SHA-256 does not match expected hash."
+            )
+
+    return {
+        "exchange": exchange,
+        "filename": file_path.name,
+        "sha256": actual,
+        "checksum_verified_against_expected": (
+            expected_sha256 is not None
+        ),
+        "zip_integrity_verified": exchange == "BSE",
+    }
 
 
 def audit_one_exchange(
