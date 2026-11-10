@@ -12,6 +12,8 @@ from data.providers.exchange_universe_reconciliation import (
     load_nse_equity_universe,
     validate_metadata,
     verify_snapshot_checksum,
+    verify_snapshot_file,
+    verify_zip_integrity,
 )
 
 
@@ -279,3 +281,75 @@ def test_checksum_missing_file_is_rejected(tmp_path):
         tmp_path / "missing.csv",
         record,
     ) is False
+
+
+def test_valid_bse_zip_integrity(tmp_path):
+    path = tmp_path / "valid.zip"
+
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            "BSE_EQ_SCRIP_TEST.csv",
+            "Symbol\nAAA\n",
+        )
+
+    assert verify_zip_integrity(path) is True
+
+
+def test_invalid_bse_zip_rejected(tmp_path):
+    path = tmp_path / "invalid.zip"
+    path.write_bytes(b"not a zip file")
+
+    assert verify_zip_integrity(path) is False
+
+
+def test_snapshot_file_expected_checksum_passes(tmp_path):
+    path = tmp_path / "nse.csv"
+    content = b"Symbol,ISIN\nAAA,INE123A01011\n"
+    path.write_bytes(content)
+
+    expected = hashlib.sha256(content).hexdigest()
+
+    result = verify_snapshot_file(
+        path,
+        "NSE",
+        expected,
+    )
+
+    assert result["sha256"] == expected
+    assert result["checksum_verified_against_expected"] is True
+
+
+def test_snapshot_file_wrong_checksum_fails(tmp_path):
+    path = tmp_path / "nse.csv"
+    path.write_bytes(b"actual content")
+
+    try:
+        verify_snapshot_file(path, "NSE", "a" * 64)
+    except ValueError as exc:
+        assert "does not match" in str(exc)
+    else:
+        raise AssertionError("Wrong checksum was accepted")
+
+
+def test_bse_snapshot_rejects_corrupt_zip(tmp_path):
+    path = tmp_path / "bse.zip"
+    path.write_bytes(b"corrupt zip")
+
+    try:
+        verify_snapshot_file(path, "BSE")
+    except ValueError as exc:
+        assert "ZIP integrity" in str(exc)
+    else:
+        raise AssertionError("Corrupt BSE ZIP was accepted")
+
+
+def test_snapshot_file_rejects_unknown_exchange(tmp_path):
+    path = tmp_path / "snapshot.csv"
+    path.write_text("test", encoding="utf-8")
+
+    try:
+        verify_snapshot_file(path, "UNKNOWN")
+    except ValueError as exc:
+        assert "Unsupported exchange" in str(exc)
+    else:
+        raise AssertionError("Unknown exchange was accepted")
