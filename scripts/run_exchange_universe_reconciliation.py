@@ -11,6 +11,8 @@ from data.providers.exchange_universe_reconciliation import (
     load_bse_equity_universe,
     load_nse_cm_diagnostic,
     load_nse_equity_universe,
+    verify_snapshot_checksum,
+    verify_snapshot_file,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,12 +73,19 @@ def main() -> None:
             "repeat for each variant (diagnostic only)"
         ),
     )
+
     parser.add_argument("--nse-source-url")
     parser.add_argument("--bse-source-url")
+
+    parser.add_argument("--nse-expected-sha256")
+    parser.add_argument("--bse-expected-sha256")
+
     parser.add_argument("--nse-downloaded-at-utc")
     parser.add_argument("--bse-downloaded-at-utc")
+
     parser.add_argument("--nse-trading-date", required=True)
     parser.add_argument("--bse-trading-date", required=True)
+
     parser.add_argument("--output-dir", type=Path, default=OUTPUT)
 
     args = parser.parse_args()
@@ -91,6 +100,22 @@ def main() -> None:
                 f"NSE CM diagnostic does not exist: {diagnostic_path}"
             )
 
+    try:
+        nse_file_check = verify_snapshot_file(
+            args.nse_input,
+            "NSE",
+            args.nse_expected_sha256,
+        )
+
+        bse_file_check = verify_snapshot_file(
+            args.bse_input,
+            "BSE",
+            args.bse_expected_sha256,
+        )
+
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
+
     nse, nse_load = load_nse_equity_universe(args.nse_input)
     bse, bse_load = load_bse_equity_universe(args.bse_input)
 
@@ -101,6 +126,7 @@ def main() -> None:
         args.nse_trading_date,
         args.nse_downloaded_at_utc,
     )
+
     bse_meta = make_metadata(
         "BSE",
         args.bse_input,
@@ -109,13 +135,39 @@ def main() -> None:
         args.bse_downloaded_at_utc,
     )
 
+    nse_checksum_verified = verify_snapshot_checksum(
+        args.nse_input,
+        nse_meta,
+    )
+
+    bse_checksum_verified = verify_snapshot_checksum(
+        args.bse_input,
+        bse_meta,
+    )
+
+    if not nse_checksum_verified or not bse_checksum_verified:
+        parser.error(
+            "Snapshot checksum verification failed after metadata creation."
+        )
+
     detail, summary = build_exchange_universe_reconciliation(
-        nse, bse, nse_meta, bse_meta
+        nse,
+        bse,
+        nse_meta,
+        bse_meta,
     )
 
     diagnostics = {
         "nse_equity_list": nse_load,
         "bse_security_master": bse_load,
+        "snapshot_file_integrity": {
+            "nse": nse_file_check,
+            "bse": bse_file_check,
+        },
+        "metadata_checksum_verification": {
+            "nse": nse_checksum_verified,
+            "bse": bse_checksum_verified,
+        },
     }
 
     if args.nse_cm_diagnostic:
@@ -142,6 +194,10 @@ def main() -> None:
             (
                 "Source URLs and original download timestamps must be "
                 "supplied to pass provenance validation."
+            ),
+            (
+                "Expected SHA-256 values are optional. When supplied, "
+                "they are checked against the actual input file bytes."
             ),
             (
                 "NSE CM security files are diagnostics only; "
