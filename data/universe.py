@@ -11,9 +11,7 @@ from data.providers.nifty_constituents import (
     SECTOR_CONSTITUENT_URLS,
     fetch_sector_constituents,
 )
-from scripts.run_sector_constituents_audit import (
-    build_constituent_audit,
-)
+from data.constituent_audit import build_constituent_audit
 
 
 def load_nse_universe():
@@ -170,3 +168,4 @@ def validate_sector_membership(sector, symbols, universe=None):
     return True, (
         "All selected stocks passed official sector membership audit."
     )
+    
