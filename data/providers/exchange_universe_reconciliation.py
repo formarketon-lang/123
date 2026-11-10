@@ -1,24 +1,38 @@
 """NSE/BSE cash-equity identity reconciliation.
 
-Exchange universes are filtered independently. ISIN is the cross-exchange
-identity key; symbol strings are not assumed to be globally identical.
+Exchange universes are filtered independently.
+ISIN is the cross-exchange identity key.
 Sector classification is deliberately outside this module.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 import zipfile
+
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
 import pandas as pd
 
+
 REQUIRED = {"Symbol", "ISIN", "Company"}
+
 METADATA_FIELDS = {
-    "exchange", "source_url", "filename", "downloaded_at_utc",
-    "trading_date", "sha256",
+    "exchange",
+    "source_url",
+    "filename",
+    "downloaded_at_utc",
+    "trading_date",
+    "sha256",
 }
+
+OFFICIAL_SOURCE_HOSTS = {
+    "NSE": ("nseindia.com",),
+    "BSE": ("bseindia.com",),
+}
+
 ALIASES = {
     "SYMBOL": "Symbol",
     "SECURITY ID": "Symbol",
@@ -42,7 +56,9 @@ ALIASES = {
 def _clean_headers(data: pd.DataFrame) -> pd.DataFrame:
     frame = data.copy()
     frame.columns = [
-        " ".join(str(c).replace("\ufeff", "").strip().upper().split())
+        " ".join(
+            str(c).replace("\ufeff", "").strip().upper().split()
+        )
         for c in frame.columns
     ]
     return frame
@@ -53,10 +69,16 @@ def normalize_snapshot(data: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("Snapshot is empty or invalid.")
 
     frame = _clean_headers(data)
-    rename = {c: ALIASES[c] for c in frame.columns if c in ALIASES}
+
+    rename = {
+        c: ALIASES[c]
+        for c in frame.columns
+        if c in ALIASES
+    }
     frame = frame.rename(columns=rename)
 
     missing = REQUIRED.difference(frame.columns)
+
     if missing:
         raise ValueError(
             "Snapshot missing required columns: "
@@ -64,15 +86,19 @@ def normalize_snapshot(data: pd.DataFrame) -> pd.DataFrame:
         )
 
     columns = ["Symbol", "ISIN", "Company"]
+
     if "Security_Code" in frame.columns:
         columns.append("Security_Code")
+
     if "Product_Identifier" in frame.columns:
         columns.append("Product_Identifier")
 
     frame = frame[columns].copy()
 
     for column in columns:
-        frame[column] = frame[column].astype("string").str.strip()
+        frame[column] = (
+            frame[column].astype("string").str.strip()
+        )
         frame[column] = frame[column].replace(
             {"": pd.NA, "NAN": pd.NA, "NONE": pd.NA}
         )
@@ -86,31 +112,46 @@ def normalize_snapshot(data: pd.DataFrame) -> pd.DataFrame:
 def load_nse_equity_universe(
     path: str | Path,
 ) -> tuple[pd.DataFrame, dict]:
-    """Read NSE EQUITY_L.csv (or gzip CSV) and retain SERIES=EQ only."""
+    """Read NSE EQUITY_L.csv and retain SERIES=EQ only."""
     path = Path(path)
+
     raw = pd.read_csv(
-        path, dtype="string", low_memory=False, compression="infer"
+        path,
+        dtype="string",
+        low_memory=False,
+        compression="infer",
     )
     raw = _clean_headers(raw)
 
     required = {
-        "SYMBOL", "NAME OF COMPANY", "SERIES", "ISIN NUMBER"
+        "SYMBOL",
+        "NAME OF COMPANY",
+        "SERIES",
+        "ISIN NUMBER",
     }
+
     missing = required.difference(raw.columns)
+
     if missing:
         raise ValueError(
             "NSE equity list missing columns: "
             + ", ".join(sorted(missing))
         )
 
-    series = raw["SERIES"].astype("string").str.strip().str.upper()
+    series = (
+        raw["SERIES"].astype("string").str.strip().str.upper()
+    )
+
     eq = raw.loc[series.eq("EQ")].copy()
 
-    selected = eq.rename(columns={
-        "SYMBOL": "Symbol",
-        "NAME OF COMPANY": "Company",
-        "ISIN NUMBER": "ISIN",
-    })
+    selected = eq.rename(
+        columns={
+            "SYMBOL": "Symbol",
+            "NAME OF COMPANY": "Company",
+            "ISIN NUMBER": "ISIN",
+        }
+    )
+
     selected["Security_Code"] = pd.NA
 
     result = normalize_snapshot(selected)
@@ -123,7 +164,9 @@ def load_nse_equity_universe(
         "excluded_non_eq_rows": int(len(raw) - len(result)),
         "series_counts": {
             str(k): int(v)
-            for k, v in series.value_counts(dropna=False).items()
+            for k, v in series.value_counts(
+                dropna=False
+            ).items()
         },
     }
 
@@ -131,35 +174,52 @@ def load_nse_equity_universe(
 def load_nse_cm_diagnostic(
     path: str | Path,
 ) -> tuple[pd.DataFrame, dict]:
-    """Read NSE CM security gzip as diagnostic, not primary universe."""
+    """Read NSE CM security gzip as diagnostic only."""
     path = Path(path)
+
     raw = pd.read_csv(
-        path, dtype="string", low_memory=False, compression="infer"
+        path,
+        dtype="string",
+        low_memory=False,
+        compression="infer",
     )
     raw = _clean_headers(raw)
 
     required = {
-        "TCKRSYMB", "FININSTRMNM", "ISIN", "SCTYSRS", "DELFLG"
+        "TCKRSYMB",
+        "FININSTRMNM",
+        "ISIN",
+        "SCTYSRS",
+        "DELFLG",
     }
+
     missing = required.difference(raw.columns)
+
     if missing:
         raise ValueError(
             "NSE CM file missing columns: "
             + ", ".join(sorted(missing))
         )
 
-    series = raw["SCTYSRS"].astype("string").str.strip().str.upper()
-    delete_flag = raw["DELFLG"].astype("string").str.strip().str.upper()
+    series = (
+        raw["SCTYSRS"].astype("string").str.strip().str.upper()
+    )
+
+    delete_flag = (
+        raw["DELFLG"].astype("string").str.strip().str.upper()
+    )
 
     eq_active = raw.loc[
         series.eq("EQ") & delete_flag.eq("N")
     ].copy()
 
-    selected = eq_active.rename(columns={
-        "TCKRSYMB": "Symbol",
-        "FININSTRMNM": "Company",
-        "ISIN": "ISIN",
-    })
+    selected = eq_active.rename(
+        columns={
+            "TCKRSYMB": "Symbol",
+            "FININSTRMNM": "Company",
+            "ISIN": "ISIN",
+        }
+    )
 
     result = normalize_snapshot(selected)
 
@@ -178,7 +238,7 @@ def load_nse_cm_diagnostic(
 def load_bse_equity_universe(
     path: str | Path,
 ) -> tuple[pd.DataFrame, dict]:
-    """Read BSE security-master ZIP and retain active equity instruments."""
+    """Read BSE security-master ZIP and retain active equities."""
     path = Path(path)
 
     if not zipfile.is_zipfile(path):
@@ -188,30 +248,42 @@ def load_bse_equity_universe(
 
     with zipfile.ZipFile(path) as archive:
         candidates = [
-            name for name in archive.namelist()
+            name
+            for name in archive.namelist()
             if Path(name).name.upper().startswith("BSE_EQ_SCRIP")
             and name.lower().endswith(".csv")
         ]
 
         if len(candidates) != 1:
             raise ValueError(
-                "Expected exactly one BSE_EQ_SCRIP*.csv member; found "
+                "Expected exactly one BSE_EQ_SCRIP*.csv member; "
+                + "found "
                 + str(len(candidates))
             )
 
         member = candidates[0]
+
         with archive.open(member) as handle:
             raw = pd.read_csv(
-                handle, dtype="string", low_memory=False
+                handle,
+                dtype="string",
+                low_memory=False,
             )
 
     raw = _clean_headers(raw)
 
     required = {
-        "TCKRSYMB", "FININSTRMNM", "ISIN",
-        "FININSTRMTP", "SCTYTPFLG", "STS", "UNQPDCTIDR",
+        "TCKRSYMB",
+        "FININSTRMNM",
+        "ISIN",
+        "FININSTRMTP",
+        "SCTYTPFLG",
+        "STS",
+        "UNQPDCTIDR",
     }
+
     missing = required.difference(raw.columns)
+
     if missing:
         raise ValueError(
             "BSE security master missing columns: "
@@ -219,19 +291,24 @@ def load_bse_equity_universe(
         )
 
     mask = (
-        raw["FININSTRMTP"].astype("string").str.strip().str.upper().eq("E")
-        & raw["SCTYTPFLG"].astype("string").str.strip().str.upper().eq("EQ")
-        & raw["STS"].astype("string").str.strip().str.upper().eq("A")
+        raw["FININSTRMTP"]
+        .astype("string").str.strip().str.upper().eq("E")
+        & raw["SCTYTPFLG"]
+        .astype("string").str.strip().str.upper().eq("EQ")
+        & raw["STS"]
+        .astype("string").str.strip().str.upper().eq("A")
     )
 
     active = raw.loc[mask].copy()
 
-    selected = active.rename(columns={
-        "TCKRSYMB": "Symbol",
-        "FININSTRMNM": "Company",
-        "ISIN": "ISIN",
-        "UNQPDCTIDR": "Product_Identifier",
-    })
+    selected = active.rename(
+        columns={
+            "TCKRSYMB": "Symbol",
+            "FININSTRMNM": "Company",
+            "ISIN": "ISIN",
+            "UNQPDCTIDR": "Product_Identifier",
+        }
+    )
 
     result = normalize_snapshot(selected)
 
@@ -261,8 +338,45 @@ def load_bse_equity_universe(
     }
 
 
+def _is_approved_exchange_url(
+    source_url: str,
+    exchange: str,
+) -> bool:
+    if exchange not in OFFICIAL_SOURCE_HOSTS:
+        return False
+
+    try:
+        parsed = urlparse(source_url)
+
+        if parsed.scheme != "https":
+            return False
+
+        if not parsed.hostname:
+            return False
+
+        if parsed.username or parsed.password:
+            return False
+
+        if parsed.port not in (None, 443):
+            return False
+
+        host = parsed.hostname.lower().rstrip(".")
+
+        return any(
+            host == approved
+            or host.endswith("." + approved)
+            for approved in OFFICIAL_SOURCE_HOSTS[exchange]
+        )
+
+    except ValueError:
+        return False
+
+
 def validate_metadata(metadata: dict, exchange: str) -> bool:
     if not isinstance(metadata, dict):
+        return False
+
+    if exchange not in OFFICIAL_SOURCE_HOSTS:
         return False
 
     if METADATA_FIELDS.difference(metadata):
@@ -274,19 +388,24 @@ def validate_metadata(metadata: dict, exchange: str) -> bool:
     if not str(metadata["filename"]).strip():
         return False
 
-    parsed = urlparse(str(metadata["source_url"]))
-    if parsed.scheme != "https" or not parsed.netloc:
+    source_url = str(metadata["source_url"]).strip()
+
+    if not _is_approved_exchange_url(source_url, exchange):
         return False
 
     if not re.fullmatch(
-        r"[a-fA-F0-9]{64}", str(metadata["sha256"])
+        r"[a-fA-F0-9]{64}",
+        str(metadata["sha256"]),
     ):
         return False
 
     try:
         timestamp = datetime.fromisoformat(
-            str(metadata["downloaded_at_utc"]).replace("Z", "+00:00")
+            str(metadata["downloaded_at_utc"]).replace(
+                "Z", "+00:00"
+            )
         )
+
         if timestamp.tzinfo is None:
             return False
 
@@ -296,6 +415,39 @@ def validate_metadata(metadata: dict, exchange: str) -> bool:
         return False
 
     return True
+
+
+def verify_snapshot_checksum(
+    path: str | Path,
+    metadata: dict,
+) -> bool:
+    """Compare metadata SHA-256 with the actual file bytes."""
+    if not isinstance(metadata, dict):
+        return False
+
+    expected = str(metadata.get("sha256", "")).lower()
+
+    if not re.fullmatch(r"[a-f0-9]{64}", expected):
+        return False
+
+    file_path = Path(path)
+
+    if not file_path.is_file():
+        return False
+
+    digest = hashlib.sha256()
+
+    try:
+        with file_path.open("rb") as handle:
+            for chunk in iter(
+                lambda: handle.read(1024 * 1024),
+                b"",
+            ):
+                digest.update(chunk)
+    except OSError:
+        return False
+
+    return digest.hexdigest() == expected
 
 
 def audit_one_exchange(
@@ -311,7 +463,8 @@ def audit_one_exchange(
     )
 
     valid_isin = frame["ISIN"].str.fullmatch(
-        r"IN[A-Z0-9]{10}", na=False
+        r"IN[A-Z0-9]{10}",
+        na=False,
     )
 
     symbol_count = frame["Symbol"].value_counts(dropna=False)
@@ -319,24 +472,31 @@ def audit_one_exchange(
 
     detail = frame.copy()
     detail["Exchange"] = exchange
+
     detail["Duplicate_Symbol"] = (
         detail["Symbol"].map(symbol_count).gt(1)
     )
+
     detail["Duplicate_ISIN"] = (
         detail["ISIN"].map(isin_count).gt(1)
     )
+
     detail["Valid_ISIN"] = valid_isin
     detail["Missing_Identity"] = missing_identity
     detail["Audit_Status"] = "PASS"
 
     detail.loc[~valid_isin, "Audit_Status"] = "INVALID_ISIN"
-    detail.loc[missing_identity, "Audit_Status"] = "MISSING_IDENTITY"
+    detail.loc[missing_identity, "Audit_Status"] = (
+        "MISSING_IDENTITY"
+    )
+
     detail.loc[
         detail["Duplicate_Symbol"] | detail["Duplicate_ISIN"],
         "Audit_Status",
     ] = "DUPLICATE_IDENTITY"
 
     metadata_valid = validate_metadata(metadata, exchange)
+
     issue_rows = int(detail["Audit_Status"].ne("PASS").sum())
 
     summary = {
@@ -355,7 +515,9 @@ def audit_one_exchange(
         "issue_rows": issue_rows,
         "metadata_valid": metadata_valid,
         "status": (
-            "PASS" if issue_rows == 0 and metadata_valid else "REVIEW"
+            "PASS"
+            if issue_rows == 0 and metadata_valid
+            else "REVIEW"
         ),
         "mapping_eligible": False,
         "sector_mapping_activated": False,
@@ -371,22 +533,30 @@ def build_exchange_universe_reconciliation(
     bse_metadata: dict,
 ) -> tuple[pd.DataFrame, dict]:
     nse_detail, nse_summary = audit_one_exchange(
-        nse, "NSE", nse_metadata
+        nse,
+        "NSE",
+        nse_metadata,
     )
+
     bse_detail, bse_summary = audit_one_exchange(
-        bse, "BSE", bse_metadata
+        bse,
+        "BSE",
+        bse_metadata,
     )
 
     nse_isins = set(
         nse_detail.loc[nse_detail["Valid_ISIN"], "ISIN"]
     )
+
     bse_isins = set(
         bse_detail.loc[bse_detail["Valid_ISIN"], "ISIN"]
     )
+
     common_isins = nse_isins.intersection(bse_isins)
 
     combined = pd.concat(
-        [nse_detail, bse_detail], ignore_index=True
+        [nse_detail, bse_detail],
+        ignore_index=True,
     )
 
     summary = {
