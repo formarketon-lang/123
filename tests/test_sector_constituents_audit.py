@@ -2,9 +2,7 @@
 import pandas as pd
 import pytest
 
-from scripts.run_sector_constituents_audit import (
-    build_constituent_audit,
-)
+from data.constituent_audit import build_constituent_audit
 
 
 def _mii_source(rows):
@@ -247,3 +245,4 @@ def test_invalid_inputs_raise_clear_errors(
         build_constituent_audit(
             constituents, nse
         )
+        
