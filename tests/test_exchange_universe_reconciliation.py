@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import zipfile
 
 import pandas as pd
@@ -10,6 +11,7 @@ from data.providers.exchange_universe_reconciliation import (
     load_nse_cm_diagnostic,
     load_nse_equity_universe,
     validate_metadata,
+    verify_snapshot_checksum,
 )
 
 
@@ -29,9 +31,15 @@ def bse_data():
 
 
 def metadata(exchange):
+    source_url = (
+        "https://www.nseindia.com/security-master.csv"
+        if exchange == "NSE"
+        else "https://member.bseindia.com/security-master.csv"
+    )
+
     return {
         "exchange": exchange,
-        "source_url": "https://example.com/security-master.csv",
+        "source_url": source_url,
         "filename": f"{exchange}.csv",
         "downloaded_at_utc": "2026-11-08T10:00:00+00:00",
         "trading_date": "2026-11-06",
@@ -209,3 +217,65 @@ def test_nse_cm_loader_is_diagnostic_and_filters_active_eq(tmp_path):
 
     assert result["Symbol"].tolist() == ["AAA"]
     assert diag["not_used_as_primary_listed_universe"] is True
+
+
+def test_example_domain_is_rejected():
+    bad = metadata("NSE")
+    bad["source_url"] = "https://example.com/file.csv"
+
+    assert validate_metadata(bad, "NSE") is False
+
+
+def test_hostname_lookalike_is_rejected():
+    bad = metadata("NSE")
+    bad["source_url"] = (
+        "https://nseindia.com.fake.org/file.csv"
+    )
+
+    assert validate_metadata(bad, "NSE") is False
+
+
+def test_http_source_is_rejected():
+    bad = metadata("NSE")
+    bad["source_url"] = (
+        "http://www.nseindia.com/file.csv"
+    )
+
+    assert validate_metadata(bad, "NSE") is False
+
+
+def test_unknown_exchange_is_rejected():
+    bad = metadata("NSE")
+    bad["exchange"] = "UNKNOWN"
+
+    assert validate_metadata(bad, "UNKNOWN") is False
+
+
+def test_checksum_matches_actual_file(tmp_path):
+    path = tmp_path / "snapshot.csv"
+    content = b"Symbol,ISIN\nAAA,INE123A01011\n"
+    path.write_bytes(content)
+
+    record = {
+        "sha256": hashlib.sha256(content).hexdigest()
+    }
+
+    assert verify_snapshot_checksum(path, record) is True
+
+
+def test_checksum_mismatch_is_rejected(tmp_path):
+    path = tmp_path / "snapshot.csv"
+    path.write_bytes(b"actual file content")
+
+    record = {"sha256": "a" * 64}
+
+    assert verify_snapshot_checksum(path, record) is False
+
+
+def test_checksum_missing_file_is_rejected(tmp_path):
+    record = {"sha256": "a" * 64}
+
+    assert verify_snapshot_checksum(
+        tmp_path / "missing.csv",
+        record,
+    ) is False
