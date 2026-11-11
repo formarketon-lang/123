@@ -21,7 +21,7 @@ def make_index_data(closes):
     })
 
 
-def make_verified_universe():
+def make_verified_universe(snapshot_date="2025-01-02"):
     return pd.DataFrame({
         "Symbol": ["AAA", "BBB", "CCC", "DDD"],
         "ISIN": [
@@ -33,6 +33,8 @@ def make_verified_universe():
         "Series": ["EQ"] * 4,
         "Exchange": ["NSE"] * 4,
         "Source": ["NSE MII Security Master"] * 4,
+        "Universe As Of Date": [snapshot_date] * 4,
+        "Universe Verification Status": ["MII_DATED"] * 4,
     })
 
 
@@ -100,10 +102,11 @@ def test_regime_preserves_valid_nse_provenance():
     assert result["validation_status"] == "PASS"
 
 
-def test_breadth_passes_only_with_exact_verified_membership():
+def test_breadth_passes_with_exact_membership_and_same_date():
     result = analyze_market_breadth(
         make_breadth_data(),
         verified_universe=make_verified_universe(),
+        observation_date="2025-01-02",
     )
 
     assert result["advancing"] == 2
@@ -113,6 +116,10 @@ def test_breadth_passes_only_with_exact_verified_membership():
     assert result["coverage_pct"] == 100.0
     assert result["universe_verified"] is True
     assert result["membership_complete"] is True
+    assert result["universe_snapshot_status"] == "PASS"
+    assert result["universe_snapshot_reason"] == (
+        "UNIVERSE_SNAPSHOT_DATE_ALIGNED"
+    )
     assert result["coverage_status"] == "PASS"
 
 
@@ -134,6 +141,7 @@ def test_partial_verified_universe_coverage_is_review():
     result = analyze_market_breadth(
         data,
         verified_universe=make_verified_universe(),
+        observation_date="2025-01-02",
     )
 
     assert result["observed_stocks"] == 2
@@ -150,6 +158,7 @@ def test_unexpected_symbol_is_rejected():
         analyze_market_breadth(
             data,
             verified_universe=make_verified_universe(),
+            observation_date="2025-01-02",
         )
 
 
@@ -161,6 +170,7 @@ def test_non_mii_universe_is_rejected():
         analyze_market_breadth(
             make_breadth_data(),
             verified_universe=universe,
+            observation_date="2025-01-02",
         )
 
 
@@ -172,6 +182,7 @@ def test_non_eq_universe_is_rejected():
         analyze_market_breadth(
             make_breadth_data(),
             verified_universe=universe,
+            observation_date="2025-01-02",
         )
 
 
@@ -183,6 +194,7 @@ def test_invalid_isin_in_universe_is_rejected():
         analyze_market_breadth(
             make_breadth_data(),
             verified_universe=universe,
+            observation_date="2025-01-02",
         )
 
 
@@ -194,6 +206,7 @@ def test_duplicate_universe_symbol_is_rejected():
         analyze_market_breadth(
             make_breadth_data(),
             verified_universe=universe,
+            observation_date="2025-01-02",
         )
 
 
@@ -217,4 +230,99 @@ def test_breadth_rejects_missing_prices():
 
     with pytest.raises(ValueError, match="Invalid values"):
         analyze_market_breadth(data)
-        
+
+
+def test_missing_snapshot_date_is_review():
+    universe = make_verified_universe().drop(
+        columns=["Universe As Of Date"]
+    )
+
+    result = analyze_market_breadth(
+        make_breadth_data(),
+        verified_universe=universe,
+        observation_date="2025-01-02",
+    )
+
+    assert result["membership_complete"] is True
+    assert result["universe_snapshot_status"] == "REVIEW"
+    assert result["universe_snapshot_reason"] == (
+        "UNIVERSE_SNAPSHOT_DATE_MISSING"
+    )
+    assert result["coverage_status"] == "REVIEW"
+
+
+def test_missing_observation_date_is_review():
+    result = analyze_market_breadth(
+        make_breadth_data(),
+        verified_universe=make_verified_universe(),
+    )
+
+    assert result["membership_complete"] is True
+    assert result["universe_snapshot_status"] == "REVIEW"
+    assert result["universe_snapshot_reason"] == (
+        "OBSERVATION_DATE_MISSING"
+    )
+    assert result["coverage_status"] == "REVIEW"
+
+
+def test_future_snapshot_is_rejected():
+    universe = make_verified_universe(
+        snapshot_date="2025-01-03"
+    )
+
+    with pytest.raises(ValueError, match="Future NSE universe snapshot"):
+        analyze_market_breadth(
+            make_breadth_data(),
+            verified_universe=universe,
+            observation_date="2025-01-02",
+        )
+
+
+def test_older_snapshot_is_review_not_pass():
+    universe = make_verified_universe(
+        snapshot_date="2025-01-01"
+    )
+
+    result = analyze_market_breadth(
+        make_breadth_data(),
+        verified_universe=universe,
+        observation_date="2025-01-02",
+    )
+
+    assert result["membership_complete"] is True
+    assert result["universe_snapshot_status"] == "REVIEW"
+    assert result["universe_snapshot_reason"] == (
+        "UNIVERSE_SNAPSHOT_DATE_NOT_ALIGNED"
+    )
+    assert result["coverage_status"] == "REVIEW"
+
+
+def test_inconsistent_snapshot_dates_are_review():
+    universe = make_verified_universe()
+    universe.loc[0, "Universe As Of Date"] = "2025-01-01"
+
+    result = analyze_market_breadth(
+        make_breadth_data(),
+        verified_universe=universe,
+        observation_date="2025-01-02",
+    )
+
+    assert result["universe_snapshot_status"] == "REVIEW"
+    assert result["universe_snapshot_reason"] == (
+        "UNIVERSE_SNAPSHOT_DATE_INCONSISTENT"
+    )
+    assert result["coverage_status"] == "REVIEW"
+
+
+def test_invalid_observation_date_is_review():
+    result = analyze_market_breadth(
+        make_breadth_data(),
+        verified_universe=make_verified_universe(),
+        observation_date="not-a-date",
+    )
+
+    assert result["universe_snapshot_status"] == "REVIEW"
+    assert result["universe_snapshot_reason"] == (
+        "OBSERVATION_DATE_INVALID"
+    )
+    assert result["coverage_status"] == "REVIEW"
