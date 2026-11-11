@@ -27,6 +27,7 @@ from ui.settings import (
     SECTORS as SETTINGS_SECTORS,
     MARKET_CAP_OPTIONS,
     EXCHANGE_OPTIONS,
+    _initialize_settings,
 )
 
 
@@ -55,24 +56,9 @@ def get_cached_amfi_market_cap():
 
 
 def initialize_session():
-    """Initialize shared Settings and scanner session values."""
-    defaults = {
-        "rs_last_run": None,
-        "data_source": "NSE Primary + Yahoo Secondary",
-        "settings_exchange": "NSE",
-        "settings_start_date": None,
-        "settings_end_date": None,
-        "settings_benchmark": "Nifty 50",
-        "settings_main_benchmarks": ["Nifty 50"],
-        "settings_sector": "All Sectors",
-        "settings_market_cap": "All Market Caps",
-        "rs_symbols": "",
-        "rs_universe_symbols": [],
-        "rs_windows": ["1M", "3M"],
-        "rs_custom_window_days": 45,
-        "rs_include_custom_window": False,
-    }
+    """Initialize shared Settings before scanner-specific values."""
 
+    # Migrate older Relative Strength page values first.
     migrations = {
         "settings_exchange": "rs_exchange",
         "settings_benchmark": "rs_main_benchmark",
@@ -87,6 +73,21 @@ def initialize_session():
             and old_key in st.session_state
         ):
             st.session_state[new_key] = st.session_state[old_key]
+
+    # Use the single shared migration and validation logic.
+    # This preserves a legacy single benchmark before defaults
+    # can insert a new Nifty 50 selection.
+    _initialize_settings()
+
+    # Initialize only scanner-specific values here.
+    defaults = {
+        "rs_last_run": None,
+        "rs_symbols": "",
+        "rs_universe_symbols": [],
+        "rs_windows": ["1M", "3M"],
+        "rs_custom_window_days": 45,
+        "rs_include_custom_window": False,
+    }
 
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -291,9 +292,12 @@ def render_relative_strength_page():
         if name in available_names
     ]
     if not valid_defaults:
-        valid_defaults = ["Nifty 50"] if "Nifty 50" in available_names else [
-            available_names[0]
-        ]
+        fallback = (
+            "Nifty 50"
+            if "Nifty 50" in available_names
+            else available_names[0]
+        )
+        valid_defaults = [fallback]
 
     st.session_state["settings_main_benchmarks"] = valid_defaults
 
@@ -456,5 +460,5 @@ def render_relative_strength_page():
         st.info(
             "Verified NSE Stock নির্বাচন করুন অথবা FMCG-এর audited "
             "official membership ব্যবহার করুন। তারপর Run চাপুন।"
-            )
-    
+    )
+        
