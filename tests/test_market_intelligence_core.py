@@ -1,3 +1,4 @@
+
 """Tests for the Market Intelligence Core Engine."""
 
 import pandas as pd
@@ -146,4 +147,5 @@ def test_breadth_rejects_missing_prices():
     })
 
     with pytest.raises(ValueError, match="Invalid values"):
-        analyze_market_breadth(data)।
+        analyze_market_breadth(data)
+        
