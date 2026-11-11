@@ -1,10 +1,4 @@
-
-"""TradeLab Pro - Streamlit UI smoke tests.
-
-Checks that the main application and its three navigation
-pages render without uncaught Streamlit exceptions.
-External market-data calls are mocked for deterministic tests.
-"""
+"""TradeLab Pro - Streamlit UI and Settings integration tests."""
 
 from pathlib import Path
 
@@ -21,10 +15,19 @@ def fake_nse_universe():
     """Small verified NSE EQ universe for UI-only tests."""
     return pd.DataFrame({
         "Symbol": ["MARICO", "RELIANCE"],
-        "Company": ["Marico Limited", "Reliance Industries Limited"],
-        "ISIN": ["INE196A01026", "INE002A01018"],
+        "Company": [
+            "Marico Limited",
+            "Reliance Industries Limited",
+        ],
+        "ISIN": [
+            "INE196A01026",
+            "INE002A01018",
+        ],
         "Series": ["EQ", "EQ"],
-        "Listing Date": ["1996-04-01", "1995-11-29"],
+        "Listing Date": [
+            "1996-04-01",
+            "1995-11-29",
+        ],
         "Face Value": [1, 10],
         "Exchange": ["NSE", "NSE"],
         "Source": ["TEST_FIXTURE", "TEST_FIXTURE"],
@@ -33,7 +36,7 @@ def fake_nse_universe():
 
 @pytest.fixture
 def mock_market_data(monkeypatch):
-    """Prevent external market-data requests during UI smoke tests."""
+    """Prevent external market-data requests during UI tests."""
 
     import ui.relative_strength as relative_strength
     import ui.stock_search as stock_search
@@ -67,15 +70,29 @@ def run_app():
 
 def assert_no_app_exception(app_test):
     """Fail with readable details if Streamlit raises an exception."""
+
     if app_test.exception:
         messages = [
             str(item.message)
             for item in app_test.exception
         ]
+
         pytest.fail(
             "Streamlit application raised an exception: "
             + " | ".join(messages)
         )
+
+
+def get_benchmark_selector(app_test):
+    """Find the Relative Strength Main Benchmark selector."""
+
+    for item in app_test.multiselect:
+        if item.label == "Select one or more Main Benchmarks":
+            return item
+
+    pytest.fail(
+        "Relative Strength Main Benchmark selector was not found."
+    )
 
 
 def test_app_starts_on_relative_strength(mock_market_data):
@@ -144,7 +161,6 @@ def test_stock_search_page_renders(mock_market_data):
     assert "Stock Search" in headers
 
     assert app_test.metric
-
     assert app_test.text_input
 
 
@@ -168,5 +184,60 @@ def test_relative_strength_shows_multiple_benchmark_control(
 
     assert "Select Stocks from NSE Universe" in (
         multiselect_labels
-)
-  
+    )
+
+
+def test_legacy_single_benchmark_reaches_relative_strength(
+    mock_market_data,
+):
+    """Legacy single benchmark must survive page initialization."""
+
+    app_test = AppTest.from_file(
+        str(APP_FILE),
+        default_timeout=30,
+    )
+
+    app_test.session_state["settings_benchmark"] = "Nifty 500"
+
+    app_test.run()
+
+    assert_no_app_exception(app_test)
+
+    selector = get_benchmark_selector(app_test)
+
+    assert selector.value == ["Nifty 500"]
+
+    assert (
+        app_test.session_state["settings_main_benchmarks"]
+        == ["Nifty 500"]
+    )
+
+
+def test_multiple_benchmarks_remain_in_shared_session(
+    mock_market_data,
+):
+    """Multiple selected benchmarks must remain in shared session."""
+
+    app_test = run_app()
+
+    assert_no_app_exception(app_test)
+
+    selector = get_benchmark_selector(app_test)
+
+    selector.set_value([
+        "Nifty 50",
+        "Nifty 500",
+    ]).run()
+
+    assert_no_app_exception(app_test)
+
+    assert (
+        app_test.session_state["settings_main_benchmarks"]
+        == ["Nifty 50", "Nifty 500"]
+    )
+
+    assert (
+        app_test.session_state["settings_benchmark"]
+        == "Nifty 50"
+    )
+    
