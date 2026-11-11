@@ -56,13 +56,22 @@ def _initialize_settings():
 
     default_benchmark = next(iter(benchmarks))
 
+    # Read legacy setting BEFORE inserting new defaults.
+    legacy_benchmark = st.session_state.get(
+        "settings_benchmark",
+        default_benchmark,
+    )
+
+    if legacy_benchmark not in benchmarks:
+        legacy_benchmark = default_benchmark
+
     defaults = {
         "data_source": ACTIVE_DATA_SOURCE,
         "settings_exchange": "NSE",
         "settings_start_date": None,
         "settings_end_date": None,
-        "settings_benchmark": default_benchmark,
-        "settings_main_benchmarks": [default_benchmark],
+        "settings_benchmark": legacy_benchmark,
+        "settings_main_benchmarks": [legacy_benchmark],
         "settings_sector": "All Sectors",
         "settings_market_cap": "All Market Caps",
     }
@@ -80,6 +89,9 @@ def _initialize_settings():
         "settings_main_benchmarks",
         [],
     )
+
+    if not isinstance(selected, (list, tuple)):
+        selected = []
 
     selected = [
         name
@@ -154,7 +166,7 @@ def render_settings_page():
     st.info(
         "CSV / Excel, Broker API, Demo Data এবং অন্যান্য "
         "external providers এখনো এই Scanner-এর সঙ্গে "
-        "সংযুক্ত নয়। এগুলোকে Active Source হিসেবে দেখানো হচ্ছে না।"
+        "সংযুক্ত নয়। এগুলোকে Active Source হিসেবে দেখানো হচ্ছে।"
     )
 
     # ---------------------------------------------------------
@@ -419,3 +431,4 @@ def render_settings_page():
         "Scanner-এর সঙ্গে shared থাকবে। BSE এবং Both এখনো "
         "fail-closed অবস্থায় থাকবে।"
     )
+    
