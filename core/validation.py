@@ -1,9 +1,10 @@
+
 import math
 import pandas as pd
 
 
 def _normalize_utc_date(value, name):
-    """Convert timezone-aware timestamps to UTC; preserve naive dates."""
+    """Convert aware timestamps to UTC; preserve their time component."""
 
     try:
         date = pd.Timestamp(value)
@@ -14,7 +15,7 @@ def _normalize_utc_date(value, name):
         if date.tzinfo is not None:
             date = date.tz_convert("UTC").tz_localize(None)
 
-        return date.normalize()
+        return date
 
     except (TypeError, ValueError, OverflowError):
         raise ValueError(f"{name} contains invalid dates.")
@@ -38,7 +39,6 @@ def normalize_price_data(data, name="Price"):
         _normalize_utc_date(value, name)
         for value in prices["Date"]
     ]
-
     prices["Date"] = pd.to_datetime(dates)
 
     prices["Close"] = pd.to_numeric(
@@ -63,8 +63,8 @@ def normalize_price_data(data, name="Price"):
 def validate_date_range(start_date, end_date):
     """Validate requested analysis dates using consistent UTC rules."""
 
-    start = _normalize_utc_date(start_date, "Start date")
-    end = _normalize_utc_date(end_date, "End date")
+    start = _normalize_utc_date(start_date, "Start date").normalize()
+    end = _normalize_utc_date(end_date, "End date").normalize()
 
     if end < start:
         raise ValueError("End date cannot be earlier than start date.")
