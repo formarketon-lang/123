@@ -110,7 +110,9 @@ def _validate_nse_data(data, symbol, is_index):
     ].min(axis=1)
 
     if invalid_high.any() or invalid_low.any():
-        raise ValueError("NSE data contains inconsistent OHLC candles.")
+        raise ValueError(
+            "NSE data contains Inconsistent OHLC candle values."
+        )
 
     if "Volume" in result.columns:
         original_volume = result["Volume"].copy()
