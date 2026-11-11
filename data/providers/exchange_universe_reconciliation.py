@@ -3,6 +3,18 @@
 Exchange universes are filtered independently.
 ISIN is the cross-exchange identity key.
 Sector classification is deliberately outside this module.
+
+Production provenance checks:
+- Exchange-specific HTTPS source host validation.
+- Safe original filename validation.
+- Strict UTC timestamp validation.
+- Trading date validation.
+- SHA-256 verification against original file bytes.
+- BSE ZIP integrity verification.
+
+This module does not download files and cannot independently
+verify HTTP redirect destinations. The caller must provide the
+actual final response URL when a downloader is implemented.
 """
 from __future__ import annotations
 
@@ -10,7 +22,7 @@ import hashlib
 import re
 import zipfile
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -355,6 +367,31 @@ def load_bse_equity_universe(
     }
 
 
+def _is_safe_filename(filename: str) -> bool:
+    """Accept a plain original filename, never a filesystem path."""
+    if not isinstance(filename, str):
+        return False
+
+    value = filename.strip()
+
+    if not value or value in {".", ".."}:
+        return False
+
+    if "/" in value or "\\" in value:
+        return False
+
+    if Path(value).name != value:
+        return False
+
+    if re.match(r"^[A-Za-z]:", value):
+        return False
+
+    if any(ord(char) < 32 for char in value):
+        return False
+
+    return True
+
+
 def _is_approved_exchange_url(
     source_url: str,
     exchange: str,
@@ -362,10 +399,13 @@ def _is_approved_exchange_url(
     if exchange not in OFFICIAL_SOURCE_HOSTS:
         return False
 
-    try:
-        parsed = urlparse(source_url)
+    if not isinstance(source_url, str) or not source_url.strip():
+        return False
 
-        if parsed.scheme != "https":
+    try:
+        parsed = urlparse(source_url.strip())
+
+        if parsed.scheme.lower() != "https":
             return False
 
         if not parsed.hostname:
@@ -375,6 +415,9 @@ def _is_approved_exchange_url(
             return False
 
         if parsed.port not in (None, 443):
+            return False
+
+        if parsed.fragment:
             return False
 
         host = parsed.hostname.lower().rstrip(".")
@@ -389,7 +432,30 @@ def _is_approved_exchange_url(
         return False
 
 
+def _is_utc_timestamp(value: str) -> bool:
+    """Require a timezone-aware timestamp whose UTC offset is zero."""
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    try:
+        normalized = value.strip()
+
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+
+        timestamp = datetime.fromisoformat(normalized)
+
+        if timestamp.tzinfo is None:
+            return False
+
+        return timestamp.utcoffset() == timedelta(0)
+
+    except (ValueError, TypeError, OverflowError):
+        return False
+
+
 def validate_metadata(metadata: dict, exchange: str) -> bool:
+    """Fail closed when source provenance metadata is incomplete."""
     if not isinstance(metadata, dict):
         return False
 
@@ -399,35 +465,28 @@ def validate_metadata(metadata: dict, exchange: str) -> bool:
     if METADATA_FIELDS.difference(metadata):
         return False
 
-    if str(metadata["exchange"]).upper() != exchange:
+    if str(metadata["exchange"]).strip().upper() != exchange:
         return False
 
-    if not str(metadata["filename"]).strip():
+    if not _is_safe_filename(metadata["filename"]):
         return False
 
-    source_url = str(metadata["source_url"]).strip()
+    source_url = metadata["source_url"]
 
     if not _is_approved_exchange_url(source_url, exchange):
         return False
 
     if not re.fullmatch(
         r"[a-fA-F0-9]{64}",
-        str(metadata["sha256"]),
+        str(metadata["sha256"]).strip(),
     ):
         return False
 
+    if not _is_utc_timestamp(metadata["downloaded_at_utc"]):
+        return False
+
     try:
-        timestamp = datetime.fromisoformat(
-            str(metadata["downloaded_at_utc"]).replace(
-                "Z", "+00:00"
-            )
-        )
-
-        if timestamp.tzinfo is None:
-            return False
-
-        date.fromisoformat(str(metadata["trading_date"]))
-
+        date.fromisoformat(str(metadata["trading_date"]).strip())
     except (ValueError, TypeError):
         return False
 
@@ -646,3 +705,4 @@ def build_exchange_universe_reconciliation(
     }
 
     return combined, summary
+        
