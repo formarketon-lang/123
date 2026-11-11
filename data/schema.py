@@ -109,19 +109,15 @@ def standardize_ohlcv(
             "Missing required columns: " + ", ".join(missing)
         )
 
-    dates = pd.to_datetime(df["Date"], errors="coerce")
+    # Parse mixed timezone inputs consistently as UTC.
+    # Naive timestamps are interpreted as UTC; output is timezone-naive UTC.
+    dates = pd.to_datetime(
+        df["Date"], errors="coerce", utc=True
+    )
     if dates.isna().any():
         raise ValueError("Invalid or missing dates found in market data.")
 
-    try:
-        if dates.dt.tz is not None:
-            dates = dates.dt.tz_convert("UTC").dt.tz_localize(None)
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise ValueError(
-            "Dates must use a consistent timezone format."
-        ) from exc
-
-    df["Date"] = dates
+    df["Date"] = dates.dt.tz_localize(None)
 
     price_columns = ["Open", "High", "Low", "Close"]
     for column in price_columns:
@@ -145,8 +141,6 @@ def standardize_ohlcv(
             )
 
         if normalized_type == "index":
-            # An index may have no Volume values at all.
-            # Partial or malformed Volume is not accepted.
             if original_volume.notna().any() and df["Volume"].isna().any():
                 raise ValueError(
                     "Index Volume must be either fully available or absent."
