@@ -6,12 +6,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIRECTORY = PROJECT_ROOT / "data"
+CORE_DIRECTORY = PROJECT_ROOT / "core"
 
 
-def _find_forbidden_imports(forbidden_roots):
+def _find_forbidden_imports(directory, forbidden_roots):
     violations = []
 
-    for python_file in DATA_DIRECTORY.rglob("*.py"):
+    for python_file in directory.rglob("*.py"):
         source = python_file.read_text(encoding="utf-8")
         syntax_tree = ast.parse(source, filename=str(python_file))
 
@@ -40,21 +41,22 @@ def _find_forbidden_imports(forbidden_roots):
 
 
 def test_data_layer_does_not_import_scripts():
-    """Reusable data logic must not depend on maintenance scripts."""
-    violations = _find_forbidden_imports({"scripts"})
-
-    assert not violations, (
-        "Data layer must not import from scripts/:\n"
-        + "\n".join(violations)
+    violations = _find_forbidden_imports(
+        DATA_DIRECTORY, {"scripts"}
     )
+    assert not violations, "\n".join(violations)
 
 
 def test_data_layer_does_not_import_upper_layers():
-    """Data layer must not depend on core or UI layers."""
-    violations = _find_forbidden_imports({"core", "ui"})
-
-    assert not violations, (
-        "Data layer must not import from core/ or ui/:\n"
-        + "\n".join(violations)
+    violations = _find_forbidden_imports(
+        DATA_DIRECTORY, {"core", "ui"}
     )
+    assert not violations, "\n".join(violations)
+
+
+def test_core_layer_does_not_import_ui_or_scripts():
+    violations = _find_forbidden_imports(
+        CORE_DIRECTORY, {"ui", "scripts"}
+    )
+    assert not violations, "\n".join(violations)
     
