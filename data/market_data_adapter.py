@@ -1,4 +1,3 @@
-
 """NSE Primary and Yahoo Secondary market-data adapter."""
 
 import numpy as np
@@ -8,6 +7,7 @@ from data.providers.nse_downloader import download_equity_history
 from data.providers.nse_index_downloader import download_index_history
 from data.yahoo_adapter import fetch_yahoo_history
 from data.schema import standardize_ohlcv
+from data.provenance import attach_data_provenance
 
 
 NSE_INDEX_SYMBOLS = {
@@ -33,7 +33,7 @@ def _standardize_adapter_result(
     instrument_type,
     fallback_reason="",
 ):
-    """Apply the common schema and preserve adapter provenance."""
+    """Apply common schema and attach provenance metadata."""
 
     standardized = standardize_ohlcv(
         data=data,
@@ -44,17 +44,25 @@ def _standardize_adapter_result(
         instrument_type=instrument_type,
     )
 
-    # Preserve the adapter's established display values for compatibility.
+    # Preserve established adapter display values.
     standardized["Source"] = source
     standardized["Exchange"] = exchange
     standardized["Timeframe"] = interval
     standardized["Fallback Reason"] = fallback_reason
 
-    return standardized
+    return attach_data_provenance(
+        data=standardized,
+        symbol=symbol,
+        source=source,
+        exchange=exchange,
+        timeframe=interval,
+        fallback_reason=fallback_reason,
+        validation_status="PASS",
+    )
 
 
 def _validate_nse_data(data, symbol, is_index):
-    """Validate NSE data and pass it through the common schema."""
+    """Validate NSE data through the common schema."""
 
     if not isinstance(data, pd.DataFrame) or data.empty:
         raise ValueError("NSE returned empty or invalid market data.")
@@ -75,6 +83,7 @@ def _validate_nse_data(data, symbol, is_index):
 
     if result["Date"].isna().any():
         raise ValueError("NSE data contains invalid trading dates.")
+
     if result["Date"].duplicated().any():
         raise ValueError("NSE data contains duplicate trading dates.")
 
@@ -86,6 +95,7 @@ def _validate_nse_data(data, symbol, is_index):
             raise ValueError(
                 f"NSE data contains invalid values in {column}."
             )
+
         if (result[column] <= 0).any():
             raise ValueError(
                 f"NSE {column} prices must be greater than zero."
@@ -94,6 +104,7 @@ def _validate_nse_data(data, symbol, is_index):
     invalid_high = result["High"] < result[
         ["Open", "Low", "Close"]
     ].max(axis=1)
+
     invalid_low = result["Low"] > result[
         ["Open", "High", "Close"]
     ].min(axis=1)
@@ -110,6 +121,7 @@ def _validate_nse_data(data, symbol, is_index):
         invalid_volume = (
             original_volume.notna() & result["Volume"].isna()
         )
+
         if invalid_volume.any():
             raise ValueError("NSE data contains invalid Volume values.")
 
@@ -118,6 +130,7 @@ def _validate_nse_data(data, symbol, is_index):
 
         if (result["Volume"].dropna() < 0).any():
             raise ValueError("NSE Volume cannot be negative.")
+
     elif is_index:
         result["Volume"] = pd.NA
 
@@ -132,7 +145,7 @@ def _validate_nse_data(data, symbol, is_index):
 
 
 def _add_yahoo_metadata(data, symbol, exchange, interval, reason):
-    """Validate Yahoo data and attach fallback metadata."""
+    """Validate Yahoo data and attach fallback provenance."""
 
     if not isinstance(data, pd.DataFrame) or data.empty:
         raise ValueError("Yahoo returned empty market data.")
@@ -177,6 +190,7 @@ def fetch_market_history(
 
     if pd.isna(start) or pd.isna(end):
         raise ValueError("Valid start and end dates are required.")
+
     if start > end:
         raise ValueError("Start date cannot be after end date.")
 
@@ -189,6 +203,7 @@ def fetch_market_history(
 
             if symbol.startswith("^"):
                 index_name = NSE_INDEX_SYMBOLS.get(symbol)
+
                 if index_name is None:
                     raise ValueError(
                         f"No verified NSE index mapping exists for {symbol}."
@@ -197,6 +212,7 @@ def fetch_market_history(
                 raw_data = download_index_history(
                     index_name, start_text, end_text
                 )
+
                 return _validate_nse_data(
                     raw_data, symbol, is_index=True
                 )
@@ -204,12 +220,14 @@ def fetch_market_history(
             raw_data = download_equity_history(
                 symbol, start_text, end_text
             )
+
             return _validate_nse_data(
                 raw_data, symbol, is_index=False
             )
 
         except Exception as error:
             primary_error = f"{type(error).__name__}: {error}"
+
     else:
         primary_error = (
             f"NSE Primary does not support interval {interval}."
