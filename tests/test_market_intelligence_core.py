@@ -1,4 +1,3 @@
-
 """Tests for the Market Intelligence Core Engine."""
 
 import pandas as pd
@@ -19,6 +18,29 @@ def make_index_data(closes):
         "Source": "NSE",
         "Validation Status": "PASS",
         "Fallback Reason": "",
+    })
+
+
+def make_verified_universe():
+    return pd.DataFrame({
+        "Symbol": ["AAA", "BBB", "CCC", "DDD"],
+        "ISIN": [
+            "INE000A01010",
+            "INE000B01010",
+            "INE000C01010",
+            "INE000D01010",
+        ],
+        "Series": ["EQ"] * 4,
+        "Exchange": ["NSE"] * 4,
+        "Source": ["NSE MII Security Master"] * 4,
+    })
+
+
+def make_breadth_data():
+    return pd.DataFrame({
+        "Symbol": ["AAA", "BBB", "CCC", "DDD"],
+        "Previous Close": [100, 100, 100, 100],
+        "Current Close": [110, 90, 100, 105],
     })
 
 
@@ -78,16 +100,10 @@ def test_regime_preserves_valid_nse_provenance():
     assert result["validation_status"] == "PASS"
 
 
-def test_breadth_counts_all_three_categories():
-    data = pd.DataFrame({
-        "Symbol": ["AAA", "BBB", "CCC", "DDD"],
-        "Previous Close": [100, 100, 100, 100],
-        "Current Close": [110, 90, 100, 105],
-    })
-
+def test_breadth_passes_only_with_exact_verified_membership():
     result = analyze_market_breadth(
-        data,
-        expected_universe_size=4,
+        make_breadth_data(),
+        verified_universe=make_verified_universe(),
     )
 
     assert result["advancing"] == 2
@@ -95,40 +111,93 @@ def test_breadth_counts_all_three_categories():
     assert result["unchanged"] == 1
     assert result["net_advances"] == 1
     assert result["coverage_pct"] == 100.0
+    assert result["universe_verified"] is True
+    assert result["membership_complete"] is True
     assert result["coverage_status"] == "PASS"
 
 
-def test_partial_breadth_coverage_is_review():
-    data = pd.DataFrame({
-        "Symbol": ["AAA", "BBB"],
-        "Previous Close": [100, 100],
-        "Current Close": [110, 90],
-    })
+def test_count_match_without_verified_universe_is_review():
+    result = analyze_market_breadth(
+        make_breadth_data(),
+        expected_universe_size=4,
+    )
+
+    assert result["observed_stocks"] == 4
+    assert result["coverage_pct"] == 100.0
+    assert result["universe_verified"] is False
+    assert result["coverage_status"] == "REVIEW"
+
+
+def test_partial_verified_universe_coverage_is_review():
+    data = make_breadth_data().iloc[:2].copy()
 
     result = analyze_market_breadth(
         data,
-        expected_universe_size=4,
+        verified_universe=make_verified_universe(),
     )
 
     assert result["observed_stocks"] == 2
     assert result["coverage_pct"] == 50.0
+    assert result["membership_complete"] is False
     assert result["coverage_status"] == "REVIEW"
 
 
-def test_breadth_without_expected_universe_is_review():
-    data = pd.DataFrame({
-        "Symbol": ["AAA", "BBB"],
-        "Previous Close": [100, 100],
-        "Current Close": [110, 90],
-    })
+def test_unexpected_symbol_is_rejected():
+    data = make_breadth_data()
+    data.loc[0, "Symbol"] = "UNKNOWN"
 
-    result = analyze_market_breadth(data)
-
-    assert result["coverage_pct"] is None
-    assert result["coverage_status"] == "REVIEW"
+    with pytest.raises(ValueError, match="not in verified NSE universe"):
+        analyze_market_breadth(
+            data,
+            verified_universe=make_verified_universe(),
+        )
 
 
-def test_breadth_rejects_duplicate_symbols():
+def test_non_mii_universe_is_rejected():
+    universe = make_verified_universe()
+    universe["Source"] = "NSE Official Equity Master"
+
+    with pytest.raises(ValueError, match="official NSE MII"):
+        analyze_market_breadth(
+            make_breadth_data(),
+            verified_universe=universe,
+        )
+
+
+def test_non_eq_universe_is_rejected():
+    universe = make_verified_universe()
+    universe.loc[0, "Series"] = "BE"
+
+    with pytest.raises(ValueError, match="NSE EQ"):
+        analyze_market_breadth(
+            make_breadth_data(),
+            verified_universe=universe,
+        )
+
+
+def test_invalid_isin_in_universe_is_rejected():
+    universe = make_verified_universe()
+    universe.loc[0, "ISIN"] = "INVALID"
+
+    with pytest.raises(ValueError, match="invalid ISIN"):
+        analyze_market_breadth(
+            make_breadth_data(),
+            verified_universe=universe,
+        )
+
+
+def test_duplicate_universe_symbol_is_rejected():
+    universe = make_verified_universe()
+    universe.loc[1, "Symbol"] = "AAA"
+
+    with pytest.raises(ValueError, match="duplicate symbols"):
+        analyze_market_breadth(
+            make_breadth_data(),
+            verified_universe=universe,
+        )
+
+
+def test_duplicate_breadth_symbols_are_rejected():
     data = pd.DataFrame({
         "Symbol": ["AAA", "AAA"],
         "Previous Close": [100, 100],
