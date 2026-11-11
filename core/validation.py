@@ -1,6 +1,23 @@
-
 import math
 import pandas as pd
+
+
+def _normalize_utc_date(value, name):
+    """Convert timezone-aware timestamps to UTC; preserve naive dates."""
+
+    try:
+        date = pd.Timestamp(value)
+
+        if pd.isna(date):
+            raise ValueError()
+
+        if date.tzinfo is not None:
+            date = date.tz_convert("UTC").tz_localize(None)
+
+        return date.normalize()
+
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} contains invalid dates.")
 
 
 def normalize_price_data(data, name="Price"):
@@ -17,22 +34,10 @@ def normalize_price_data(data, name="Price"):
 
     prices = data[["Date", "Close"]].copy()
 
-    dates = []
-
-    for value in prices["Date"]:
-        try:
-            date = pd.Timestamp(value)
-
-            if pd.isna(date):
-                raise ValueError()
-
-            if date.tzinfo is not None:
-                date = date.tz_localize(None)
-
-            dates.append(date.normalize())
-
-        except (TypeError, ValueError, OverflowError):
-            raise ValueError(f"{name} contains invalid dates.")
+    dates = [
+        _normalize_utc_date(value, name)
+        for value in prices["Date"]
+    ]
 
     prices["Date"] = pd.to_datetime(dates)
 
@@ -56,24 +61,13 @@ def normalize_price_data(data, name="Price"):
 
 
 def validate_date_range(start_date, end_date):
-    """Validate requested analysis dates."""
+    """Validate requested analysis dates using consistent UTC rules."""
 
-    start = pd.Timestamp(start_date)
-    end = pd.Timestamp(end_date)
-
-    if pd.isna(start) or pd.isna(end):
-        raise ValueError("Invalid analysis dates.")
-
-    if start.tzinfo is not None:
-        start = start.tz_localize(None)
-
-    if end.tzinfo is not None:
-        end = end.tz_localize(None)
-
-    start = start.normalize()
-    end = end.normalize()
+    start = _normalize_utc_date(start_date, "Start date")
+    end = _normalize_utc_date(end_date, "End date")
 
     if end < start:
         raise ValueError("End date cannot be earlier than start date.")
 
     return start, end
+    
