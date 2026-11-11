@@ -44,7 +44,6 @@ def _standardize_adapter_result(
         instrument_type=instrument_type,
     )
 
-    # Preserve established adapter display values.
     standardized["Source"] = source
     standardized["Exchange"] = exchange
     standardized["Timeframe"] = interval
@@ -174,6 +173,7 @@ def fetch_market_history(
     Fetch data using NSE Primary and Yahoo Secondary.
 
     BSE scanning remains disabled.
+    Unknown index symbols are rejected before fallback.
     """
 
     if not isinstance(symbol, str) or not symbol.strip():
@@ -185,6 +185,14 @@ def fetch_market_history(
         raise ValueError(
             "This market-data adapter currently supports NSE only. "
             "BSE scanning remains disabled."
+        )
+
+    # An unknown index must never bypass the verified mapping
+    # through Yahoo fallback.
+    if symbol.startswith("^") and symbol not in NSE_INDEX_SYMBOLS:
+        raise ValueError(
+            f"No verified NSE index mapping exists for {symbol}. "
+            "Yahoo fallback is not permitted for unmapped indices."
         )
 
     start = pd.Timestamp(start_date)
@@ -204,12 +212,7 @@ def fetch_market_history(
             end_text = end.strftime("%Y-%m-%d")
 
             if symbol.startswith("^"):
-                index_name = NSE_INDEX_SYMBOLS.get(symbol)
-
-                if index_name is None:
-                    raise ValueError(
-                        f"No verified NSE index mapping exists for {symbol}."
-                    )
+                index_name = NSE_INDEX_SYMBOLS[symbol]
 
                 raw_data = download_index_history(
                     index_name, start_text, end_text
@@ -259,4 +262,4 @@ def fetch_market_history(
             f"Yahoo Secondary failed: "
             f"{type(yahoo_error).__name__}: {yahoo_error}"
         ) from yahoo_error
-        
+    
