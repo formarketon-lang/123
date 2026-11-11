@@ -1,5 +1,4 @@
-
-"""Market breadth calculations with verified NSE universe coverage."""
+"""Market breadth with point-in-time verified NSE universe coverage."""
 
 import math
 
@@ -7,7 +6,7 @@ import pandas as pd
 
 
 def _verified_nse_universe(universe: pd.DataFrame) -> set[str]:
-    """Return symbols only from a structurally verified NSE MII EQ universe."""
+    """Validate NSE MII EQ identity fields and return symbols."""
 
     if not isinstance(universe, pd.DataFrame) or universe.empty:
         raise ValueError("Verified NSE universe is empty or invalid.")
@@ -35,35 +34,147 @@ def _verified_nse_universe(universe: pd.DataFrame) -> set[str]:
     data["Source"] = data["Source"].str.upper()
 
     if data.isna().any().any() or data.eq("").any().any():
-        raise ValueError("Verified universe contains missing identity fields.")
+        raise ValueError(
+            "Verified universe contains missing identity fields."
+        )
 
     if not data["Series"].eq("EQ").all():
-        raise ValueError("Verified universe must contain NSE EQ securities only.")
+        raise ValueError(
+            "Verified universe must contain NSE EQ securities only."
+        )
 
     if not data["Exchange"].eq("NSE").all():
-        raise ValueError("Verified universe must contain NSE securities only.")
+        raise ValueError(
+            "Verified universe must contain NSE securities only."
+        )
 
     if not data["Source"].str.contains("MII", regex=False).all():
-        raise ValueError("Verified universe requires official NSE MII source.")
+        raise ValueError(
+            "Verified universe requires official NSE MII source."
+        )
 
     if not data["ISIN"].str.fullmatch(r"IN[A-Z0-9]{10}").all():
-        raise ValueError("Verified universe contains invalid ISIN values.")
+        raise ValueError(
+            "Verified universe contains invalid ISIN values."
+        )
 
     if data["Symbol"].duplicated().any():
-        raise ValueError("Verified universe contains duplicate symbols.")
+        raise ValueError(
+            "Verified universe contains duplicate symbols."
+        )
 
     if data["ISIN"].duplicated().any():
-        raise ValueError("Verified universe contains duplicate ISIN values.")
+        raise ValueError(
+            "Verified universe contains duplicate ISIN values."
+        )
 
     return set(data["Symbol"].tolist())
+
+
+def _point_in_time_status(
+    universe: pd.DataFrame,
+    observation_date: object | None,
+) -> tuple[str, str, pd.Timestamp | None, pd.Timestamp | None]:
+    """Validate snapshot date against the breadth observation date."""
+
+    if "Universe As Of Date" not in universe.columns:
+        return (
+            "REVIEW",
+            "UNIVERSE_SNAPSHOT_DATE_MISSING",
+            None,
+            None,
+        )
+
+    if observation_date is None:
+        return (
+            "REVIEW",
+            "OBSERVATION_DATE_MISSING",
+            None,
+            None,
+        )
+
+    observation = pd.to_datetime(
+        observation_date,
+        errors="coerce",
+    )
+
+    if pd.isna(observation):
+        return (
+            "REVIEW",
+            "OBSERVATION_DATE_INVALID",
+            None,
+            None,
+        )
+
+    observation = pd.Timestamp(observation).normalize()
+
+    snapshot_values = pd.to_datetime(
+        universe["Universe As Of Date"],
+        errors="coerce",
+    ).dropna()
+
+    if snapshot_values.empty:
+        return (
+            "REVIEW",
+            "UNIVERSE_SNAPSHOT_DATE_MISSING",
+            None,
+            observation,
+        )
+
+    snapshot_dates = {
+        pd.Timestamp(value).normalize()
+        for value in snapshot_values.tolist()
+    }
+
+    if len(snapshot_dates) != 1:
+        return (
+            "REVIEW",
+            "UNIVERSE_SNAPSHOT_DATE_INCONSISTENT",
+            None,
+            observation,
+        )
+
+    snapshot = next(iter(snapshot_dates))
+
+    if snapshot > observation:
+        raise ValueError(
+            "Future NSE universe snapshot cannot be used for "
+            "an earlier observation date."
+        )
+
+    if snapshot < observation:
+        return (
+            "REVIEW",
+            "UNIVERSE_SNAPSHOT_DATE_NOT_ALIGNED",
+            snapshot,
+            observation,
+        )
+
+    return (
+        "PASS",
+        "UNIVERSE_SNAPSHOT_DATE_ALIGNED",
+        snapshot,
+        observation,
+    )
 
 
 def analyze_market_breadth(
     stock_data: pd.DataFrame,
     expected_universe_size: int | None = None,
     verified_universe: pd.DataFrame | None = None,
+    observation_date: object | None = None,
 ) -> dict:
-    """Count advancing, declining and unchanged stocks."""
+    """Count advancing, declining and unchanged stocks.
+
+    A PASS requires:
+    1. Official NSE MII EQ identity validation.
+    2. Exact observed/verified symbol membership.
+    3. One valid universe snapshot date.
+    4. Snapshot date exactly equal to observation_date.
+
+    Older snapshots are REVIEW until a documented historical
+    point-in-time policy is approved.
+    """
 
     if not isinstance(stock_data, pd.DataFrame):
         raise TypeError("stock_data must be a pandas DataFrame.")
@@ -76,7 +187,8 @@ def analyze_market_breadth(
 
     if missing:
         raise ValueError(
-            "Missing required columns: " + ", ".join(sorted(missing))
+            "Missing required columns: "
+            + ", ".join(sorted(missing))
         )
 
     if expected_universe_size is not None:
@@ -104,12 +216,18 @@ def analyze_market_breadth(
         raise ValueError("Duplicate stock symbols found.")
 
     for column in ["Previous Close", "Current Close"]:
-        data[column] = pd.to_numeric(data[column], errors="coerce")
+        data[column] = pd.to_numeric(
+            data[column],
+            errors="coerce",
+        )
 
         if data[column].isna().any():
             raise ValueError(f"Invalid values found in {column}.")
 
-        if not all(math.isfinite(float(x)) for x in data[column]):
+        if not all(
+            math.isfinite(float(value))
+            for value in data[column]
+        ):
             raise ValueError(f"Non-finite values found in {column}.")
 
         if (data[column] <= 0).any():
@@ -119,10 +237,24 @@ def analyze_market_breadth(
     observed = len(observed_symbols)
 
     verified_symbols = None
-    if verified_universe is not None:
-        verified_symbols = _verified_nse_universe(verified_universe)
+    snapshot_status = "REVIEW"
+    snapshot_reason = "VERIFIED_UNIVERSE_NOT_PROVIDED"
+    snapshot_date = None
+    observed_date = (
+        pd.to_datetime(observation_date, errors="coerce")
+        if observation_date is not None
+        else None
+    )
 
-        unexpected = sorted(observed_symbols - verified_symbols)
+    if verified_universe is not None:
+        verified_symbols = _verified_nse_universe(
+            verified_universe
+        )
+
+        unexpected = sorted(
+            observed_symbols - verified_symbols
+        )
+
         if unexpected:
             raise ValueError(
                 "Observed symbols are not in verified NSE universe: "
@@ -141,6 +273,16 @@ def analyze_market_breadth(
 
         expected_universe_size = verified_size
 
+        (
+            snapshot_status,
+            snapshot_reason,
+            snapshot_date,
+            observed_date,
+        ) = _point_in_time_status(
+            verified_universe,
+            observation_date,
+        )
+
     advancing = int(
         (data["Current Close"] > data["Previous Close"]).sum()
     )
@@ -152,6 +294,7 @@ def analyze_market_breadth(
     )
 
     coverage_pct = None
+
     if expected_universe_size is not None:
         coverage_pct = (
             observed / expected_universe_size
@@ -163,7 +306,9 @@ def analyze_market_breadth(
     )
 
     coverage_status = (
-        "PASS" if membership_complete else "REVIEW"
+        "PASS"
+        if membership_complete and snapshot_status == "PASS"
+        else "REVIEW"
     )
 
     return {
@@ -179,6 +324,18 @@ def analyze_market_breadth(
         ),
         "universe_verified": verified_symbols is not None,
         "membership_complete": membership_complete,
+        "universe_snapshot_status": snapshot_status,
+        "universe_snapshot_reason": snapshot_reason,
+        "universe_as_of_date": (
+            snapshot_date.date().isoformat()
+            if snapshot_date is not None
+            else None
+        ),
+        "observation_date": (
+            observed_date.date().isoformat()
+            if observed_date is not None
+            and not pd.isna(observed_date)
+            else None
+        ),
         "coverage_status": coverage_status,
-        }
-    
+    }
