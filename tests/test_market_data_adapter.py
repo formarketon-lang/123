@@ -1,8 +1,11 @@
-
 import pandas as pd
 import pytest
 
 from data import market_data_adapter as adapter
+from data.benchmark_mapping import (
+    MAIN_BENCHMARKS,
+    SECTOR_BENCHMARKS,
+)
 from data.providers.nse_index_downloader import INDEX_ALIASES
 
 
@@ -34,6 +37,26 @@ def sample_index_data():
     return sample_data().drop(columns=["Volume"])
 
 
+def test_benchmark_mappings_match_adapter():
+    configured = {
+        **MAIN_BENCHMARKS,
+        **SECTOR_BENCHMARKS,
+    }
+
+    expected = {
+        symbol: name.upper()
+        for name, symbol in configured.items()
+    }
+
+    assert expected == adapter.NSE_INDEX_SYMBOLS
+
+
+def test_all_adapter_indexes_exist_in_nse_downloader():
+    for index_name in adapter.NSE_INDEX_SYMBOLS.values():
+        assert index_name in INDEX_ALIASES
+        assert INDEX_ALIASES[index_name] == index_name
+
+
 def test_nse_equity_is_primary(monkeypatch):
     calls = []
 
@@ -46,20 +69,14 @@ def test_nse_equity_is_primary(monkeypatch):
         raise AssertionError("Yahoo must not be called.")
 
     monkeypatch.setattr(
-        adapter,
-        "download_equity_history",
-        fake_nse,
+        adapter, "download_equity_history", fake_nse
     )
     monkeypatch.setattr(
-        adapter,
-        "fetch_yahoo_history",
-        fake_yahoo,
+        adapter, "fetch_yahoo_history", fake_yahoo
     )
 
     result = adapter.fetch_market_history(
-        "MARICO",
-        "2026-10-01",
-        "2026-10-02",
+        "MARICO", "2026-10-01", "2026-10-02"
     )
 
     assert calls == ["NSE"]
@@ -71,9 +88,7 @@ def test_nse_equity_is_primary(monkeypatch):
     MAIN_INDEXES.items(),
 )
 def test_all_configured_indexes_use_nse_primary(
-    monkeypatch,
-    symbol,
-    index_name,
+    monkeypatch, symbol, index_name
 ):
     calls = []
 
@@ -85,24 +100,19 @@ def test_all_configured_indexes_use_nse_primary(
         raise AssertionError("Yahoo must not be called.")
 
     monkeypatch.setattr(
-        adapter,
-        "download_index_history",
-        fake_nse,
+        adapter, "download_index_history", fake_nse
     )
     monkeypatch.setattr(
-        adapter,
-        "fetch_yahoo_history",
-        fake_yahoo,
+        adapter, "fetch_yahoo_history", fake_yahoo
     )
 
     result = adapter.fetch_market_history(
-        symbol,
-        "2026-10-01",
-        "2026-10-02",
+        symbol, "2026-10-01", "2026-10-02"
     )
 
     assert calls == [index_name]
     assert result["Source"].unique().tolist() == ["NSE"]
+    assert result["Symbol"].eq(symbol).all()
     assert result["Volume"].isna().all()
     assert result["Fallback Reason"].iloc[0] == ""
 
@@ -112,40 +122,50 @@ def test_all_configured_indexes_use_nse_primary(
     MAIN_INDEXES.items(),
 )
 def test_all_configured_indexes_fallback_to_yahoo(
-    monkeypatch,
-    symbol,
-    index_name,
+    monkeypatch, symbol, index_name
 ):
     def fake_nse(*args):
         raise RuntimeError("NSE index unavailable")
 
     monkeypatch.setattr(
-        adapter,
-        "download_index_history",
-        fake_nse,
+        adapter, "download_index_history", fake_nse
     )
     monkeypatch.setattr(
-        adapter,
-        "fetch_yahoo_history",
-        lambda **kwargs: sample_data(),
+        adapter, "fetch_yahoo_history",
+        lambda **kwargs: sample_index_data(),
     )
 
     result = adapter.fetch_market_history(
-        symbol,
-        "2026-10-01",
-        "2026-10-02",
+        symbol, "2026-10-01", "2026-10-02"
     )
 
     assert result["Source"].unique().tolist() == ["Yahoo"]
+    assert result["Symbol"].eq(symbol).all()
     assert "NSE index unavailable" in (
         result["Fallback Reason"].iloc[0]
     )
 
 
-def test_downloader_accepts_all_configured_index_names():
-    for index_name in MAIN_INDEXES.values():
-        assert index_name in INDEX_ALIASES
-        assert INDEX_ALIASES[index_name] == index_name
+def test_unmapped_index_is_rejected_before_yahoo(monkeypatch):
+    calls = []
+
+    def fake_yahoo(**kwargs):
+        calls.append("Yahoo")
+        return sample_index_data()
+
+    monkeypatch.setattr(
+        adapter, "fetch_yahoo_history", fake_yahoo
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Yahoo fallback is not permitted",
+    ):
+        adapter.fetch_market_history(
+            "^UNKNOWN", "2026-10-01", "2026-10-02"
+        )
+
+    assert calls == []
 
 
 def test_yahoo_fallback_after_nse_equity_failure(monkeypatch):
@@ -164,9 +184,7 @@ def test_yahoo_fallback_after_nse_equity_failure(monkeypatch):
     )
 
     result = adapter.fetch_market_history(
-        "MARICO",
-        "2026-10-01",
-        "2026-10-02",
+        "MARICO", "2026-10-01", "2026-10-02"
     )
 
     assert result["Source"].unique().tolist() == ["Yahoo"]
@@ -175,23 +193,21 @@ def test_yahoo_fallback_after_nse_equity_failure(monkeypatch):
     )
 
 
-def test_unmapped_index_uses_yahoo_with_reason(monkeypatch):
+def test_unmapped_index_never_reaches_nse_downloader(monkeypatch):
+    calls = []
+
     monkeypatch.setattr(
         adapter,
-        "fetch_yahoo_history",
-        lambda **kwargs: sample_data(),
+        "download_index_history",
+        lambda *args: calls.append("NSE"),
     )
 
-    result = adapter.fetch_market_history(
-        "^UNKNOWN",
-        "2026-10-01",
-        "2026-10-02",
-    )
+    with pytest.raises(ValueError, match="No verified NSE index"):
+        adapter.fetch_market_history(
+            "^UNKNOWN", "2026-10-01", "2026-10-02"
+        )
 
-    assert result["Source"].unique().tolist() == ["Yahoo"]
-    assert "No verified NSE index mapping" in (
-        result["Fallback Reason"].iloc[0]
-    )
+    assert calls == []
 
 
 def test_bse_is_rejected():
@@ -226,7 +242,6 @@ def test_both_sources_failure_is_reported(monkeypatch):
         match="NSE Primary failed",
     ):
         adapter.fetch_market_history(
-            "MARICO",
-            "2026-10-01",
-            "2026-10-02",
-        )
+            "MARICO", "2026-10-01", "2026-10-02"
+    )
+        
