@@ -1,3 +1,4 @@
+
 import pandas as pd
 import pytest
 
@@ -43,8 +44,12 @@ def test_benchmark_mappings_match_adapter():
         **SECTOR_BENCHMARKS,
     }
 
+    canonical_names = {
+        "FMCG": "NIFTY FMCG",
+    }
+
     expected = {
-        symbol: name.upper()
+        symbol: canonical_names.get(name.upper(), name.upper())
         for name, symbol in configured.items()
     }
 
@@ -131,7 +136,8 @@ def test_all_configured_indexes_fallback_to_yahoo(
         adapter, "download_index_history", fake_nse
     )
     monkeypatch.setattr(
-        adapter, "fetch_yahoo_history",
+        adapter,
+        "fetch_yahoo_history",
         lambda **kwargs: sample_index_data(),
     )
 
@@ -243,5 +249,5 @@ def test_both_sources_failure_is_reported(monkeypatch):
     ):
         adapter.fetch_market_history(
             "MARICO", "2026-10-01", "2026-10-02"
-    )
+        )
         
