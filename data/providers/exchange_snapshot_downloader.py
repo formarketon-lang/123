@@ -1,11 +1,11 @@
+
 """Verified official exchange snapshot downloader.
 
-NSE: restricted to the verified NSE archive hostname.
-BSE: deliberately disabled until TLP access authorization is verified.
+NSE downloads are restricted to the verified NSE archive hostname.
+BSE remains disabled until TLP access authorization is verified.
 
-The downloader records the initial URL, redirect chain, final URL,
-UTC retrieval time, original filename, byte count and SHA-256.
-It does not infer source authorization from a URL supplied by a user.
+Redirect targets are validated BEFORE any request is sent to them.
+Original downloaded bytes and provenance metadata are retained.
 """
 
 from __future__ import annotations
@@ -14,19 +14,20 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import requests
 
 
 NSE_ALLOWED_HOSTS = {"nsearchives.nseindia.com"}
 
-# BSE documentation identifies the Member Extranet, but TLP access
-# authorization and automated download permission remain unverified.
 BSE_DOWNLOAD_ENABLED = False
 BSE_DOCUMENTED_HOSTS = {"member.bseindia.com"}
 
 ALLOWED_NSE_SUFFIXES = (".csv", ".csv.gz", ".gz")
+
+REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
+MAX_REDIRECTS = 5
 
 
 class SnapshotDownloadError(RuntimeError):
@@ -34,7 +35,6 @@ class SnapshotDownloadError(RuntimeError):
 
 
 def _validate_url(url: str, exchange: str) -> str:
-    """Validate HTTPS URL against the exchange-specific host policy."""
     if not isinstance(url, str) or not url.strip():
         raise SnapshotDownloadError("Source URL is required.")
 
@@ -42,10 +42,14 @@ def _validate_url(url: str, exchange: str) -> str:
         parsed = urlparse(url.strip())
 
         if parsed.scheme.lower() != "https":
-            raise SnapshotDownloadError("HTTPS source URL is required.")
+            raise SnapshotDownloadError(
+                "HTTPS source URL is required."
+            )
 
         if not parsed.hostname:
-            raise SnapshotDownloadError("Source URL has no hostname.")
+            raise SnapshotDownloadError(
+                "Source URL has no hostname."
+            )
 
         if parsed.username or parsed.password:
             raise SnapshotDownloadError(
@@ -53,7 +57,9 @@ def _validate_url(url: str, exchange: str) -> str:
             )
 
         if parsed.port not in (None, 443):
-            raise SnapshotDownloadError("Unapproved source URL port.")
+            raise SnapshotDownloadError(
+                "Unapproved source URL port."
+            )
 
         if parsed.fragment:
             raise SnapshotDownloadError(
@@ -63,15 +69,17 @@ def _validate_url(url: str, exchange: str) -> str:
         host = parsed.hostname.lower().rstrip(".")
 
     except ValueError as exc:
-        raise SnapshotDownloadError("Malformed source URL.") from exc
+        raise SnapshotDownloadError(
+            "Malformed source URL."
+        ) from exc
 
     if exchange == "NSE":
         allowed = NSE_ALLOWED_HOSTS
     elif exchange == "BSE":
         if not BSE_DOWNLOAD_ENABLED:
             raise SnapshotDownloadError(
-                "BSE download is disabled: TLP access authorization "
-                "has not been verified."
+                "BSE download is disabled: TLP access "
+                "authorization has not been verified."
             )
         allowed = BSE_DOCUMENTED_HOSTS
     else:
@@ -88,9 +96,10 @@ def _validate_url(url: str, exchange: str) -> str:
 
 
 def _validate_filename(filename: str, exchange: str) -> str:
-    """Accept only a plain original filename."""
     if not isinstance(filename, str):
-        raise SnapshotDownloadError("Filename must be text.")
+        raise SnapshotDownloadError(
+            "Filename must be text."
+        )
 
     value = filename.strip()
 
@@ -102,7 +111,9 @@ def _validate_filename(filename: str, exchange: str) -> str:
         or Path(value).name != value
         or any(ord(char) < 32 for char in value)
     ):
-        raise SnapshotDownloadError("Unsafe snapshot filename.")
+        raise SnapshotDownloadError(
+            "Unsafe snapshot filename."
+        )
 
     if exchange == "NSE" and not value.lower().endswith(
         ALLOWED_NSE_SUFFIXES
@@ -118,6 +129,87 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _request_without_unsafe_redirects(
+    client,
+    initial_url: str,
+    exchange: str,
+    timeout: int,
+):
+    """Follow redirects manually, validating each target first."""
+    current_url = initial_url
+    visited = {current_url}
+    redirect_chain = []
+
+    for redirect_number in range(MAX_REDIRECTS + 1):
+        try:
+            response = client.get(
+                current_url,
+                timeout=timeout,
+                allow_redirects=False,
+            )
+        except requests.RequestException as exc:
+            raise SnapshotDownloadError(
+                f"{exchange} snapshot download failed: "
+                f"{type(exc).__name__}: {exc}"
+            ) from exc
+
+        status_code = getattr(response, "status_code", 200)
+
+        if status_code not in REDIRECT_STATUS_CODES:
+            try:
+                response.raise_for_status()
+            except requests.RequestException as exc:
+                raise SnapshotDownloadError(
+                    f"{exchange} snapshot HTTP error: {exc}"
+                ) from exc
+
+            # Compatibility check for response objects that expose
+            # a redirect history (for example, test doubles).
+            for previous in getattr(response, "history", []):
+                previous_url = _validate_url(
+                    previous.url, exchange
+                )
+                if previous_url not in redirect_chain:
+                    redirect_chain.append(previous_url)
+
+            final_url = _validate_url(
+                response.url, exchange
+            )
+
+            return response, redirect_chain, final_url
+
+        if redirect_number >= MAX_REDIRECTS:
+            raise SnapshotDownloadError(
+                "Maximum redirect limit exceeded."
+            )
+
+        location = response.headers.get("Location")
+
+        if not location:
+            raise SnapshotDownloadError(
+                "Redirect response has no Location header."
+            )
+
+        # Resolve relative Location values against the current URL.
+        next_url = urljoin(current_url, location)
+
+        # CRITICAL: validate BEFORE making the next HTTP request.
+        next_url = _validate_url(next_url, exchange)
+
+        if next_url in visited:
+            raise SnapshotDownloadError(
+                "Redirect loop detected."
+            )
+
+        visited.add(next_url)
+        redirect_chain.append(next_url)
+        current_url = next_url
+
+    raise SnapshotDownloadError(
+        "Maximum redirect limit exceeded."
+    )
+
+
 def download_exchange_snapshot(
     exchange: str,
     source_url: str,
@@ -126,11 +218,7 @@ def download_exchange_snapshot(
     session: requests.Session | None = None,
     timeout: int = 45,
 ) -> dict:
-    """Download an authorized snapshot and retain its original bytes.
-
-    Every observed redirect URL and the final response URL are checked.
-    Existing destination files are never overwritten.
-    """
+    """Download an authorized snapshot without unsafe redirects."""
     exchange = str(exchange).strip().upper()
 
     initial_url = _validate_url(source_url, exchange)
@@ -143,7 +231,9 @@ def download_exchange_snapshot(
         or isinstance(timeout, bool)
         or timeout <= 0
     ):
-        raise SnapshotDownloadError("Timeout must be a positive integer.")
+        raise SnapshotDownloadError(
+            "Timeout must be a positive integer."
+        )
 
     if target.exists():
         raise SnapshotDownloadError(
@@ -152,32 +242,21 @@ def download_exchange_snapshot(
 
     client = session or requests.Session()
 
-    try:
-        response = client.get(
+    response, redirect_chain, final_url = (
+        _request_without_unsafe_redirects(
+            client,
             initial_url,
-            timeout=timeout,
-            allow_redirects=True,
+            exchange,
+            timeout,
         )
-        response.raise_for_status()
-
-    except requests.RequestException as exc:
-        raise SnapshotDownloadError(
-            f"{exchange} snapshot download failed: "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
-
-    redirect_chain = []
-
-    for redirect in response.history:
-        redirect_url = _validate_url(redirect.url, exchange)
-        redirect_chain.append(redirect_url)
-
-    final_url = _validate_url(response.url, exchange)
+    )
 
     content = response.content
 
     if not content:
-        raise SnapshotDownloadError("Downloaded snapshot is empty.")
+        raise SnapshotDownloadError(
+            "Downloaded snapshot is empty."
+        )
 
     content_type = response.headers.get(
         "content-type", ""
@@ -200,11 +279,6 @@ def download_exchange_snapshot(
             )
 
     target.parent.mkdir(parents=True, exist_ok=True)
-
-    if target.exists():
-        raise SnapshotDownloadError(
-            "Snapshot destination appeared during download."
-        )
 
     try:
         with target.open("xb") as handle:
@@ -236,7 +310,9 @@ def download_exchange_snapshot(
     )
 
     try:
-        with metadata_path.open("x", encoding="utf-8") as handle:
+        with metadata_path.open(
+            "x", encoding="utf-8"
+        ) as handle:
             json.dump(
                 metadata,
                 handle,
@@ -244,12 +320,11 @@ def download_exchange_snapshot(
                 ensure_ascii=False,
             )
     except OSError as exc:
-        # Keep the original file, but make the incomplete provenance
-        # state explicit. Do not claim a completed verified download.
         metadata["status"] = "PROVENANCE_WRITE_FAILED"
         raise SnapshotDownloadError(
-            f"Snapshot retained, but provenance metadata failed: {exc}"
+            "Snapshot retained, but provenance metadata failed: "
+            f"{exc}"
         ) from exc
 
     return metadata
-  
+    
