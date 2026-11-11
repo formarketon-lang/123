@@ -1,8 +1,11 @@
-
 """NSE cash-equity universe provider.
 
 Primary source: NSE MII CM security master.
 Fallback source: Legacy NSE EQUITY_L.csv.
+
+Point-in-time metadata:
+- Universe As Of Date: date encoded in the successfully fetched MII archive.
+- Universe Verification Status: MII_DATED or LEGACY_UNDATED.
 """
 
 from __future__ import annotations
@@ -59,7 +62,11 @@ def normalize_nse_mii_security_master(
     data: pd.DataFrame,
     equity_series_only: bool = True,
 ) -> pd.DataFrame:
-    """Normalize official NSE MII security-master data."""
+    """Normalize official NSE MII security-master data.
+
+    A raw normalized file is not considered point-in-time verified
+    until the fetcher attaches the actual archive date.
+    """
 
     if not isinstance(data, pd.DataFrame) or data.empty:
         raise ValueError("NSE MII security master is empty or invalid.")
@@ -138,21 +145,13 @@ def normalize_nse_mii_security_master(
         frame = frame[frame["Series"] == "EQ"]
 
     frame = frame[frame["Delete Flag"] == "N"]
-
-    frame = frame[
-        frame["Normal Market Eligibility"] == "1"
-    ]
-
-    frame = frame[
-        frame["Normal Market Status"] != "3"
-    ]
+    frame = frame[frame["Normal Market Eligibility"] == "1"]
+    frame = frame[frame["Normal Market Status"] != "3"]
 
     # PrtdToTrad=2 identifies BSE-exclusive securities.
     # Keep PrtdToTrad=0 pending clarification.
     if "Permitted to Trade" in frame.columns:
-        frame = frame[
-            frame["Permitted to Trade"] != "2"
-        ]
+        frame = frame[frame["Permitted to Trade"] != "2"]
 
     frame = frame[
         frame["Symbol"].notna()
@@ -201,6 +200,10 @@ def normalize_nse_mii_security_master(
 
     frame["Exchange"] = "NSE"
     frame["Source"] = "NSE MII Security Master"
+
+    # A normalizer alone cannot prove which archive date was fetched.
+    frame["Universe As Of Date"] = pd.NaT
+    frame["Universe Verification Status"] = "MII_UNDATED"
 
     frame = frame.drop_duplicates(
         subset=["Symbol", "Series", "ISIN"],
@@ -314,6 +317,10 @@ def normalize_nse_equity_master(
     frame["Exchange"] = "NSE"
     frame["Source"] = "NSE Official Equity Master"
 
+    # Legacy master has no proven archive snapshot date.
+    frame["Universe As Of Date"] = pd.NaT
+    frame["Universe Verification Status"] = "LEGACY_UNDATED"
+
     frame = frame.drop_duplicates(
         subset=["Symbol", "Series", "ISIN"],
         keep="last",
@@ -351,10 +358,20 @@ def fetch_nse_equity_universe(
     as_of_date: date | None = None,
     lookback_days: int = 7,
 ) -> pd.DataFrame:
-    """Fetch NSE MII master first, then use legacy CSV as fallback."""
+    """Fetch MII first and attach the actual successful archive date.
 
-    if lookback_days < 0:
+    If MII is unavailable, legacy data is returned as LEGACY_UNDATED.
+    """
+
+    if (
+        not isinstance(lookback_days, int)
+        or isinstance(lookback_days, bool)
+        or lookback_days < 0
+    ):
         raise ValueError("lookback_days must be zero or greater.")
+
+    if as_of_date is not None and not isinstance(as_of_date, date):
+        raise TypeError("as_of_date must be a datetime.date value.")
 
     client = session or requests.Session()
     client.headers.update(NSE_HEADERS)
@@ -399,10 +416,18 @@ def fetch_nse_equity_universe(
             if result.empty:
                 raise ValueError("MII universe is empty.")
 
+            # This is the actual date of the successful archive.
+            result["Universe As Of Date"] = pd.Timestamp(
+                candidate_date
+            )
+            result["Universe Verification Status"] = "MII_DATED"
+
             print(
                 f"NSE MII downloaded successfully: "
-                f"{len(result)} securities"
+                f"{len(result)} securities; "
+                f"archive date={candidate_date.isoformat()}"
             )
+
             return result
 
         except Exception as exc:
@@ -412,7 +437,7 @@ def fetch_nse_equity_universe(
             mii_errors.append(error_message)
             print(f"MII attempt failed: {error_message}")
 
-    # MII unavailable: use legacy NSE equity master.
+    # MII unavailable: legacy source is explicitly undated.
     try:
         print("Trying legacy NSE equity master...")
 
@@ -435,8 +460,10 @@ def fetch_nse_equity_universe(
 
         print(
             f"Legacy NSE master downloaded successfully: "
-            f"{len(result)} securities"
+            f"{len(result)} securities; "
+            "point-in-time status=LEGACY_UNDATED"
         )
+
         return result
 
     except Exception as exc:
@@ -445,4 +472,3 @@ def fetch_nse_equity_universe(
             "MII attempts: " + " | ".join(mii_errors)
             + f" | Legacy error: {type(exc).__name__}: {exc}"
         ) from exc
-    
