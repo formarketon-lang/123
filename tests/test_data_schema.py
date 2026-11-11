@@ -1,4 +1,3 @@
-
 import pandas as pd
 import pytest
 
@@ -75,3 +74,63 @@ def test_market_data_info():
     assert info.exchange == "NSE"
     assert info.timeframe == "1d"
     assert info.currency == "INR"
+
+
+def test_nse_is_a_supported_source():
+    result = standardize_ohlcv(
+        sample_data(),
+        symbol="MARICO",
+        source="NSE",
+    )
+
+    assert result["Source"].unique().tolist() == ["nse"]
+
+
+def test_index_can_have_missing_volume():
+    data = sample_data().drop(columns=["volume"])
+
+    result = standardize_ohlcv(
+        data,
+        symbol="NIFTY 50",
+        source="NSE",
+        instrument_type="index",
+    )
+
+    assert result["Volume"].isna().all()
+    assert result["Source"].unique().tolist() == ["nse"]
+
+
+def test_equity_still_requires_volume():
+    data = sample_data().drop(columns=["volume"])
+
+    with pytest.raises(ValueError, match="Missing required columns"):
+        standardize_ohlcv(
+            data,
+            symbol="MARICO",
+            source="NSE",
+            instrument_type="equity",
+        )
+
+
+def test_index_rejects_partially_missing_volume():
+    data = sample_data()
+    data.loc[0, "volume"] = None
+
+    with pytest.raises(ValueError, match="fully available or absent"):
+        standardize_ohlcv(
+            data,
+            symbol="NIFTY 50",
+            source="NSE",
+            instrument_type="index",
+        )
+
+
+def test_invalid_instrument_type_is_rejected():
+    with pytest.raises(ValueError, match="instrument_type"):
+        standardize_ohlcv(
+            sample_data(),
+            symbol="TEST",
+            source="NSE",
+            instrument_type="future",
+        )
+        
