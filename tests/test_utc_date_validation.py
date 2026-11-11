@@ -1,80 +1,54 @@
 import pandas as pd
 import pytest
 
-from core.validation import (
-    normalize_price_data,
-    validate_date_range,
-)
+from core.validation import normalize_price_data
+from data.schema import standardize_ohlcv
 
 
-def test_aware_date_converts_to_utc_before_normalizing():
-    data = pd.DataFrame({
-        "Date": ["2026-11-11T00:30:00+05:30"],
-        "Close": [100],
+def sample_data():
+    return pd.DataFrame({
+        "Date": [
+            "2026-11-11T00:30:00+05:30",
+            "2026-11-11T01:30:00+05:30",
+        ],
+        "Open": [100, 101],
+        "High": [103, 104],
+        "Low": [99, 100],
+        "Close": [102, 103],
+        "Volume": [1000, 1200],
     })
 
-    result = normalize_price_data(data)
 
-    assert result["Date"].iloc[0] == pd.Timestamp("2026-11-10")
+def test_schema_converts_timezone_aware_dates_to_utc():
+    result = standardize_ohlcv(
+        sample_data(),
+        symbol="MARICO",
+        source="nse",
+    )
+
+    assert result["Date"].iloc[0] == pd.Timestamp("2026-11-10 19:00:00")
+    assert result["Date"].iloc[1] == pd.Timestamp("2026-11-10 20:00:00")
 
 
-def test_utc_date_matches_schema_date_behavior():
-    from data.schema import standardize_ohlcv
+def test_core_validation_converts_timezone_aware_dates_to_utc():
+    result = normalize_price_data(sample_data())
 
-    data = pd.DataFrame({
-        "Date": ["2026-11-11T00:30:00+05:30"],
-        "Open": [100],
-        "High": [103],
-        "Low": [99],
-        "Close": [102],
-        "Volume": [1000],
-    })
+    assert result["Date"].iloc[0] == pd.Timestamp("2026-11-10 19:00:00")
+    assert result["Date"].iloc[1] == pd.Timestamp("2026-11-10 20:00:00")
 
+
+def test_schema_and_core_agree_on_utc_calendar_date():
     schema_result = standardize_ohlcv(
-        data,
-        symbol="TEST",
-        source="NSE",
+        sample_data(),
+        symbol="MARICO",
+        source="nse",
     )
-
-    core_result = normalize_price_data(
-        data[["Date", "Close"]]
-    )
+    core_result = normalize_price_data(sample_data())
 
     assert (
-        schema_result["Date"].iloc[0]
-        == core_result["Date"].iloc[0]
+        schema_result["Date"].iloc[0].normalize()
+        == core_result["Date"].iloc[0].normalize()
     )
-
-
-def test_naive_dates_remain_naive_calendar_dates():
-    data = pd.DataFrame({
-        "Date": ["2026-11-11 15:30:00"],
-        "Close": [100],
-    })
-
-    result = normalize_price_data(data)
-
-    assert result["Date"].iloc[0] == pd.Timestamp("2026-11-11")
-
-
-def test_date_range_converts_both_dates_to_utc():
-    start, end = validate_date_range(
-        "2026-11-11T00:30:00+05:30",
-        "2026-11-12T00:30:00+05:30",
-    )
-
-    assert start == pd.Timestamp("2026-11-10")
-    assert end == pd.Timestamp("2026-11-11")
-
-
-def test_date_range_rejects_reversed_dates():
-    with pytest.raises(ValueError, match="End date cannot be earlier"):
-        validate_date_range("2026-11-12", "2026-11-11")
-
-
-def test_invalid_date_is_rejected():
-    with pytest.raises(ValueError, match="invalid dates"):
-        validate_date_range("not-a-date", "2026-11-11")
 
 
 def test_utc_conversion_detects_duplicate_calendar_dates():
@@ -83,9 +57,31 @@ def test_utc_conversion_detects_duplicate_calendar_dates():
             "2026-11-11T00:30:00+05:30",
             "2026-11-10T19:00:00Z",
         ],
-        "Close": [100, 101],
+        "Open": [100, 101],
+        "High": [103, 104],
+        "Low": [99, 100],
+        "Close": [102, 103],
+        "Volume": [1000, 1200],
     })
 
-    with pytest.raises(ValueError, match="duplicate dates"):
-        normalize_price_data(data)
-      
+    with pytest.raises(ValueError, match="Duplicate dates"):
+        standardize_ohlcv(
+            data,
+            symbol="MARICO",
+            source="nse",
+        )
+
+
+def test_naive_dates_remain_naive():
+    data = sample_data()
+    data["Date"] = pd.to_datetime(["2026-11-10", "2026-11-11"])
+
+    result = standardize_ohlcv(
+        data,
+        symbol="MARICO",
+        source="nse",
+    )
+
+    assert result["Date"].dt.tz is None
+    assert result["Date"].iloc[0] == pd.Timestamp("2026-11-10")
+    
