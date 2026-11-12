@@ -1,17 +1,21 @@
-
 """Verified official exchange snapshot downloader.
 
 NSE downloads are restricted to the verified NSE archive hostname.
 BSE remains disabled until TLP access authorization is verified.
 
-Redirect targets are validated BEFORE any request is sent to them.
+Redirect targets are validated before requests are sent.
 Original downloaded bytes and provenance metadata are retained.
+GZIP files are fully decompressed and integrity-checked before storage.
 """
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import io
 import json
+import zlib
+
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -29,6 +33,9 @@ ALLOWED_NSE_SUFFIXES = (".csv", ".csv.gz", ".gz")
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
 MAX_REDIRECTS = 5
 
+MAX_UNCOMPRESSED_BYTES = 256 * 1024 * 1024
+GZIP_READ_CHUNK_BYTES = 64 * 1024
+
 
 class SnapshotDownloadError(RuntimeError):
     """Raised when a snapshot fails source or integrity validation."""
@@ -42,14 +49,10 @@ def _validate_url(url: str, exchange: str) -> str:
         parsed = urlparse(url.strip())
 
         if parsed.scheme.lower() != "https":
-            raise SnapshotDownloadError(
-                "HTTPS source URL is required."
-            )
+            raise SnapshotDownloadError("HTTPS source URL is required.")
 
         if not parsed.hostname:
-            raise SnapshotDownloadError(
-                "Source URL has no hostname."
-            )
+            raise SnapshotDownloadError("Source URL has no hostname.")
 
         if parsed.username or parsed.password:
             raise SnapshotDownloadError(
@@ -57,9 +60,7 @@ def _validate_url(url: str, exchange: str) -> str:
             )
 
         if parsed.port not in (None, 443):
-            raise SnapshotDownloadError(
-                "Unapproved source URL port."
-            )
+            raise SnapshotDownloadError("Unapproved source URL port.")
 
         if parsed.fragment:
             raise SnapshotDownloadError(
@@ -69,9 +70,7 @@ def _validate_url(url: str, exchange: str) -> str:
         host = parsed.hostname.lower().rstrip(".")
 
     except ValueError as exc:
-        raise SnapshotDownloadError(
-            "Malformed source URL."
-        ) from exc
+        raise SnapshotDownloadError("Malformed source URL.") from exc
 
     if exchange == "NSE":
         allowed = NSE_ALLOWED_HOSTS
@@ -97,9 +96,7 @@ def _validate_url(url: str, exchange: str) -> str:
 
 def _validate_filename(filename: str, exchange: str) -> str:
     if not isinstance(filename, str):
-        raise SnapshotDownloadError(
-            "Filename must be text."
-        )
+        raise SnapshotDownloadError("Filename must be text.")
 
     value = filename.strip()
 
@@ -111,9 +108,7 @@ def _validate_filename(filename: str, exchange: str) -> str:
         or Path(value).name != value
         or any(ord(char) < 32 for char in value)
     ):
-        raise SnapshotDownloadError(
-            "Unsafe snapshot filename."
-        )
+        raise SnapshotDownloadError("Unsafe snapshot filename.")
 
     if exchange == "NSE" and not value.lower().endswith(
         ALLOWED_NSE_SUFFIXES
@@ -129,13 +124,82 @@ def _sha256(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
+def _validate_gzip_content(
+    content: bytes,
+    max_uncompressed_bytes: int | None = None,
+) -> int:
+    """Fully decompress and validate GZIP CRC, size and EOF."""
+
+    if not isinstance(content, bytes) or content[:2] != b"\x1f\x8b":
+        raise SnapshotDownloadError(
+            "Expected gzip snapshot bytes were not received."
+        )
+
+    if max_uncompressed_bytes is None:
+        max_uncompressed_bytes = MAX_UNCOMPRESSED_BYTES
+
+    if (
+        not isinstance(max_uncompressed_bytes, int)
+        or isinstance(max_uncompressed_bytes, bool)
+        or max_uncompressed_bytes <= 0
+    ):
+        raise SnapshotDownloadError(
+            "Invalid GZIP uncompressed size limit."
+        )
+
+    total_size = 0
+
+    try:
+        with gzip.GzipFile(
+            fileobj=io.BytesIO(content),
+            mode="rb",
+        ) as stream:
+
+            while True:
+                remaining = max_uncompressed_bytes - total_size
+
+                # Read one extra byte when at the limit so oversized
+                # streams are detected without unbounded decompression.
+                read_size = min(
+                    GZIP_READ_CHUNK_BYTES,
+                    remaining + 1,
+                )
+
+                chunk = stream.read(read_size)
+
+                if not chunk:
+                    break
+
+                total_size += len(chunk)
+
+                if total_size > max_uncompressed_bytes:
+                    raise SnapshotDownloadError(
+                        "GZIP content exceeds the configured safety limit."
+                    )
+
+    except SnapshotDownloadError:
+        raise
+    except (OSError, EOFError, zlib.error) as exc:
+        raise SnapshotDownloadError(
+            f"GZIP integrity validation failed: {exc}"
+        ) from exc
+
+    if total_size == 0:
+        raise SnapshotDownloadError(
+            "GZIP content contains no uncompressed data."
+        )
+
+    return total_size
+
+
 def _request_without_unsafe_redirects(
     client,
     initial_url: str,
     exchange: str,
     timeout: int,
 ):
-    """Follow redirects manually, validating each target first."""
+    """Follow redirects manually, validating every target first."""
+
     current_url = initial_url
     visited = {current_url}
     redirect_chain = []
@@ -163,18 +227,13 @@ def _request_without_unsafe_redirects(
                     f"{exchange} snapshot HTTP error: {exc}"
                 ) from exc
 
-            # Compatibility check for response objects that expose
-            # a redirect history (for example, test doubles).
             for previous in getattr(response, "history", []):
-                previous_url = _validate_url(
-                    previous.url, exchange
-                )
+                previous_url = _validate_url(previous.url, exchange)
+
                 if previous_url not in redirect_chain:
                     redirect_chain.append(previous_url)
 
-            final_url = _validate_url(
-                response.url, exchange
-            )
+            final_url = _validate_url(response.url, exchange)
 
             return response, redirect_chain, final_url
 
@@ -190,24 +249,17 @@ def _request_without_unsafe_redirects(
                 "Redirect response has no Location header."
             )
 
-        # Resolve relative Location values against the current URL.
         next_url = urljoin(current_url, location)
-
-        # CRITICAL: validate BEFORE making the next HTTP request.
         next_url = _validate_url(next_url, exchange)
 
         if next_url in visited:
-            raise SnapshotDownloadError(
-                "Redirect loop detected."
-            )
+            raise SnapshotDownloadError("Redirect loop detected.")
 
         visited.add(next_url)
         redirect_chain.append(next_url)
         current_url = next_url
 
-    raise SnapshotDownloadError(
-        "Maximum redirect limit exceeded."
-    )
+    raise SnapshotDownloadError("Maximum redirect limit exceeded.")
 
 
 def download_exchange_snapshot(
@@ -218,7 +270,8 @@ def download_exchange_snapshot(
     session: requests.Session | None = None,
     timeout: int = 45,
 ) -> dict:
-    """Download an authorized snapshot without unsafe redirects."""
+    """Download an authorized snapshot with integrity validation."""
+
     exchange = str(exchange).strip().upper()
 
     initial_url = _validate_url(source_url, exchange)
@@ -272,11 +325,12 @@ def download_exchange_snapshot(
             "Exchange returned HTML instead of a snapshot file."
         )
 
+    gzip_integrity_validated = False
+    uncompressed_size_bytes = None
+
     if filename.lower().endswith(".gz"):
-        if content[:2] != b"\x1f\x8b":
-            raise SnapshotDownloadError(
-                "Expected gzip snapshot bytes were not received."
-            )
+        uncompressed_size_bytes = _validate_gzip_content(content)
+        gzip_integrity_validated = True
 
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -305,6 +359,14 @@ def download_exchange_snapshot(
         "sector_mapping_activated": False,
     }
 
+    if filename.lower().endswith(".gz"):
+        metadata["gzip_integrity_validated"] = (
+            gzip_integrity_validated
+        )
+        metadata["uncompressed_size_bytes"] = (
+            uncompressed_size_bytes
+        )
+
     metadata_path = target.with_name(
         target.name + ".provenance.json"
     )
@@ -327,4 +389,4 @@ def download_exchange_snapshot(
         ) from exc
 
     return metadata
-    
+        
