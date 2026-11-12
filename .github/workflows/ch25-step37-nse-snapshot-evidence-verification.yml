@@ -1,0 +1,58 @@
+
+name: CH25 Step 37 NSE Snapshot Evidence Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive_date:
+        description: "NSE archive date (YYYY-MM-DD)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify-nse-snapshot-evidence:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate date format
+        run: |
+          python -c "from datetime import date; date.fromisoformat('${{ inputs.archive_date }}')"
+
+      - name: Run Step 37 unit tests
+        run: |
+          python -m pytest -q tests/test_ch25_step37_nse_snapshot_verifier.py
+
+      - name: Run NSE dated snapshot audit
+        run: |
+          python scripts/run_nse_dated_snapshot_audit.py \
+            --as-of-date "${{ inputs.archive_date }}"
+
+      - name: Verify retained NSE evidence
+        run: |
+          python scripts/verify_nse_dated_snapshot_audit.py \
+            --as-of-date "${{ inputs.archive_date }}"
+
+      - name: Upload Step 37 verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch25-step37-nse-evidence-verification
+          path: reports/nse_dated_snapshot_audit/
+          if-no-files-found: warn
+          retention-days: 30
