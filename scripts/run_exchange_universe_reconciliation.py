@@ -52,6 +52,13 @@ def load_snapshot_provenance(
             "independent_external_checksum": False,
         }
 
+    if not isinstance(raw, dict):
+        return {}, {
+            "status": "REVIEW",
+            "reason": "Provenance JSON must contain an object.",
+            "independent_external_checksum": False,
+        }
+
     required = {
         "exchange",
         "source_url",
@@ -80,7 +87,14 @@ def load_snapshot_provenance(
             "independent_external_checksum": False,
         }
 
-    if str(raw["exchange"]).upper() != exchange:
+    if not isinstance(raw["redirect_chain"], list):
+        reason = "Redirect chain must be a list."
+    elif not all(
+        isinstance(url, str) and url.strip()
+        for url in raw["redirect_chain"]
+    ):
+        reason = "Redirect chain contains an invalid URL."
+    elif str(raw["exchange"]).upper() != exchange:
         reason = "Provenance exchange does not match input."
     elif raw["filename"] != snapshot.name:
         reason = "Provenance filename does not match snapshot."
@@ -88,12 +102,23 @@ def load_snapshot_provenance(
         reason = "Original downloaded bytes were not confirmed."
     elif raw["redirects_validated"] is not True:
         reason = "Redirect validation was not confirmed."
-    elif not isinstance(raw["redirect_chain"], list):
-        reason = "Redirect chain must be a list."
+    elif (
+        not isinstance(raw["size_bytes"], int)
+        or isinstance(raw["size_bytes"], bool)
+        or raw["size_bytes"] < 0
+    ):
+        reason = "Provenance size_bytes is invalid."
+    elif (
+        not isinstance(raw["sha256"], str)
+        or len(raw["sha256"]) != 64
+        or any(c not in "0123456789abcdefABCDEF" for c in raw["sha256"])
+    ):
+        reason = "Provenance SHA-256 format is invalid."
+    # Check hash BEFORE size so changed bytes report the hash mismatch.
+    elif sha256_file(snapshot).lower() != raw["sha256"].lower():
+        reason = "Snapshot SHA-256 does not match provenance."
     elif raw["size_bytes"] != snapshot.stat().st_size:
         reason = "Snapshot size does not match provenance."
-    elif sha256_file(snapshot).lower() != str(raw["sha256"]).lower():
-        reason = "Snapshot SHA-256 does not match provenance."
     else:
         reason = ""
 
@@ -105,6 +130,10 @@ def load_snapshot_provenance(
 
     if not reason:
         for url in candidates:
+            if not isinstance(url, str) or not url.strip():
+                reason = "Invalid source URL in provenance."
+                break
+
             check = {
                 "exchange": exchange,
                 "source_url": url,
@@ -113,6 +142,7 @@ def load_snapshot_provenance(
                 "trading_date": trading_date,
                 "sha256": raw["sha256"],
             }
+
             if not validate_metadata(check, exchange):
                 reason = "Unapproved or invalid source URL in provenance."
                 break
@@ -139,7 +169,6 @@ def load_snapshot_provenance(
         "size_bytes_verified": True,
         "sha256_matches_retained_bytes": True,
         "redirect_chain_checked": True,
-        # Downloader-generated hash is not an independent exchange hash.
         "independent_external_checksum": False,
     }
 
@@ -185,6 +214,7 @@ def main() -> None:
         "NSE",
         args.nse_trading_date,
     )
+
     bse_meta, bse_proof = load_snapshot_provenance(
         args.bse_input,
         args.bse_provenance,
@@ -211,14 +241,16 @@ def main() -> None:
 
     if args.nse_cm_diagnostic:
         diagnostics["nse_cm_diagnostics"] = []
+
         for path in args.nse_cm_diagnostic:
             _, result = load_nse_cm_diagnostic(path)
             result["filename"] = path.name
             diagnostics["nse_cm_diagnostics"].append(result)
 
-    # A successful identity reconciliation cannot override failed provenance.
+    # Identity reconciliation cannot override failed provenance.
     if nse_proof.get("status") != "PASS":
         summary["status"] = "REVIEW"
+
     if bse_proof.get("status") != "PASS":
         summary["status"] = "REVIEW"
 
@@ -228,6 +260,7 @@ def main() -> None:
     summary["sector_mapping_activated"] = False
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
+
     detail.to_csv(
         args.output_dir / "exchange_universe_detail.csv",
         index=False,
@@ -254,7 +287,9 @@ def main() -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
     if summary["status"] != "PASS":
-        raise SystemExit("REVIEW: provenance or identity checks require resolution.")
+        raise SystemExit(
+            "REVIEW: provenance or identity checks require resolution."
+        )
 
     print("Exchange identity and supplied provenance checks: PASS")
     print("Production approval: HOLD")
