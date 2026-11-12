@@ -20,6 +20,10 @@ jobs:
   identity-continuity:
     runs-on: ubuntu-latest
 
+    env:
+      PREVIOUS_DATE: ${{ inputs.previous_date }}
+      CURRENT_DATE: ${{ inputs.current_date }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -34,9 +38,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Validate dates
+      - name: Validate and normalize dates
         run: |
-          python -c "from datetime import date; a=date.fromisoformat('${{ inputs.previous_date }}'); b=date.fromisoformat('${{ inputs.current_date }}'); assert a < b, 'Previous date must be earlier'"
+          python - <<'PY'
+          import os
+          from datetime import date
+
+          previous = os.environ["PREVIOUS_DATE"].strip()
+          current = os.environ["CURRENT_DATE"].strip()
+
+          previous_date = date.fromisoformat(previous)
+          current_date = date.fromisoformat(current)
+
+          if previous_date >= current_date:
+              raise SystemExit(
+                  "Previous date must be earlier than current date."
+              )
+
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+              f.write(f"PREVIOUS_DATE={previous_date.isoformat()}\n")
+              f.write(f"CURRENT_DATE={current_date.isoformat()}\n")
+
+          print("Date validation: PASS")
+          print(f"Previous date: {previous_date}")
+          print(f"Current date: {current_date}")
+          PY
 
       - name: Run Step 37 regression tests
         run: |
@@ -53,28 +79,28 @@ jobs:
       - name: Capture previous NSE snapshot
         run: |
           python scripts/run_nse_dated_snapshot_audit.py \
-            --as-of-date "${{ inputs.previous_date }}"
+            --as-of-date "$PREVIOUS_DATE"
 
       - name: Verify previous snapshot
         run: |
           python scripts/verify_nse_dated_snapshot_audit.py \
-            --as-of-date "${{ inputs.previous_date }}"
+            --as-of-date "$PREVIOUS_DATE"
 
       - name: Capture current NSE snapshot
         run: |
           python scripts/run_nse_dated_snapshot_audit.py \
-            --as-of-date "${{ inputs.current_date }}"
+            --as-of-date "$CURRENT_DATE"
 
       - name: Verify current snapshot
         run: |
           python scripts/verify_nse_dated_snapshot_audit.py \
-            --as-of-date "${{ inputs.current_date }}"
+            --as-of-date "$CURRENT_DATE"
 
       - name: Run Step 39 identity continuity
         run: |
           python scripts/run_ch25_step39_nse_identity_continuity.py \
-            --previous-date "${{ inputs.previous_date }}" \
-            --current-date "${{ inputs.current_date }}"
+            --previous-date "$PREVIOUS_DATE" \
+            --current-date "$CURRENT_DATE"
 
       - name: Upload Step 39 evidence
         if: always()
@@ -86,4 +112,3 @@ jobs:
             reports/nse_identity_continuity/
           if-no-files-found: warn
           retention-days: 30
-          
