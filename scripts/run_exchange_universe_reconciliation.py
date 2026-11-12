@@ -1,3 +1,4 @@
+
 """Run NSE/BSE reconciliation using retained downloader provenance."""
 from __future__ import annotations
 
@@ -5,18 +6,25 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 from data.providers.exchange_universe_reconciliation import (
     build_exchange_universe_reconciliation,
     load_bse_equity_universe,
     load_nse_cm_diagnostic,
     load_nse_equity_universe,
-    validate_metadata,
     verify_snapshot_file,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "reports" / "exchange_universe"
+
+# Must match the exact hosts permitted by the snapshot downloader.
+ALLOWED_SOURCE_HOSTS = {
+    "NSE": {"nsearchives.nseindia.com"},
+    "BSE": {"member.bseindia.com"},
+}
+MAX_REDIRECTS = 5
 
 
 def sha256_file(path: Path) -> str:
@@ -27,13 +35,87 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def approved_source_url(url: str, exchange: str) -> bool:
+    """Accept only HTTPS URLs on the exact exchange allowlist host."""
+    if not isinstance(url, str) or not url.strip():
+        return False
+
+    try:
+        parsed = urlparse(url.strip())
+
+        if parsed.scheme.lower() != "https":
+            return False
+        if not parsed.hostname:
+            return False
+        if parsed.username or parsed.password:
+            return False
+        if parsed.port not in (None, 443):
+            return False
+        if parsed.fragment:
+            return False
+
+        host = parsed.hostname.lower().rstrip(".")
+    except ValueError:
+        return False
+
+    allowed_hosts = ALLOWED_SOURCE_HOSTS.get(exchange)
+    return bool(allowed_hosts and host in allowed_hosts)
+
+
+def validate_redirect_history(
+    source_url: str,
+    redirect_chain: list,
+    final_url: str,
+    exchange: str,
+) -> tuple[bool, str]:
+    """Validate every recorded redirect and its sequence."""
+    if not isinstance(redirect_chain, list):
+        return False, "Redirect chain must be a list."
+
+    if len(redirect_chain) > MAX_REDIRECTS:
+        return False, "Redirect chain exceeds the maximum of five redirects."
+
+    urls = [source_url, *redirect_chain, final_url]
+
+    if not all(
+        isinstance(url, str) and url.strip()
+        for url in urls
+    ):
+        return False, "Redirect chain contains an invalid URL."
+
+    if not all(approved_source_url(url, exchange) for url in urls):
+        return False, "Unapproved or invalid source URL in provenance."
+
+    # A repeated URL indicates a loop or inconsistent history.
+    if len(set(urls)) != len(urls):
+        return False, "Redirect chain contains a repeated URL or loop."
+
+    # The downloader records redirect targets, including the final target.
+    if redirect_chain:
+        if redirect_chain[-1] != final_url:
+            return False, "Final URL does not match the last redirect target."
+    elif source_url != final_url:
+        return False, "Final URL differs from source URL but no redirect was recorded."
+
+    return True, ""
+
+
 def load_snapshot_provenance(
     snapshot: Path,
     provenance_path: Path | None,
     exchange: str,
     trading_date: str,
 ) -> tuple[dict, dict]:
-    """Load and verify downloader metadata against retained bytes."""
+    """Verify provenance metadata against the retained snapshot bytes."""
+    exchange = str(exchange).strip().upper()
+
+    if exchange not in ALLOWED_SOURCE_HOSTS:
+        return {}, {
+            "status": "REVIEW",
+            "reason": "Unsupported exchange.",
+            "independent_external_checksum": False,
+        }
+
     if provenance_path is None:
         return {}, {
             "status": "REVIEW",
@@ -42,9 +124,7 @@ def load_snapshot_provenance(
         }
 
     try:
-        raw = json.loads(
-            provenance_path.read_text(encoding="utf-8")
-        )
+        raw = json.loads(provenance_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         return {}, {
             "status": "REVIEW",
@@ -87,13 +167,10 @@ def load_snapshot_provenance(
             "independent_external_checksum": False,
         }
 
+    reason = ""
+
     if not isinstance(raw["redirect_chain"], list):
         reason = "Redirect chain must be a list."
-    elif not all(
-        isinstance(url, str) and url.strip()
-        for url in raw["redirect_chain"]
-    ):
-        reason = "Redirect chain contains an invalid URL."
     elif str(raw["exchange"]).upper() != exchange:
         reason = "Provenance exchange does not match input."
     elif raw["filename"] != snapshot.name:
@@ -111,41 +188,27 @@ def load_snapshot_provenance(
     elif (
         not isinstance(raw["sha256"], str)
         or len(raw["sha256"]) != 64
-        or any(c not in "0123456789abcdefABCDEF" for c in raw["sha256"])
+        or any(
+            char not in "0123456789abcdefABCDEF"
+            for char in raw["sha256"]
+        )
     ):
         reason = "Provenance SHA-256 format is invalid."
-    # Check hash BEFORE size so changed bytes report the hash mismatch.
+    # Hash is checked before size so changed content reports SHA-256 mismatch.
     elif sha256_file(snapshot).lower() != raw["sha256"].lower():
         reason = "Snapshot SHA-256 does not match provenance."
     elif raw["size_bytes"] != snapshot.stat().st_size:
         reason = "Snapshot size does not match provenance."
-    else:
-        reason = ""
-
-    candidates = [
-        raw.get("source_url"),
-        *raw.get("redirect_chain", []),
-        raw.get("final_source_url"),
-    ]
 
     if not reason:
-        for url in candidates:
-            if not isinstance(url, str) or not url.strip():
-                reason = "Invalid source URL in provenance."
-                break
-
-            check = {
-                "exchange": exchange,
-                "source_url": url,
-                "filename": snapshot.name,
-                "downloaded_at_utc": raw["downloaded_at_utc"],
-                "trading_date": trading_date,
-                "sha256": raw["sha256"],
-            }
-
-            if not validate_metadata(check, exchange):
-                reason = "Unapproved or invalid source URL in provenance."
-                break
+        valid, redirect_reason = validate_redirect_history(
+            raw["source_url"],
+            raw["redirect_chain"],
+            raw["final_source_url"],
+            exchange,
+        )
+        if not valid:
+            reason = redirect_reason
 
     if reason:
         return {}, {
@@ -241,19 +304,18 @@ def main() -> None:
 
     if args.nse_cm_diagnostic:
         diagnostics["nse_cm_diagnostics"] = []
-
         for path in args.nse_cm_diagnostic:
             _, result = load_nse_cm_diagnostic(path)
             result["filename"] = path.name
             diagnostics["nse_cm_diagnostics"].append(result)
 
-    # Identity reconciliation cannot override failed provenance.
     if nse_proof.get("status") != "PASS":
         summary["status"] = "REVIEW"
 
     if bse_proof.get("status") != "PASS":
         summary["status"] = "REVIEW"
 
+    # These gates deliberately remain closed.
     summary["production_provenance_approved"] = False
     summary["independent_external_checksum_verified"] = False
     summary["mapping_eligible"] = False
@@ -298,4 +360,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-        
+                         
