@@ -1,0 +1,50 @@
+
+name: CH25 Step 36 NSE Dated Snapshot Audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      archive_date:
+        description: "NSE archive date (YYYY-MM-DD)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  nse-dated-snapshot-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Step 36 unit tests
+        run: |
+          python -m pytest -q tests/test_ch25_step36_nse_dated_snapshot.py
+
+      - name: Run NSE dated snapshot audit
+        run: |
+          python scripts/run_nse_dated_snapshot_audit.py \
+            --as-of-date "${{ inputs.archive_date }}"
+
+      - name: Upload Step 36 audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch25-step36-nse-dated-snapshot
+          path: reports/nse_dated_snapshot_audit/
+          if-no-files-found: warn
+          retention-days: 30
+          
