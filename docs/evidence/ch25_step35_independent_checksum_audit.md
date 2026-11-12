@@ -202,3 +202,31 @@ SECTOR MAPPING EXPANSION: OFF
 ## Project Checkpoint
 
 TLP-CP-2026-11-12-PHASE-04-CH25-STEP-35-OFFICIAL-CHECKSUM-RESEARCH-HOLD
+## 12. User-Approved Free-First Project Decision
+
+Decision Date: 2026-11-12
+
+The project owner approves the following decision:
+
+- Paid vendor APIs are not required for current development.
+- Paid independent checksum services are deferred.
+- Official free NSE sources remain the primary exchange source.
+- Free and authorized BSE sources may be integrated when verified.
+- Local SHA-256 and provenance validation remain mandatory.
+- Independent exchange checksum verification is an optional
+  future capability, not a blocker for free development.
+- Future external providers must use separate optional adapters.
+- The core reconciliation engine must not depend on paid providers.
+- Missing BSE evidence must remain REVIEW.
+- Sector Mapping Expansion remains OFF.
+
+Step 35 Result:
+
+FREE-FIRST POLICY: APPROVED
+PAID PROVIDER DEPENDENCY: DEFERRED
+FUTURE PROVIDER EXTENSION: RESERVED
+STEP 35 DECISION: PASS
+
+Checkpoint:
+
+TLP-CP-2026-11-12-PHASE-04-CH25-STEP-35-FREE-FIRST-DECISION-PASS
