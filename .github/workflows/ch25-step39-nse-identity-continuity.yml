@@ -1,0 +1,89 @@
+
+name: CH25 Step 39 NSE Identity Continuity
+
+on:
+  workflow_dispatch:
+    inputs:
+      previous_date:
+        description: "Previous NSE archive date (YYYY-MM-DD)"
+        required: true
+        type: string
+      current_date:
+        description: "Current NSE archive date (YYYY-MM-DD)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  identity-continuity:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Validate dates
+        run: |
+          python -c "from datetime import date; a=date.fromisoformat('${{ inputs.previous_date }}'); b=date.fromisoformat('${{ inputs.current_date }}'); assert a < b, 'Previous date must be earlier'"
+
+      - name: Run Step 37 regression tests
+        run: |
+          python -m pytest -q tests/test_ch25_step37_nse_snapshot_verifier.py
+
+      - name: Run Step 38 regression tests
+        run: |
+          python -m pytest -q tests/test_ch25_step38_nse_field_reconciliation.py
+
+      - name: Run Step 39 unit tests
+        run: |
+          python -m pytest -q tests/test_ch25_step39_nse_identity_continuity.py
+
+      - name: Capture previous NSE snapshot
+        run: |
+          python scripts/run_nse_dated_snapshot_audit.py \
+            --as-of-date "${{ inputs.previous_date }}"
+
+      - name: Verify previous snapshot
+        run: |
+          python scripts/verify_nse_dated_snapshot_audit.py \
+            --as-of-date "${{ inputs.previous_date }}"
+
+      - name: Capture current NSE snapshot
+        run: |
+          python scripts/run_nse_dated_snapshot_audit.py \
+            --as-of-date "${{ inputs.current_date }}"
+
+      - name: Verify current snapshot
+        run: |
+          python scripts/verify_nse_dated_snapshot_audit.py \
+            --as-of-date "${{ inputs.current_date }}"
+
+      - name: Run Step 39 identity continuity
+        run: |
+          python scripts/run_ch25_step39_nse_identity_continuity.py \
+            --previous-date "${{ inputs.previous_date }}" \
+            --current-date "${{ inputs.current_date }}"
+
+      - name: Upload Step 39 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ch25-step39-nse-identity-continuity
+          path: |
+            reports/nse_dated_snapshot_audit/
+            reports/nse_identity_continuity/
+          if-no-files-found: warn
+          retention-days: 30
+          
