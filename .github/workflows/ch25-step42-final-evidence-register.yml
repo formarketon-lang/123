@@ -1,0 +1,217 @@
+
+name: CH25 Step 42 Final Evidence Register
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  final-evidence-register:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Step 41 prerequisite
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          url = (
+              "https://api.github.com/repos/"
+              "formarketon-lang/123/actions/runs/"
+              "43346457928"
+          )
+
+          request = urllib.request.Request(
+              url,
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": (
+                      "Bearer " + os.environ["GITHUB_TOKEN"]
+                  ),
+                  "X-GitHub-Api-Version": "2022-11-28",
+              },
+          )
+
+          with urllib.request.urlopen(request) as response:
+              run = json.loads(response.read())
+
+          assert run["conclusion"] == "success"
+          assert run["head_sha"] == (
+              "b22cfdfcaf3d9f7c82e2387f7abddba60b695158"
+          )
+
+          print("STEP 41 PREREQUISITE: VERIFIED PASS")
+          print("Run:", run["html_url"])
+          PY
+
+      - name: Prepare evidence directory
+        run: |
+          mkdir -p reports/ch25_step42_final
+
+      - name: Run complete repository regression
+        run: |
+          python -m pytest -q \
+            --junitxml=reports/ch25_step42_final/junit.xml
+
+      - name: Build final evidence register
+        run: |
+          python - <<'PY'
+          import json
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          root = Path("reports/ch25_step42_final")
+          junit = ET.parse(root / "junit.xml").getroot()
+
+          suites = (
+              [junit]
+              if junit.tag == "testsuite"
+              else list(junit.findall("testsuite"))
+          )
+
+          totals = {
+              key: sum(int(s.get(key, 0)) for s in suites)
+              for key in ("tests", "failures", "errors", "skipped")
+          }
+
+          assert totals["tests"] > 0
+          assert totals["failures"] == 0
+          assert totals["errors"] == 0
+
+          register = {
+              "project": "TLP-MASTER-001",
+              "chapter": 25,
+              "step": 42,
+              "status": "PASS",
+              "chapter_decision": "CLOSED_WITH_GUARDS",
+              "regression": totals,
+              "step_evidence": {
+                  "31-33": "USER_REPORTED_PASS",
+                  "34": (
+                      "REGRESSION_PASS_"
+                      "DEDICATED_RUN_NOT_INDEPENDENTLY_CONFIRMED"
+                  ),
+                  "35": "PASS",
+                  "36": "USER_REPORTED_PASS",
+                  "37": "VERIFIED_PASS",
+                  "38": "VERIFIED_PASS",
+                  "39": "USER_REPORTED_PASS",
+                  "40": "VERIFIED_PASS",
+                  "41": "VERIFIED_PASS",
+                  "42": "CURRENT_ACCEPTANCE_PASS"
+              },
+              "step40": {
+                  "run_id": 43345622065,
+                  "commit": (
+                      "d9d7c2563a8ab6c06f683de123823ecf70cd1342"
+                  ),
+                  "artifact_sha256": (
+                      "ee43a8ed35a0aa133973f5bb0b576e30"
+                      "e40657fef78ad2985e0a21f413762367"
+                  )
+              },
+              "step41": {
+                  "run_id": 43346457928,
+                  "commit": (
+                      "b22cfdfcaf3d9f7c82e2387f7abddba"
+                      "60b695158"
+                  ),
+                  "artifact_sha256": (
+                      "1b4f813423b3582499ad01621ada3742"
+                      "e3a04919d51dbe84cfededd75ed59f07"
+                  )
+              },
+              "safety_gates": {
+                  "sector_mapping_enabled": False,
+                  "company_mapping_approval": "PENDING",
+                  "verified_company_mappings": 0,
+                  "source_authenticity": "UNVERIFIED",
+                  "bse_status": "REVIEW",
+                  "independent_external_checksum_verified": False
+              },
+              "created_at_utc": datetime.now(
+                  timezone.utc
+              ).isoformat()
+          }
+
+          (root / "chapter25_final_evidence_register.json").write_text(
+              json.dumps(register, indent=2),
+              encoding="utf-8"
+          )
+
+          lines = [
+              "# TradeLab Pro — Chapter 25 Final Evidence Register",
+              "",
+              "Final acceptance: PASS",
+              "Chapter decision: CLOSED WITH GUARDS",
+              "",
+              "## Regression",
+              "",
+              f"- Tests: {totals['tests']}",
+              f"- Failures: {totals['failures']}",
+              f"- Errors: {totals['errors']}",
+              f"- Skipped: {totals['skipped']}",
+              "",
+              "## Evidence status",
+          ]
+
+          for step, status in register["step_evidence"].items():
+              lines.append(f"- Step {step}: {status}")
+
+          lines += [
+              "",
+              "## Safety gates",
+              "",
+              "- Sector Mapping: OFF",
+              "- Company Mapping Approval: PENDING",
+              "- Verified Company Mappings: 0",
+              "- Source Authenticity: UNVERIFIED",
+              "- BSE: REVIEW",
+              "- Independent External Checksum: NOT VERIFIED",
+              "",
+              "## Final decision",
+              "",
+              "Chapter 25 acceptance is complete with safety guards.",
+              "This does not authorize production sector mapping.",
+              "No unsupported company mapping is approved.",
+              "",
+              f"Generated UTC: {register['created_at_utc']}",
+          ]
+
+          (root / "chapter25_final_evidence_register.md").write_text(
+              "\n".join(lines) + "\n",
+              encoding="utf-8"
+          )
+
+          print(json.dumps(register, indent=2))
+          PY
+
+      - name: Upload final Chapter 25 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tlp-ch25-step42-final-evidence-register
+          path: reports/ch25_step42_final/
+          if-no-files-found: error
+          retention-days: 30
+          
