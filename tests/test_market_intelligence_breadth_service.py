@@ -35,6 +35,11 @@ def make_stock_data():
         "Exchange": ["NSE"] * 3,
         "Timeframe": ["1d"] * 3,
         "Fallback Reason": [""] * 3,
+        "Fetched At UTC": [
+            "2025-01-02T10:00:00Z",
+            "2025-01-02T10:00:01Z",
+            "2025-01-02T10:00:02Z",
+        ],
         "Validation Status": ["PASS"] * 3,
     })
 
@@ -42,7 +47,9 @@ def make_stock_data():
 def run_service(data=None, universe=None, date="2025-01-02"):
     return analyze_nse_market_breadth(
         stock_data=make_stock_data() if data is None else data,
-        verified_universe=make_universe() if universe is None else universe,
+        verified_universe=(
+            make_universe() if universe is None else universe
+        ),
         observation_date=date,
     )
 
@@ -57,6 +64,7 @@ def test_valid_nse_breadth_integration():
     assert result["coverage_status"] == "PASS"
     assert result["analysis_status"] == "PASS"
     assert result["data_sources"] == ["NSE"]
+    assert len(result["fetch_timestamps_utc"]) == 3
 
 
 def test_incomplete_coverage_returns_review():
@@ -152,4 +160,45 @@ def test_missing_observation_date_is_rejected():
 def test_nse_blank_fallback_reason_is_allowed():
     result = run_service()
     assert result["data_sources"] == ["NSE"]
-                       
+
+
+def test_missing_fetch_timestamp_column_is_rejected():
+    data = make_stock_data().drop(columns=["Fetched At UTC"])
+
+    with pytest.raises(ValueError, match="Fetched At UTC"):
+        run_service(data=data)
+
+
+def test_missing_fetch_timestamp_value_is_rejected():
+    data = make_stock_data()
+    data.loc[0, "Fetched At UTC"] = None
+
+    with pytest.raises(ValueError, match="requires Fetched At UTC"):
+        run_service(data=data)
+
+
+def test_invalid_fetch_timestamp_is_rejected():
+    data = make_stock_data()
+    data.loc[0, "Fetched At UTC"] = "not-a-timestamp"
+
+    with pytest.raises(ValueError, match="invalid Fetched At UTC"):
+        run_service(data=data)
+
+
+def test_timezone_naive_fetch_timestamp_is_rejected():
+    data = make_stock_data()
+    data.loc[0, "Fetched At UTC"] = "2025-01-02 10:00:00"
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        run_service(data=data)
+
+
+def test_fetch_timestamps_are_normalized_to_utc():
+    data = make_stock_data()
+    data.loc[0, "Fetched At UTC"] = "2025-01-02T15:30:00+05:30"
+
+    result = run_service(data=data)
+
+    assert "2025-01-02T10:00:00Z" in (
+        result["fetch_timestamps_utc"]
+    )
