@@ -1,70 +1,44 @@
+
 from scripts.run_nse_classification_taxonomy_extraction import (
     LEVELS,
-    extract_structure_table_rows,
+    extract_guidelines_table_rows,
+    is_guidelines_header,
     normalize_taxonomy_rows,
 )
 
 
-STRUCTURE_HEADER = [
-    "MES_Code",
-    "Macro Economic Sector",
-    "Sect_Code",
+GUIDELINES_HEADER = [
+    "Macro Economic Indicator",
     "Sector",
-    "Ind_Code",
     "Industry",
-    "Basic_Ind_Code",
     "Basic Industry",
-    "Definition",
 ]
 
 
-def test_extracts_correct_columns_from_nine_column_structure():
+def test_recognizes_official_four_column_guidelines_header():
+    assert is_guidelines_header(GUIDELINES_HEADER)
+
+
+def test_extracts_four_column_guidelines_rows():
     rows = [
-        STRUCTURE_HEADER,
+        GUIDELINES_HEADER,
         [
-            "IN01",
             "Commodities",
-            "IN0101",
             "Chemicals",
-            "IN010101",
             "Chemicals & Petrochemicals",
-            "IN010101001",
             "Commodity Chemicals",
-            "Manufacturers of chemicals",
         ],
-        [
-            "",
-            "",
-            "",
-            "",
-            "",
-            "",
-            "IN010101002",
-            "Specialty Chemicals",
-            "Manufacturers of specialty chemicals",
-        ],
+        ["", "", "", "Specialty Chemicals"],
     ]
 
-    result = extract_structure_table_rows(rows)
+    result = extract_guidelines_table_rows(rows)
 
     assert len(result) == 2
-
-    assert result[0] == [
-        "Commodities",
-        "Chemicals",
-        "Chemicals & Petrochemicals",
-        "Commodity Chemicals",
-    ]
-
-    assert result[1] == [
-        "",
-        "",
-        "",
-        "Specialty Chemicals",
-    ]
+    assert result[0][0] == "Commodities"
+    assert result[1][3] == "Specialty Chemicals"
 
 
-def test_normalizes_four_level_taxonomy():
+def test_normalizes_merged_hierarchy_cells():
     rows = [
         [
             "Commodities",
@@ -72,31 +46,21 @@ def test_normalizes_four_level_taxonomy():
             "Chemicals & Petrochemicals",
             "Commodity Chemicals",
         ],
-        [
-            "",
-            "",
-            "",
-            "Specialty Chemicals",
-        ],
+        ["", "", "", "Specialty Chemicals"],
     ]
 
     result = normalize_taxonomy_rows(rows)
 
     assert len(result) == 2
-    assert result[0]["Macro Economic Sector"] == "Commodities"
     assert result[1]["Macro Economic Sector"] == "Commodities"
     assert result[1]["Sector"] == "Chemicals"
+    assert result[1]["Industry"] == "Chemicals & Petrochemicals"
     assert result[1]["Basic Industry"] == "Specialty Chemicals"
 
 
 def test_does_not_create_record_without_basic_industry():
     rows = [
-        [
-            "Commodities",
-            "Chemicals",
-            "Chemicals & Petrochemicals",
-            "",
-        ],
+        ["Commodities", "Chemicals", "Chemicals & Petrochemicals", ""]
     ]
 
     assert normalize_taxonomy_rows(rows) == []
@@ -109,7 +73,7 @@ def test_output_has_exact_four_levels():
             "Chemicals",
             "Chemicals & Petrochemicals",
             "Commodity Chemicals",
-        ],
+        ]
     ]
 
     result = normalize_taxonomy_rows(rows)
@@ -125,15 +89,30 @@ def test_duplicate_taxonomy_rows_are_removed():
         "Commodity Chemicals",
     ]
 
-    result = normalize_taxonomy_rows([row, row])
-
-    assert len(result) == 1
+    assert len(normalize_taxonomy_rows([row, row])) == 1
 
 
-def test_rejects_unrecognized_structure_table():
-    rows = [
-        ["Wrong", "Header", "Format"],
-        ["A", "B", "C"],
+def test_rejects_nine_column_structure_header():
+    structure_header = [
+        "MES_Code",
+        "Macro Economic Sector",
+        "Sect_Code",
+        "Sector",
+        "Ind_Code",
+        "Industry",
+        "Basic_Ind_Code",
+        "Basic Industry",
+        "Definition",
     ]
 
-    assert extract_structure_table_rows(rows) == []
+    assert not is_guidelines_header(structure_header)
+    assert extract_guidelines_table_rows([structure_header]) == []
+
+
+def test_rejects_unrecognized_table():
+    rows = [
+        ["Wrong", "Header", "Format", "Here"],
+        ["A", "B", "C", "D"],
+    ]
+
+    assert extract_guidelines_table_rows(rows) == []
