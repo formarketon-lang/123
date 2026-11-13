@@ -24,6 +24,45 @@ REQUIRED_MAP_FIELDS = {
 }
 
 
+def _parse_udiff_dates(values: pd.Series) -> pd.Series:
+    """Parse ISO dates safely without applying day-first interpretation."""
+
+    raw = values.astype("string").str.strip()
+
+    parsed = pd.Series(
+        pd.NaT,
+        index=raw.index,
+        dtype="datetime64[ns]",
+    )
+
+    # ISO dates and ISO timestamps: YYYY-MM-DD ...
+    iso_mask = raw.str.match(
+        r"^\d{4}-\d{2}-\d{2}(?:$|[ T])",
+        na=False,
+    )
+
+    if iso_mask.any():
+        iso_values = raw.loc[iso_mask].str.slice(0, 10)
+
+        parsed.loc[iso_mask] = pd.to_datetime(
+            iso_values,
+            format="%Y-%m-%d",
+            errors="coerce",
+        )
+
+    # Other NSE date formats retain day-first interpretation.
+    other_mask = ~iso_mask
+
+    if other_mask.any():
+        parsed.loc[other_mask] = pd.to_datetime(
+            raw.loc[other_mask],
+            errors="coerce",
+            dayfirst=True,
+        )
+
+    return parsed
+
+
 def read_nse_udiff_bhavcopy(content: bytes) -> pd.DataFrame:
     """Read exactly one CSV from an NSE CM-UDiFF ZIP archive."""
 
@@ -137,11 +176,8 @@ def normalize_nse_udiff_equity_bhavcopy(
             .str.upper()
         )
 
-    frame["Date"] = pd.to_datetime(
-        frame["Date"],
-        errors="coerce",
-        dayfirst=True,
-    ).dt.normalize()
+    # Important: ISO YYYY-MM-DD must never be interpreted as day-first.
+    frame["Date"] = _parse_udiff_dates(frame["Date"]).dt.normalize()
 
     price_columns = ["Previous Close", "Current Close"]
 
