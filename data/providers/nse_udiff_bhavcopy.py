@@ -35,7 +35,6 @@ def _parse_udiff_dates(values: pd.Series) -> pd.Series:
         dtype="datetime64[ns]",
     )
 
-    # ISO dates and ISO timestamps: YYYY-MM-DD ...
     iso_mask = raw.str.match(
         r"^\d{4}-\d{2}-\d{2}(?:$|[ T])",
         na=False,
@@ -50,7 +49,6 @@ def _parse_udiff_dates(values: pd.Series) -> pd.Series:
             errors="coerce",
         )
 
-    # Other NSE date formats retain day-first interpretation.
     other_mask = ~iso_mask
 
     if other_mask.any():
@@ -176,8 +174,9 @@ def normalize_nse_udiff_equity_bhavcopy(
             .str.upper()
         )
 
-    # Important: ISO YYYY-MM-DD must never be interpreted as day-first.
-    frame["Date"] = _parse_udiff_dates(frame["Date"]).dt.normalize()
+    frame["Date"] = _parse_udiff_dates(
+        frame["Date"]
+    ).dt.normalize()
 
     price_columns = ["Previous Close", "Current Close"]
 
