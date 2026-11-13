@@ -1,0 +1,94 @@
+
+name: CH25 Step 41 Full Regression Safety Gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-regression-safety-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Prepare evidence directory
+        run: |
+          mkdir -p reports/ch25_step41_regression
+
+      - name: Run critical NSE and classification safety tests
+        run: |
+          python -m pytest -q \
+            tests/test_ch25_step37_nse_snapshot_verifier.py \
+            tests/test_ch25_step38_nse_field_reconciliation.py \
+            tests/test_ch25_step39_nse_identity_continuity.py \
+            tests/test_nse_classification_taxonomy_extraction.py \
+            tests/test_nse_eq_coverage_audit.py \
+            tests/test_classification_source_authenticity_gate.py \
+            tests/test_classification_source_provenance.py \
+            tests/test_taxonomy_source_provenance.py \
+            tests/test_classification_taxonomy_validator.py \
+            tests/test_industry_classification_audit.py
+
+      - name: Run complete repository regression suite
+        run: |
+          python -m pytest -q \
+            --junitxml=reports/ch25_step41_regression/junit.xml
+
+      - name: Record safety gate result
+        if: success()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          report = {
+              "chapter": 25,
+              "step": 41,
+              "status": "PASS",
+              "verification": "FULL_REPOSITORY_REGRESSION",
+              "critical_safety_tests": "PASS",
+              "full_test_suite": "PASS",
+              "sector_mapping_enabled": False,
+              "company_mapping_approval": "PENDING",
+              "source_authenticity": "UNVERIFIED",
+              "bse_status": "REVIEW",
+              "independent_external_checksum_verified": False,
+              "created_at_utc": datetime.now(
+                  timezone.utc
+              ).isoformat(),
+          }
+
+          path = Path(
+              "reports/ch25_step41_regression/"
+              "step41_safety_gate.json"
+          )
+          path.write_text(
+              json.dumps(report, indent=2),
+              encoding="utf-8",
+          )
+          print(json.dumps(report, indent=2))
+          PY
+
+      - name: Upload Step 41 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tlp-ch25-step41-regression-safety-evidence
+          path: reports/ch25_step41_regression/
+          if-no-files-found: warn
+          retention-days: 30
