@@ -20,6 +20,9 @@ COLUMN_MAP = {
     "Current Close": "ClosePrice",
 }
 
+# Fixed test fixture only. Production callers must pass the real fetch time.
+TEST_FETCHED_AT = "2026-11-13T17:00:00Z"
+
 
 def sample_data():
     return pd.DataFrame({
@@ -38,6 +41,14 @@ def sample_data():
         "PrevClose": ["100", "200", "50"],
         "ClosePrice": ["110", "190", "55"],
     })
+
+
+def normalize(data=None, *, fetched_at_utc=TEST_FETCHED_AT):
+    return normalize_nse_udiff_equity_bhavcopy(
+        sample_data() if data is None else data,
+        COLUMN_MAP,
+        fetched_at_utc=fetched_at_utc,
+    )
 
 
 def make_zip(csv_data):
@@ -72,10 +83,7 @@ def test_rejects_invalid_zip():
 
 
 def test_normalizes_eq_rows_to_breadth_format():
-    result = normalize_nse_udiff_equity_bhavcopy(
-        sample_data(),
-        COLUMN_MAP,
-    )
+    result = normalize()
 
     assert result["Symbol"].tolist() == ["AAA", "BBB"]
     assert result["Source"].eq("NSE").all()
@@ -83,16 +91,42 @@ def test_normalizes_eq_rows_to_breadth_format():
     assert result["Timeframe"].eq("1d").all()
     assert result["Validation Status"].eq("PASS").all()
     assert result["Fallback Reason"].eq("").all()
+    assert result["Fetched At UTC"].eq(TEST_FETCHED_AT).all()
 
 
 def test_previous_and_current_close_are_normalized():
-    result = normalize_nse_udiff_equity_bhavcopy(
-        sample_data(),
-        COLUMN_MAP,
-    )
+    result = normalize()
 
     assert result["Previous Close"].tolist() == [100, 200]
     assert result["Current Close"].tolist() == [110, 190]
+
+
+def test_requires_fetch_timestamp():
+    with pytest.raises(NSEUdiFFError, match="timestamp is required"):
+        normalize_nse_udiff_equity_bhavcopy(
+            sample_data(),
+            COLUMN_MAP,
+        )
+
+
+def test_rejects_timezone_naive_fetch_timestamp():
+    with pytest.raises(NSEUdiFFError, match="timezone-aware"):
+        normalize(fetched_at_utc="2026-11-13T17:00:00")
+
+
+def test_normalizes_fetch_timestamp_to_utc():
+    result = normalize(
+        fetched_at_utc="2026-11-13T22:30:00+05:30"
+    )
+
+    assert result["Fetched At UTC"].eq(
+        "2026-11-13T17:00:00Z"
+    ).all()
+
+
+def test_rejects_invalid_fetch_timestamp():
+    with pytest.raises(NSEUdiFFError, match="Invalid"):
+        normalize(fetched_at_utc="not-a-timestamp")
 
 
 def test_rejects_infinite_close_price():
@@ -100,10 +134,7 @@ def test_rejects_infinite_close_price():
     data.loc[0, "ClosePrice"] = "inf"
 
     with pytest.raises(NSEUdiFFError, match="finite"):
-        normalize_nse_udiff_equity_bhavcopy(
-            data,
-            COLUMN_MAP,
-        )
+        normalize(data)
 
 
 def test_rejects_negative_infinite_previous_close():
@@ -111,10 +142,7 @@ def test_rejects_negative_infinite_previous_close():
     data.loc[0, "PrevClose"] = "-inf"
 
     with pytest.raises(NSEUdiFFError, match="finite"):
-        normalize_nse_udiff_equity_bhavcopy(
-            data,
-            COLUMN_MAP,
-        )
+        normalize(data)
 
 
 def test_rejects_incomplete_verified_mapping():
@@ -122,6 +150,7 @@ def test_rejects_incomplete_verified_mapping():
         normalize_nse_udiff_equity_bhavcopy(
             sample_data(),
             {"Symbol": "Ticker"},
+            fetched_at_utc=TEST_FETCHED_AT,
         )
 
 
@@ -133,6 +162,7 @@ def test_rejects_unmatched_raw_column():
         normalize_nse_udiff_equity_bhavcopy(
             sample_data(),
             mapping,
+            fetched_at_utc=TEST_FETCHED_AT,
         )
 
 
@@ -141,10 +171,7 @@ def test_rejects_invalid_isin():
     data.loc[0, "SecurityISIN"] = "INVALID"
 
     with pytest.raises(NSEUdiFFError, match="invalid Indian ISIN"):
-        normalize_nse_udiff_equity_bhavcopy(
-            data,
-            COLUMN_MAP,
-        )
+        normalize(data)
 
 
 def test_rejects_duplicate_symbols():
@@ -152,10 +179,7 @@ def test_rejects_duplicate_symbols():
     data.loc[1, "Ticker"] = "AAA"
 
     with pytest.raises(NSEUdiFFError, match="Duplicate EQ symbols"):
-        normalize_nse_udiff_equity_bhavcopy(
-            data,
-            COLUMN_MAP,
-        )
+        normalize(data)
 
 
 def test_rejects_multiple_trade_dates():
@@ -163,10 +187,7 @@ def test_rejects_multiple_trade_dates():
     data.loc[1, "TradeDate"] = "2026-11-11"
 
     with pytest.raises(NSEUdiFFError, match="exactly one"):
-        normalize_nse_udiff_equity_bhavcopy(
-            data,
-            COLUMN_MAP,
-        )
+        normalize(data)
 
 
 def test_rejects_zero_or_invalid_close():
@@ -174,7 +195,4 @@ def test_rejects_zero_or_invalid_close():
     data.loc[0, "ClosePrice"] = "0"
 
     with pytest.raises(NSEUdiFFError, match="greater than zero"):
-        normalize_nse_udiff_equity_bhavcopy(
-            data,
-            COLUMN_MAP,
-        )
+        normalize(data)
