@@ -1,7 +1,8 @@
-"""Download official NSE Indices classification source material.
 
-This downloader collects source documents and supporting NSE data.
-It does NOT invent or infer company-level industry classifications.
+"""Collect official NSE classification and CM-UDiFF evidence.
+
+This script downloads source material only.
+It never infers or approves company-level sector mappings.
 """
 
 from __future__ import annotations
@@ -25,24 +26,15 @@ from data.providers.nse_universe import fetch_nse_equity_universe
 from data.providers.nifty_constituents import fetch_sector_constituents
 
 
-SOURCE_PAGE = (
+CLASSIFICATION_PAGE = (
     "https://www.niftyindices.com/resources/industry-classification"
 )
 
-SOURCE_FILES = {
-    "structure": (
-        "https://www.niftyindices.com/docs/default-source/"
-        "default-document-library/industry-classification/"
-        "nse-indices_industry-classification-structure-2023-07.pdf"
-        "?sfvrsn=c89dd39_1"
-    ),
-    "guidelines": (
-        "https://www.niftyindices.com/docs/default-source/"
-        "default-document-library/industry-classification/"
-        "nse-indices_industry-classification-guideline-2023-07.pdf"
-        "?sfvrsn=76449434_2"
-    ),
-}
+UDIFF_FORMAT_PAGE = (
+    "https://www.nseindia.com/static/resources/forms-formats-members"
+)
+
+NSE_REPORTS_PAGE = "https://www.nseindia.com/all-reports"
 
 OUTPUT_DIR = (
     PROJECT_ROOT
@@ -64,122 +56,156 @@ HEADERS = {
         "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
     ),
     "Accept": (
-        "text/html,application/pdf,text/csv,"
-        "application/octet-stream,*/*"
+        "text/html,application/pdf,application/vnd.openxmlformats-officedocument."
+        "spreadsheetml.sheet,application/zip,*/*"
     ),
-    "Referer": "https://www.niftyindices.com/",
+    "Referer": "https://www.nseindia.com/",
+}
+
+
+CLASSIFICATION_FALLBACKS = {
+    "structure": (
+        "https://www.niftyindices.com/docs/default-source/"
+        "default-document-library/industry-classification/"
+        "nse-indices_industry-classification-structure-2023-07.pdf"
+        "?sfvrsn=c89dd39_1"
+    ),
+    "guidelines": (
+        "https://www.niftyindices.com/docs/default-source/"
+        "default-document-library/industry-classification/"
+        "nse-indices_industry-classification-guideline-2023-07.pdf"
+        "?sfvrsn=76449434_2"
+    ),
 }
 
 
 class AnchorParser(HTMLParser):
-    """Extract anchor text and href values from an HTML page."""
+    """Extract links and their visible anchor text."""
 
     def __init__(self):
         super().__init__()
         self.links = []
-        self._href = None
-        self._text = []
+        self.href = None
+        self.text = []
 
     def handle_starttag(self, tag, attrs):
-        if tag.lower() != "a":
-            return
-
-        self._href = dict(attrs).get("href")
-        self._text = []
+        if tag.lower() == "a":
+            self.href = dict(attrs).get("href")
+            self.text = []
 
     def handle_data(self, data):
-        if self._href is not None:
-            self._text.append(data)
+        if self.href is not None:
+            self.text.append(data)
 
     def handle_endtag(self, tag):
-        if tag.lower() != "a" or self._href is None:
-            return
-
-        self.links.append({
-            "href": self._href,
-            "text": " ".join(" ".join(self._text).split()),
-        })
-
-        self._href = None
-        self._text = []
+        if tag.lower() == "a" and self.href is not None:
+            self.links.append({
+                "href": self.href,
+                "text": " ".join(" ".join(self.text).split()),
+            })
+            self.href = None
+            self.text = []
 
 
 def sha256_bytes(content: bytes) -> str:
-    """Return the SHA-256 digest of file content."""
     return hashlib.sha256(content).hexdigest()
 
 
-def discover_classification_pdf_links(html: str) -> dict:
-    """Discover official PDF links from the NSE Indices page."""
+def extract_links(html: str, base_url: str) -> list[dict]:
     parser = AnchorParser()
     parser.feed(html)
 
-    discovered = {}
+    return [
+        {
+            "url": urljoin(base_url, item["href"]),
+            "text": item["text"],
+        }
+        for item in parser.links
+        if item["href"]
+    ]
 
-    for link in parser.links:
-        label = link["text"].lower()
-        href = link["href"]
 
-        if not href:
-            continue
+def find_link(
+    links: list[dict],
+    keywords: tuple[str, ...],
+) -> str | None:
+    """Find a link only when its visible label matches the requested asset."""
 
-        if "industry classification guidelines" in label:
-            discovered["guidelines"] = urljoin(SOURCE_PAGE, href)
+    for item in links:
+        label = item["text"].lower()
 
-        elif "industry classification structure" in label:
-            discovered["structure"] = urljoin(SOURCE_PAGE, href)
+        if all(word.lower() in label for word in keywords):
+            return item["url"]
 
-    return discovered
+    return None
 
 
 def download_bytes(
     session: requests.Session,
     url: str,
-    timeout: int = 45,
+    timeout: int = 60,
 ) -> bytes:
-    """Download a non-empty response."""
     response = session.get(url, timeout=timeout)
     response.raise_for_status()
 
     content = response.content
 
     if not content:
-        raise ValueError(f"Downloaded file is empty: {url}")
+        raise ValueError(f"Empty download: {url}")
 
     return content
 
 
-def download_pdf(
+def save_asset(
     session: requests.Session,
     url: str,
-    output_path: Path,
+    filename: str,
+    expected_type: str,
 ) -> dict:
-    """Download and validate an official PDF."""
+    """Download and validate a source file before saving it."""
+
     content = download_bytes(session, url)
 
-    if not content.startswith(b"%PDF"):
+    if expected_type == "pdf":
+        valid = content.startswith(b"%PDF")
+
+    elif expected_type == "xlsx":
+        valid = content.startswith(b"PK")
+
+    elif expected_type == "zip":
+        valid = content.startswith(b"PK")
+
+    else:
+        raise ValueError(f"Unsupported file type: {expected_type}")
+
+    if not valid:
         raise ValueError(
-            f"Response is not a valid PDF file: {url}"
+            f"Downloaded content failed {expected_type.upper()} validation: "
+            f"{url}"
         )
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(content)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    path = OUTPUT_DIR / filename
+    path.write_bytes(content)
 
     return {
         "status": "DOWNLOADED",
         "url": url,
-        "path": str(output_path.relative_to(PROJECT_ROOT)),
+        "path": str(path.relative_to(PROJECT_ROOT)),
         "size_bytes": len(content),
         "sha256": sha256_bytes(content),
+        "file_type": expected_type,
     }
 
 
-def save_dataframe(frame: pd.DataFrame, path: Path) -> dict:
-    """Save a collected official dataset and return its metadata."""
+def save_dataframe(frame: pd.DataFrame, filename: str) -> dict:
     if not isinstance(frame, pd.DataFrame) or frame.empty:
-        raise ValueError(f"Dataset is empty: {path.name}")
+        raise ValueError(f"Empty dataset: {filename}")
 
-    path.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    path = OUTPUT_DIR / filename
     frame.to_csv(path, index=False, encoding="utf-8-sig")
 
     content = path.read_bytes()
@@ -195,7 +221,6 @@ def save_dataframe(frame: pd.DataFrame, path: Path) -> dict:
 
 
 def run_downloader() -> dict:
-    """Collect official source documents and supporting datasets."""
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -204,58 +229,76 @@ def run_downloader() -> dict:
 
     report = {
         "project": "TradeLab Pro",
-        "audit_type": "NSE Official Classification Source Collection",
+        "audit_type": "NSE Official Classification and UDiFF Evidence",
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-        "source_page": SOURCE_PAGE,
+        "sources": {},
         "files": {},
         "company_mapping": {
             "status": "PENDING",
             "verified_company_mappings": 0,
+            "sector_mapping_enabled": False,
             "note": (
-                "The discovered public classification page exposes "
-                "the taxonomy documents, not a complete company-level "
-                "classification dataset. No company mapping is inferred."
+                "Downloading official evidence does not approve "
+                "company-level sector mappings."
             ),
-            "next_action": (
-                "Confirm availability through NSE Indices data "
-                "subscription or official company-level feed."
-            ),
-            "contact": "indices@nse.co.in",
         },
     }
 
-    # 1. Download the official classification page.
-    page_response = session.get(SOURCE_PAGE, timeout=45)
-    page_response.raise_for_status()
+    # ---------------------------------------------------------
+    # 1. NSE Indices classification source page
+    # ---------------------------------------------------------
 
-    page_html = page_response.text
-    page_path = OUTPUT_DIR / "nse_industry_classification_source.html"
-    page_path.write_text(page_html, encoding="utf-8")
+    classification_response = session.get(
+        CLASSIFICATION_PAGE,
+        timeout=60,
+    )
+    classification_response.raise_for_status()
+
+    classification_html = classification_response.text
+
+    classification_links = extract_links(
+        classification_html,
+        CLASSIFICATION_PAGE,
+    )
+
+    classification_page_path = (
+        OUTPUT_DIR / "nse_industry_classification_source.html"
+    )
+
+    classification_page_path.write_text(
+        classification_html,
+        encoding="utf-8",
+    )
 
     report["files"]["classification_source_page"] = {
         "status": "DOWNLOADED",
-        "url": SOURCE_PAGE,
-        "path": str(page_path.relative_to(PROJECT_ROOT)),
-        "sha256": sha256_bytes(page_path.read_bytes()),
+        "url": CLASSIFICATION_PAGE,
+        "path": str(
+            classification_page_path.relative_to(PROJECT_ROOT)
+        ),
+        "sha256": sha256_bytes(
+            classification_page_path.read_bytes()
+        ),
     }
 
-    # 2. Discover official PDF URLs from the page.
-    discovered = discover_classification_pdf_links(page_html)
+    # ---------------------------------------------------------
+    # 2. Official classification PDFs
+    # ---------------------------------------------------------
 
-    pdf_urls = {
-        name: discovered.get(name, fallback)
-        for name, fallback in SOURCE_FILES.items()
-    }
+    for name, fallback_url in CLASSIFICATION_FALLBACKS.items():
+        discovered = find_link(
+            classification_links,
+            ("industry classification", name),
+        )
 
-    # 3. Download both official classification documents.
-    for name, url in pdf_urls.items():
-        output_path = OUTPUT_DIR / f"nse_industry_classification_{name}.pdf"
+        url = discovered or fallback_url
 
         try:
-            report["files"][f"classification_{name}"] = download_pdf(
+            report["files"][f"classification_{name}"] = save_asset(
                 session,
                 url,
-                output_path,
+                f"nse_industry_classification_{name}.pdf",
+                "pdf",
             )
         except Exception as exc:
             report["files"][f"classification_{name}"] = {
@@ -264,7 +307,138 @@ def run_downloader() -> dict:
                 "error": f"{type(exc).__name__}: {exc}",
             }
 
-    # 4. Download NSE MII equity universe through the existing provider.
+    # ---------------------------------------------------------
+    # 3. NSE UDiFF Catalogue Version 4.0
+    # ---------------------------------------------------------
+
+    try:
+        format_response = session.get(
+            UDIFF_FORMAT_PAGE,
+            timeout=60,
+        )
+        format_response.raise_for_status()
+
+        format_html = format_response.text
+
+        format_links = extract_links(
+            format_html,
+            UDIFF_FORMAT_PAGE,
+        )
+
+        report["files"]["udiff_catalogue_page"] = {
+            "status": "DOWNLOADED",
+            "url": UDIFF_FORMAT_PAGE,
+            "sha256": sha256_bytes(
+                format_html.encode("utf-8")
+            ),
+        }
+
+        catalogue_url = find_link(
+            format_links,
+            ("version 4.0",),
+        )
+
+        if catalogue_url is None:
+            catalogue_url = find_link(
+                format_links,
+                ("udiff catalogue",),
+            )
+
+        if catalogue_url is None:
+            raise ValueError(
+                "Official UDiFF Catalogue Version 4.0 link "
+                "was not discovered."
+            )
+
+        report["files"]["udiff_catalogue_v4"] = save_asset(
+            session,
+            catalogue_url,
+            "nse_udiff_catalogue_v4",
+            "xlsx",
+        )
+
+    except Exception as exc:
+        report["files"]["udiff_catalogue_v4"] = {
+            "status": "FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    # ---------------------------------------------------------
+    # 4. NSE Daily Reports page: README and CM sample ZIP
+    # ---------------------------------------------------------
+
+    try:
+        reports_response = session.get(
+            NSE_REPORTS_PAGE,
+            timeout=60,
+        )
+        reports_response.raise_for_status()
+
+        reports_html = reports_response.text
+
+        reports_links = extract_links(
+            reports_html,
+            NSE_REPORTS_PAGE,
+        )
+
+        report["files"]["nse_daily_reports_page"] = {
+            "status": "DOWNLOADED",
+            "url": NSE_REPORTS_PAGE,
+            "sha256": sha256_bytes(
+                reports_html.encode("utf-8")
+            ),
+        }
+
+        readme_url = find_link(
+            reports_links,
+            ("new bhavcopy format readme",),
+        )
+
+        if readme_url is None:
+            readme_url = find_link(
+                reports_links,
+                ("readme.xlsx",),
+            )
+
+        if readme_url is None:
+            raise ValueError(
+                "NSE Bhavcopy Format README link not found."
+            )
+
+        report["files"]["udiff_readme"] = save_asset(
+            session,
+            readme_url,
+            "nse_new_bhavcopy_format_readme.xlsx",
+            "xlsx",
+        )
+
+        sample_url = find_link(
+            reports_links,
+            ("cm-udiff common bhavcopy final",),
+        )
+
+        if sample_url is None:
+            raise ValueError(
+                "NSE CM-UDiFF Common Bhavcopy sample link not found."
+            )
+
+        report["files"]["cm_udiff_sample"] = save_asset(
+            session,
+            sample_url,
+            "nse_cm_udiff_daily_sample.zip",
+            "zip",
+        )
+
+    except Exception as exc:
+        report["files"]["nse_udiff_daily_evidence"] = {
+            "status": "FAILED",
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+    # ---------------------------------------------------------
+    # 5. NSE MII equity universe
+    # ---------------------------------------------------------
+
     try:
         universe = fetch_nse_equity_universe(
             session=session,
@@ -273,16 +447,19 @@ def run_downloader() -> dict:
 
         report["files"]["nse_equity_universe"] = save_dataframe(
             universe,
-            OUTPUT_DIR / "nse_mii_equity_universe.csv",
+            "nse_mii_equity_universe.csv",
         )
 
-        sources = (
-            universe["Source"].dropna().astype(str).unique().tolist()
-            if "Source" in universe.columns
-            else []
-        )
-
-        report["files"]["nse_equity_universe"]["source_labels"] = sources
+        if "Source" in universe.columns:
+            report["files"]["nse_equity_universe"][
+                "source_labels"
+            ] = (
+                universe["Source"]
+                .dropna()
+                .astype(str)
+                .unique()
+                .tolist()
+            )
 
     except Exception as exc:
         report["files"]["nse_equity_universe"] = {
@@ -290,8 +467,10 @@ def run_downloader() -> dict:
             "error": f"{type(exc).__name__}: {exc}",
         }
 
-    # 5. Download the official Nifty FMCG constituent list.
-    # This is supporting index data, NOT the complete company mapping.
+    # ---------------------------------------------------------
+    # 6. Official Nifty FMCG constituents
+    # ---------------------------------------------------------
+
     try:
         fmcg = fetch_sector_constituents(
             "FMCG",
@@ -301,7 +480,7 @@ def run_downloader() -> dict:
 
         report["files"]["nifty_fmcg_constituents"] = save_dataframe(
             fmcg,
-            OUTPUT_DIR / "nifty_fmcg_official_constituents.csv",
+            "nifty_fmcg_official_constituents.csv",
         )
 
         report["files"]["nifty_fmcg_constituents"][
@@ -314,40 +493,47 @@ def run_downloader() -> dict:
             "error": f"{type(exc).__name__}: {exc}",
         }
 
-    # 6. Summarize results without approving any company mapping.
+    # ---------------------------------------------------------
+    # 7. Evidence summary. Never approve mapping automatically.
+    # ---------------------------------------------------------
+
+    required_assets = [
+        "classification_guidelines",
+        "udiff_catalogue_v4",
+        "udiff_readme",
+        "cm_udiff_sample",
+    ]
+
+    required_assets_ok = all(
+        report["files"].get(name, {}).get("status") == "DOWNLOADED"
+        for name in required_assets
+    )
+
     downloaded = sum(
-        1
+        item.get("status") == "DOWNLOADED"
         for item in report["files"].values()
-        if item.get("status") == "DOWNLOADED"
     )
 
     failed = sum(
-        1
+        item.get("status") == "FAILED"
         for item in report["files"].values()
-        if item.get("status") == "FAILED"
-    )
-
-    required_pdfs_ok = all(
-        report["files"].get(f"classification_{name}", {}).get("status")
-        == "DOWNLOADED"
-        for name in ("structure", "guidelines")
     )
 
     report["summary"] = {
-        "downloaded_sources": downloaded,
-        "failed_sources": failed,
-        "required_classification_pdfs_downloaded": required_pdfs_ok,
+        "downloaded_sources": int(downloaded),
+        "failed_sources": int(failed),
+        "required_udiff_evidence_complete": required_assets_ok,
         "company_mapping_status": "PENDING",
+        "udiff_schema_mapping_status": "UNVERIFIED",
         "sector_mapping_enabled": False,
         "overall_status": (
-            "PASS"
-            if required_pdfs_ok
-            else "REVIEW"
+            "PASS" if required_assets_ok else "REVIEW"
         ),
     }
 
     report_path = (
-        REPORT_DIR / "nse_official_classification_source_audit.json"
+        REPORT_DIR
+        / "nse_official_classification_source_audit.json"
     )
 
     report_path.write_text(
@@ -356,14 +542,7 @@ def run_downloader() -> dict:
     )
 
     print(json.dumps(report["summary"], indent=2))
-
-    print(f"Full report: {report_path}")
-
-    if not required_pdfs_ok:
-        raise RuntimeError(
-            "One or more required official classification PDFs "
-            "could not be downloaded."
-        )
+    print(f"Full evidence report: {report_path}")
 
     return report
 
