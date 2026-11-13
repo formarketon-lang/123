@@ -1,4 +1,5 @@
-"""Application service integrating validated stock data with Breadth Core."""
+
+"""Validated NSE Market Breadth application service."""
 
 import pandas as pd
 
@@ -23,73 +24,87 @@ def analyze_nse_market_breadth(
     verified_universe: pd.DataFrame,
     observation_date,
 ):
-    """Analyze breadth only with validated data and a dated NSE MII universe."""
+    """Analyze breadth using validated NSE observations and MII universe."""
 
-    if not isinstance(stock_data, pd.DataFrame) or stock_data.empty:
-        raise ValueError("Stock observations are empty or invalid.")
+    if not isinstance(stock_data, pd.DataFrame):
+        raise TypeError("stock_data must be a pandas DataFrame.")
+
+    if stock_data.empty:
+        raise ValueError("Stock observations are empty.")
 
     if not isinstance(verified_universe, pd.DataFrame):
-        raise TypeError("A verified NSE universe DataFrame is required.")
+        raise TypeError("verified_universe must be a pandas DataFrame.")
+
+    if verified_universe.empty:
+        raise ValueError("Verified NSE universe is empty.")
 
     missing = REQUIRED_STOCK_FIELDS.difference(stock_data.columns)
     if missing:
         raise ValueError(
-            "Stock data missing provenance fields: "
+            "Stock data missing required fields: "
             + ", ".join(sorted(missing))
         )
-
-    if verified_universe.empty:
-        raise ValueError("Verified NSE universe is empty.")
 
     if "Universe Verification Status" not in verified_universe.columns:
         raise ValueError("NSE universe verification status is missing.")
 
     statuses = (
         verified_universe["Universe Verification Status"]
-        .dropna()
-        .astype(str)
+        .astype("string")
+        .str.strip()
         .str.upper()
-        .unique()
     )
 
-    if len(statuses) != 1 or statuses[0] != "MII_DATED":
+    if statuses.isna().any() or not statuses.eq("MII_DATED").all():
         raise ValueError(
-            "Breadth requires a dated official NSE MII universe."
+            "Every universe row must have MII_DATED verification status."
         )
 
-    data = stock_data.copy()
-
-    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
-    if data["Date"].isna().any():
-        raise ValueError("Stock observations contain invalid dates.")
-
     observation = pd.to_datetime(observation_date, errors="coerce")
+
     if pd.isna(observation):
         raise ValueError("A valid observation date is required.")
 
     observation = pd.Timestamp(observation).normalize()
 
-    if not data["Date"].dt.normalize().eq(observation).all():
+    data = stock_data.copy()
+
+    try:
+        data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+        dates = data["Date"].dt.normalize()
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError("Stock observations contain invalid dates.")
+
+    if dates.isna().any():
+        raise ValueError("Stock observations contain invalid dates.")
+
+    if not dates.eq(observation).all():
         raise ValueError(
             "Every stock observation must match the requested date."
         )
 
     for column in (
+        "Symbol",
         "Source",
         "Exchange",
         "Timeframe",
-        "Validation Status",
         "Fallback Reason",
+        "Validation Status",
     ):
         data[column] = data[column].astype("string").str.strip()
 
-        if data[column].isna().any() or data[column].eq("").any():
+        if data[column].isna().any():
             raise ValueError(
-                f"Missing stock provenance in {column}."
+                f"Stock observations contain missing {column} values."
             )
 
+    if data["Symbol"].eq("").any():
+        raise ValueError("Stock observations contain blank symbols.")
+
+    data["Symbol"] = data["Symbol"].str.upper()
     data["Source"] = data["Source"].str.upper()
     data["Exchange"] = data["Exchange"].str.upper()
+    data["Timeframe"] = data["Timeframe"].str.lower()
     data["Validation Status"] = data["Validation Status"].str.upper()
 
     if not data["Source"].isin({"NSE", "YAHOO"}).all():
@@ -105,9 +120,10 @@ def analyze_nse_market_breadth(
         raise ValueError("Stock data validation did not PASS.")
 
     yahoo_rows = data["Source"].eq("YAHOO")
+
     if data.loc[yahoo_rows, "Fallback Reason"].eq("").any():
         raise ValueError(
-            "Yahoo stock observations require a fallback reason."
+            "Every Yahoo observation requires an NSE fallback reason."
         )
 
     result = analyze_market_breadth(
@@ -119,17 +135,11 @@ def analyze_nse_market_breadth(
     )
 
     result["analysis_status"] = result["coverage_status"]
-    result["observation_date"] = observation.date().isoformat()
     result["data_sources"] = sorted(data["Source"].unique().tolist())
-    result["source_counts"] = (
-        data["Source"].value_counts().to_dict()
-    )
+    result["source_counts"] = data["Source"].value_counts().to_dict()
     result["yahoo_fallback_symbols"] = sorted(
-        data.loc[yahoo_rows, "Symbol"]
-        .astype(str)
-        .str.strip()
-        .str.upper()
-        .tolist()
+        data.loc[yahoo_rows, "Symbol"].unique().tolist()
     )
 
     return result
+    
