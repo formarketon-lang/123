@@ -1,4 +1,3 @@
-
 """End-to-end tests for the guarded NSE Bhavcopy pipeline."""
 
 from io import BytesIO
@@ -30,6 +29,9 @@ TEST_ONLY_COLUMN_MAP = {
     "Previous Close": "PrevClose",
     "Current Close": "ClosePrice",
 }
+
+# Fixed test fixture only. Never use this value as a production fetch time.
+TEST_FETCHED_AT = "2026-11-13T17:00:00Z"
 
 
 def make_raw_data():
@@ -77,16 +79,18 @@ def make_archive(raw_data=None):
     return buffer.getvalue()
 
 
-def run_pipeline(raw_data=None):
-    archive_bytes = make_archive(raw_data)
-
-    raw = read_nse_udiff_bhavcopy(archive_bytes)
-
-    normalized = normalize_nse_udiff_equity_bhavcopy(
+def normalize(raw):
+    return normalize_nse_udiff_equity_bhavcopy(
         raw,
         TEST_ONLY_COLUMN_MAP,
+        fetched_at_utc=TEST_FETCHED_AT,
     )
 
+
+def run_pipeline(raw_data=None):
+    archive_bytes = make_archive(raw_data)
+    raw = read_nse_udiff_bhavcopy(archive_bytes)
+    normalized = normalize(raw)
     universe = make_universe()
 
     reconciliation = reconcile_bhavcopy_with_mii(
@@ -114,6 +118,7 @@ def test_complete_bhavcopy_pipeline():
     normalized, reconciliation, audit, breadth = run_pipeline()
 
     assert normalized["Symbol"].tolist() == ["AAA", "BBB", "CCC"]
+    assert normalized["Fetched At UTC"].eq(TEST_FETCHED_AT).all()
     assert reconciliation["identity_status"] == "PASS"
     assert reconciliation["coverage_status"] == "PASS"
 
@@ -127,11 +132,11 @@ def test_complete_bhavcopy_pipeline():
     assert breadth["unchanged"] == 1
     assert breadth["coverage_pct"] == 100.0
     assert breadth["coverage_status"] == "PASS"
+    assert breadth["fetch_timestamps_utc"] == [TEST_FETCHED_AT]
 
 
 def test_incomplete_bhavcopy_coverage_stays_review():
     raw = make_raw_data().iloc[:2].copy()
-
     normalized, reconciliation, audit, breadth = run_pipeline(raw)
 
     assert reconciliation["missing_symbols"] == ["CCC"]
@@ -148,10 +153,7 @@ def test_symbol_isin_mismatch_blocks_pipeline():
 
     archive_bytes = make_archive(raw)
     parsed = read_nse_udiff_bhavcopy(archive_bytes)
-    normalized = normalize_nse_udiff_equity_bhavcopy(
-        parsed,
-        TEST_ONLY_COLUMN_MAP,
-    )
+    normalized = normalize(parsed)
 
     with pytest.raises(ValueError, match="mismatch"):
         reconcile_bhavcopy_with_mii(
@@ -165,4 +167,24 @@ def test_test_mapping_is_not_official_schema_approval():
 
     assert audit["schema_mapping_status"] == "UNVERIFIED"
     assert audit["audit_status"] == "REVIEW"
-      
+
+
+def test_production_timestamp_is_not_fabricated_by_normalizer():
+    raw = read_nse_udiff_bhavcopy(make_archive())
+
+    with pytest.raises(ValueError, match="timestamp is required"):
+        normalize_nse_udiff_equity_bhavcopy(
+            raw,
+            TEST_ONLY_COLUMN_MAP,
+        )
+
+
+def test_naive_timestamp_is_rejected_by_pipeline_normalizer():
+    raw = read_nse_udiff_bhavcopy(make_archive())
+
+    with pytest.raises(ValueError, match="timezone-aware"):
+        normalize_nse_udiff_equity_bhavcopy(
+            raw,
+            TEST_ONLY_COLUMN_MAP,
+            fetched_at_utc="2026-11-13T17:00:00",
+        )
