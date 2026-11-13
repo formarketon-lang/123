@@ -1,4 +1,3 @@
-
 """NSE CM-UDiFF Bhavcopy reader and strict equity normalizer."""
 
 from __future__ import annotations
@@ -22,6 +21,33 @@ REQUIRED_MAP_FIELDS = {
     "Previous Close",
     "Current Close",
 }
+
+
+def _validate_fetched_at_utc(value) -> str:
+    """Validate and normalize an actual timezone-aware fetch timestamp."""
+
+    if value is None or not str(value).strip():
+        raise NSEUdiFFError(
+            "A timezone-aware fetched_at_utc timestamp is required."
+        )
+
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise NSEUdiFFError(
+            "Invalid fetched_at_utc timestamp."
+        ) from exc
+
+    if pd.isna(timestamp) or timestamp.tzinfo is None:
+        raise NSEUdiFFError(
+            "fetched_at_utc must be timezone-aware."
+        )
+
+    return (
+        timestamp.tz_convert("UTC")
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
 
 
 def _parse_udiff_dates(values: pd.Series) -> pd.Series:
@@ -121,8 +147,12 @@ def read_nse_udiff_bhavcopy(content: bytes) -> pd.DataFrame:
 def normalize_nse_udiff_equity_bhavcopy(
     data: pd.DataFrame,
     column_map: dict[str, str],
+    *,
+    fetched_at_utc,
 ) -> pd.DataFrame:
-    """Normalize UDiFF data using an explicitly verified column map."""
+    """Normalize UDiFF data using a verified map and actual fetch time."""
+
+    fetched_timestamp = _validate_fetched_at_utc(fetched_at_utc)
 
     if not isinstance(data, pd.DataFrame) or data.empty:
         raise NSEUdiFFError("UDiFF data is empty or invalid.")
@@ -257,6 +287,7 @@ def normalize_nse_udiff_equity_bhavcopy(
     frame["Exchange"] = "NSE"
     frame["Timeframe"] = "1d"
     frame["Fallback Reason"] = ""
+    frame["Fetched At UTC"] = fetched_timestamp
     frame["Validation Status"] = "PASS"
 
     output_columns = [
@@ -270,6 +301,7 @@ def normalize_nse_udiff_equity_bhavcopy(
         "Exchange",
         "Timeframe",
         "Fallback Reason",
+        "Fetched At UTC",
         "Validation Status",
     ]
 
