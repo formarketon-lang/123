@@ -15,8 +15,41 @@ REQUIRED_STOCK_FIELDS = {
     "Exchange",
     "Timeframe",
     "Fallback Reason",
+    "Fetched At UTC",
     "Validation Status",
 }
+
+
+def _validate_fetch_timestamps(values: pd.Series) -> pd.Series:
+    """Require every fetch timestamp to be valid and timezone-aware."""
+
+    validated = []
+
+    for value in values:
+        if pd.isna(value) or not str(value).strip():
+            raise ValueError(
+                "Every stock observation requires Fetched At UTC."
+            )
+
+        try:
+            timestamp = pd.Timestamp(value)
+        except (TypeError, ValueError, OverflowError):
+            raise ValueError(
+                "Stock observations contain an invalid Fetched At UTC."
+            )
+
+        if pd.isna(timestamp) or timestamp.tzinfo is None:
+            raise ValueError(
+                "Fetched At UTC must be timezone-aware."
+            )
+
+        validated.append(
+            timestamp.tz_convert("UTC").isoformat().replace(
+                "+00:00", "Z"
+            )
+        )
+
+    return pd.Series(validated, index=values.index, dtype="string")
 
 
 def analyze_nse_market_breadth(
@@ -24,7 +57,7 @@ def analyze_nse_market_breadth(
     verified_universe: pd.DataFrame,
     observation_date,
 ):
-    """Analyze breadth using validated NSE observations and MII universe."""
+    """Analyze NSE breadth with verified universe and full provenance."""
 
     if not isinstance(stock_data, pd.DataFrame):
         raise TypeError("stock_data must be a pandas DataFrame.")
@@ -33,12 +66,15 @@ def analyze_nse_market_breadth(
         raise ValueError("Stock observations are empty.")
 
     if not isinstance(verified_universe, pd.DataFrame):
-        raise TypeError("verified_universe must be a pandas DataFrame.")
+        raise TypeError(
+            "verified_universe must be a pandas DataFrame."
+        )
 
     if verified_universe.empty:
         raise ValueError("Verified NSE universe is empty.")
 
     missing = REQUIRED_STOCK_FIELDS.difference(stock_data.columns)
+
     if missing:
         raise ValueError(
             "Stock data missing required fields: "
@@ -46,7 +82,9 @@ def analyze_nse_market_breadth(
         )
 
     if "Universe Verification Status" not in verified_universe.columns:
-        raise ValueError("NSE universe verification status is missing.")
+        raise ValueError(
+            "NSE universe verification status is missing."
+        )
 
     statuses = (
         verified_universe["Universe Verification Status"]
@@ -60,7 +98,10 @@ def analyze_nse_market_breadth(
             "Every universe row must have MII_DATED verification status."
         )
 
-    observation = pd.to_datetime(observation_date, errors="coerce")
+    observation = pd.to_datetime(
+        observation_date,
+        errors="coerce",
+    )
 
     if pd.isna(observation):
         raise ValueError("A valid observation date is required.")
@@ -70,28 +111,39 @@ def analyze_nse_market_breadth(
     data = stock_data.copy()
 
     try:
-        data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+        data["Date"] = pd.to_datetime(
+            data["Date"],
+            errors="coerce",
+        )
         dates = data["Date"].dt.normalize()
     except (AttributeError, TypeError, ValueError):
-        raise ValueError("Stock observations contain invalid dates.")
+        raise ValueError(
+            "Stock observations contain invalid dates."
+        )
 
     if dates.isna().any():
-        raise ValueError("Stock observations contain invalid dates.")
+        raise ValueError(
+            "Stock observations contain invalid dates."
+        )
 
     if not dates.eq(observation).all():
         raise ValueError(
             "Every stock observation must match the requested date."
         )
 
-    for column in (
+    text_columns = (
         "Symbol",
         "Source",
         "Exchange",
         "Timeframe",
         "Fallback Reason",
         "Validation Status",
-    ):
-        data[column] = data[column].astype("string").str.strip()
+    )
+
+    for column in text_columns:
+        data[column] = (
+            data[column].astype("string").str.strip()
+        )
 
         if data[column].isna().any():
             raise ValueError(
@@ -99,25 +151,39 @@ def analyze_nse_market_breadth(
             )
 
     if data["Symbol"].eq("").any():
-        raise ValueError("Stock observations contain blank symbols.")
+        raise ValueError(
+            "Stock observations contain blank symbols."
+        )
 
     data["Symbol"] = data["Symbol"].str.upper()
     data["Source"] = data["Source"].str.upper()
     data["Exchange"] = data["Exchange"].str.upper()
     data["Timeframe"] = data["Timeframe"].str.lower()
-    data["Validation Status"] = data["Validation Status"].str.upper()
+    data["Validation Status"] = (
+        data["Validation Status"].str.upper()
+    )
 
     if not data["Source"].isin({"NSE", "YAHOO"}).all():
         raise ValueError("Unsupported stock data source.")
 
     if not data["Exchange"].eq("NSE").all():
-        raise ValueError("Only NSE stock observations are supported.")
+        raise ValueError(
+            "Only NSE stock observations are supported."
+        )
 
     if not data["Timeframe"].eq("1d").all():
-        raise ValueError("Only daily stock observations are supported.")
+        raise ValueError(
+            "Only daily stock observations are supported."
+        )
 
     if not data["Validation Status"].eq("PASS").all():
-        raise ValueError("Stock data validation did not PASS.")
+        raise ValueError(
+            "Stock data validation did not PASS."
+        )
+
+    data["Fetched At UTC"] = _validate_fetch_timestamps(
+        data["Fetched At UTC"]
+    )
 
     yahoo_rows = data["Source"].eq("YAHOO")
 
@@ -135,11 +201,17 @@ def analyze_nse_market_breadth(
     )
 
     result["analysis_status"] = result["coverage_status"]
-    result["data_sources"] = sorted(data["Source"].unique().tolist())
-    result["source_counts"] = data["Source"].value_counts().to_dict()
+    result["data_sources"] = sorted(
+        data["Source"].unique().tolist()
+    )
+    result["source_counts"] = (
+        data["Source"].value_counts().to_dict()
+    )
     result["yahoo_fallback_symbols"] = sorted(
         data.loc[yahoo_rows, "Symbol"].unique().tolist()
     )
+    result["fetch_timestamps_utc"] = sorted(
+        data["Fetched At UTC"].unique().tolist()
+    )
 
     return result
-    
