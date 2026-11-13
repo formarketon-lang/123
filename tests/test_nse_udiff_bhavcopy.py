@@ -1,4 +1,3 @@
-
 from io import BytesIO
 from zipfile import ZipFile
 
@@ -24,7 +23,11 @@ COLUMN_MAP = {
 
 def sample_data():
     return pd.DataFrame({
-        "TradeDate": ["2026-11-12", "2026-11-12", "2026-11-12"],
+        "TradeDate": [
+            "2026-11-12",
+            "2026-11-12",
+            "2026-11-12",
+        ],
         "Ticker": ["AAA", "BBB", "CCC"],
         "SecurityISIN": [
             "INE000A01010",
@@ -39,11 +42,13 @@ def sample_data():
 
 def make_zip(csv_data):
     buffer = BytesIO()
+
     with ZipFile(buffer, "w") as archive:
         archive.writestr(
             "bhavcopy.csv",
             csv_data.to_csv(index=False),
         )
+
     return buffer.getvalue()
 
 
@@ -51,6 +56,7 @@ def test_reads_one_csv_from_zip():
     result = read_nse_udiff_bhavcopy(
         make_zip(sample_data())
     )
+
     assert len(result) == 3
     assert "TradeDate" in result.columns
 
@@ -77,6 +83,38 @@ def test_normalizes_eq_rows_to_breadth_format():
     assert result["Timeframe"].eq("1d").all()
     assert result["Validation Status"].eq("PASS").all()
     assert result["Fallback Reason"].eq("").all()
+
+
+def test_previous_and_current_close_are_normalized():
+    result = normalize_nse_udiff_equity_bhavcopy(
+        sample_data(),
+        COLUMN_MAP,
+    )
+
+    assert result["Previous Close"].tolist() == [100, 200]
+    assert result["Current Close"].tolist() == [110, 190]
+
+
+def test_rejects_infinite_close_price():
+    data = sample_data()
+    data.loc[0, "ClosePrice"] = "inf"
+
+    with pytest.raises(NSEUdiFFError, match="finite"):
+        normalize_nse_udiff_equity_bhavcopy(
+            data,
+            COLUMN_MAP,
+        )
+
+
+def test_rejects_negative_infinite_previous_close():
+    data = sample_data()
+    data.loc[0, "PrevClose"] = "-inf"
+
+    with pytest.raises(NSEUdiFFError, match="finite"):
+        normalize_nse_udiff_equity_bhavcopy(
+            data,
+            COLUMN_MAP,
+        )
 
 
 def test_rejects_incomplete_verified_mapping():
