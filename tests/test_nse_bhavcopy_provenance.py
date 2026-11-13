@@ -1,6 +1,9 @@
+
 """Tests for NSE Bhavcopy provenance and coverage audit."""
 
 import hashlib
+from io import BytesIO
+from zipfile import ZipFile
 
 import pandas as pd
 import pytest
@@ -11,7 +14,6 @@ from data.providers.nse_bhavcopy_provenance import (
 )
 
 
-SOURCE_BYTES = b"nse-udiff-archive-test-content"
 SOURCE_FILENAME = "CM_UDiFF_20261112.zip"
 
 
@@ -42,6 +44,18 @@ def make_bhavcopy():
         ],
         "Series": ["EQ"] * 3,
     })
+
+
+def make_zip():
+    buffer = BytesIO()
+
+    with ZipFile(buffer, "w") as archive:
+        archive.writestr("bhavcopy.csv", "Symbol\nAAA\n")
+
+    return buffer.getvalue()
+
+
+SOURCE_BYTES = make_zip()
 
 
 def run_audit(
@@ -86,9 +100,7 @@ def test_full_mii_coverage_is_reported():
 
 
 def test_incomplete_coverage_is_review():
-    bhavcopy = make_bhavcopy().iloc[:2].copy()
-
-    result = run_audit(bhavcopy=bhavcopy)
+    result = run_audit(bhavcopy=make_bhavcopy().iloc[:2].copy())
 
     assert result["observed_symbols"] == 2
     assert result["expected_symbols"] == 3
@@ -117,35 +129,28 @@ def test_unknown_symbol_is_rejected():
 
 
 def test_empty_archive_bytes_are_rejected():
-    with pytest.raises(
-        NSEBhavcopyProvenanceError,
-        match="archive bytes",
-    ):
+    with pytest.raises(NSEBhavcopyProvenanceError, match="archive bytes"):
         run_audit(source_bytes=b"")
 
 
 def test_non_bytes_archive_is_rejected():
-    with pytest.raises(
-        NSEBhavcopyProvenanceError,
-        match="archive bytes",
-    ):
+    with pytest.raises(NSEBhavcopyProvenanceError, match="archive bytes"):
         run_audit(source_bytes="not-bytes")
 
 
 def test_invalid_archive_filename_is_rejected():
-    with pytest.raises(
-        NSEBhavcopyProvenanceError,
-        match="filename",
-    ):
+    with pytest.raises(NSEBhavcopyProvenanceError, match="filename"):
         run_audit(source_filename="../bhavcopy.zip")
 
 
 def test_non_zip_filename_is_rejected():
-    with pytest.raises(
-        NSEBhavcopyProvenanceError,
-        match="filename",
-    ):
+    with pytest.raises(NSEBhavcopyProvenanceError, match="filename"):
         run_audit(source_filename="bhavcopy.csv")
+
+
+def test_invalid_zip_bytes_are_rejected():
+    with pytest.raises(NSEBhavcopyProvenanceError, match="Invalid"):
+        run_audit(source_bytes=b"not-a-real-zip")
 
 
 def test_schema_mapping_remains_unverified():
@@ -153,18 +158,25 @@ def test_schema_mapping_remains_unverified():
 
     assert result["schema_mapping_status"] == "UNVERIFIED"
     assert result["audit_status"] == "REVIEW"
-    assert (
-        "OFFICIAL_UDIFF_SCHEMA_MAPPING_UNVERIFIED"
-        in result["audit_reasons"]
+    assert "OFFICIAL_UDIFF_SCHEMA_MAPPING_UNVERIFIED" in (
+        result["audit_reasons"]
     )
 
 
-def test_source_provenance_is_recorded():
+def test_hash_recording_does_not_claim_source_authenticity():
+    result = run_audit()
+
+    assert result["source_provenance_status"] == "HASH_RECORDED"
+    assert result["source_authenticity_status"] == "UNVERIFIED"
+    assert "SOURCE_AUTHENTICITY_NOT_INDEPENDENTLY_VERIFIED" in (
+        result["audit_reasons"]
+    )
+
+
+def test_source_and_mii_dates_are_recorded():
     result = run_audit()
 
     assert result["source"] == "NSE"
-    assert result["source_provenance_status"] == "PASS"
     assert result["observation_date"] == "2026-11-12"
     assert result["mii_snapshot_date"] == "2026-11-12"
     assert result["identity_status"] == "PASS"
-  
