@@ -64,6 +64,16 @@ def validate_result(df, name):
     if result["Date"].duplicated().any():
         raise ValueError(f"{name}: duplicate trading dates found.")
 
+    ordered_dates = result["Date"].sort_values()
+    largest_gap_days = (
+        ordered_dates.diff().dt.days.dropna().max()
+    )
+    if pd.notna(largest_gap_days) and largest_gap_days > 10:
+        raise ValueError(
+            f"{name}: historical coverage gap detected "
+            f"({int(largest_gap_days)} calendar days)."
+        )
+
     start = pd.Timestamp(START_DATE)
     end = pd.Timestamp(END_DATE)
 
