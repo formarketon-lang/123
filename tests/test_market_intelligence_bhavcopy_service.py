@@ -129,7 +129,7 @@ def install_download(
     )
 
 
-def test_production_service_uses_date_matched_mii_and_reports_review(
+def test_production_service_uses_date_matched_mii_and_passes_schema_audit(
     monkeypatch,
 ):
     install_download(monkeypatch)
