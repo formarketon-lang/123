@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–05 VERIFIED; STEP 06 IMPLEMENTED; CI PENDING  
+Status: CHAPTER PLAN DRAFT — STEPS 01–06 VERIFIED; STEP 07 IN PROGRESS  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -266,7 +266,7 @@ Exit: implementation and 15 focused tests pass in GitHub Actions; full TradeLab 
 
 ### STEP 06 — A-D Difference and A/D Ratio
 
-Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+Status: PASS — FULL REGRESSION VERIFIED
 
 Implementation:
 - Added `core/market_intelligence/ad_metrics.py`.
@@ -359,7 +359,7 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-06-AD-METRICS-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-07-CUMULATIVE-AD-LINE-IN-PROGRESS`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
