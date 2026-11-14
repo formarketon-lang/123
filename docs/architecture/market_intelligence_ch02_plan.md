@@ -100,14 +100,92 @@ Inventory findings:
 Step 01 result: inventory completed. No production code was changed. Focused tests for any future implementation remain mandatory in their planned steps.
 
 
-### STEP 01 — Existing Code and Data Inventory
-- Inspect accepted Chapter 01 Core, Data, Service, UI and tests.
-- Identify reusable daily breadth calculation and UDiFF/MII service methods.
-- Record existing schemas and gaps before writing code.
-- Test: inventory assertions and no-duplicate-module review.
-- Exit: approved implementation map.
-
 ### STEP 02 — Historical Point-in-Time Universe Contract
+
+Status: CONTRACT DEFINED — REVIEW GATE; IMPLEMENTATION NOT STARTED
+
+#### 2.1 Purpose and population
+
+The Chapter 02 breadth population is the complete NSE Capital Market cash-equity security universe that is eligible for the selected trade date, restricted to the official `EQ` series. It is not an index constituent list and must not be described as one. BSE, SME/other series, derivatives, ETFs or other instruments are excluded unless a separately approved scope change explicitly adds them.
+
+#### 2.2 Required snapshot identity and provenance
+
+Every daily population snapshot must carry, at minimum:
+
+- `Exchange`: exactly `NSE`.
+- `Segment`: exactly `CM` (Capital Market).
+- `Series`: exactly `EQ`.
+- `Universe As Of Date`: the effective NSE business/trade date for which the membership is asserted.
+- `Source`: official NSE MII/security-master source identifier; Yahoo is never a membership source.
+- `Source URL or archive reference`: stable retrieval reference to the official NSE source.
+- `Published At`: official publication timestamp when supplied by NSE; otherwise explicitly null/unknown.
+- `Fetched At UTC`: actual retrieval timestamp, timezone-aware.
+- `Archive SHA-256`: hash of the exact downloaded raw source bytes.
+- `Schema / parser version`: version used to interpret the source.
+- `Universe Verification Status`: `MII_DATED` only after all required checks pass.
+- Identity keys: normalized Symbol and ISIN; Instrument ID is mandatory for comparison whenever it is supplied by both the source snapshot and the Bhavcopy.
+
+A file name, a manually entered date, a cached current security list, or a hash without the original raw bytes is not sufficient evidence of an official dated snapshot.
+
+#### 2.3 Date alignment and no-look-ahead rules
+
+1. Each A/D observation date must resolve to one and only one NSE CM / EQ universe snapshot whose `Universe As Of Date` exactly equals that observation's NSE trade date.
+2. A future-dated snapshot is `BLOCKED`; it must never be used for an earlier observation.
+3. A stale/previous-date snapshot is `REVIEW` at most for diagnostic comparison and is not eligible to produce a verified historical A/D result.
+4. A snapshot with mixed effective dates, missing effective dates, unknown source provenance, invalid hash, or unverified parser/schema is `BLOCKED` or `UNAVAILABLE` according to whether contradictory evidence exists or evidence is simply absent.
+5. Do not carry the current MII universe backward across history. Do not forward-fill membership across dates, holidays, missing files, or source outages.
+6. If NSE does not provide an official historical snapshot for a requested date, report that date as `UNAVAILABLE`; do not infer membership from Yahoo, current listings, or a later snapshot.
+7. For strict point-in-time claims, if the official publication timestamp is unavailable or is later than the observation date, the date cannot be represented as historically knowable on that date. Preserve the effective-date result but mark point-in-time availability `REVIEW` until the publication-time evidence is resolved. Do not silently claim a no-look-ahead PASS.
+
+#### 2.4 Identity and reconciliation contract
+
+- Normalize identity strings by trim + uppercase only; do not perform fuzzy symbol matching.
+- Symbol and ISIN must both match between the daily NSE CM/EQ Bhavcopy row and the same-date official MII snapshot.
+- When Instrument ID exists in both sources, it must also match. If present in only one source, reject the comparison as `BLOCKED`; do not silently downgrade to Symbol-only.
+- Duplicate Symbol, duplicate ISIN, duplicate Instrument ID, blank identity, malformed ISIN, non-NSE exchange, non-CM segment, or non-EQ series blocks that snapshot/date.
+- A Bhavcopy row absent from the dated universe is an identity exception: exclude it from verified counts and mark the date `REVIEW`.
+- A universe member with no valid daily observation is a missing observation, not unchanged. Count it as missing and reduce coverage.
+- Do not infer a security's historical listing/delisting date from today's security master.
+
+#### 2.5 Coverage and status semantics
+
+Let:
+- `N_expected` = unique valid members in the official dated NSE CM/EQ snapshot.
+- `N_verified` = expected members with a valid same-date Bhavcopy observation and all required identity keys matched.
+- `N_missing` = expected members without a valid same-date observation.
+- `N_exception` = observed Bhavcopy rows that fail dated-universe identity reconciliation.
+
+Coverage = `100 * N_verified / N_expected` when `N_expected > 0`; otherwise coverage is null and status is `UNAVAILABLE`.
+
+- `PASS`: dated snapshot provenance and date alignment verified; all identity keys pass; `N_missing = 0`; `N_exception = 0`; coverage = 100%.
+- `REVIEW`: a valid dated snapshot exists but one or more members are missing, an observed identity exception exists, or strict publication-time evidence is unresolved. Only the verified subset may be described as verified; never imply the full universe was covered.
+- `BLOCKED`: contradictory or invalid evidence (future/mixed date, duplicate identities, invalid source/hash/schema, invalid exchange/segment/series, or key mismatch that the current validator treats as fatal) prevents calculation for that date.
+- `UNAVAILABLE`: no authoritative dated snapshot or required daily source file is available; no verified breadth result is emitted.
+
+A percentage alone never upgrades a date to PASS. No arbitrary tolerance (including 99% or 99.9%) may turn incomplete coverage into PASS.
+
+#### 2.6 Historical contract test matrix
+
+Before Step 02 can be marked fully PASS, tests must cover:
+
+| Case | Expected result |
+|---|---|
+| Exact same-date official NSE CM/EQ snapshot, valid provenance, all identities matched, no missing rows | PASS |
+| Previous-date snapshot | REVIEW; not eligible for verified historical output |
+| Future-date snapshot | BLOCKED |
+| Mixed snapshot dates or a missing row-level effective date | BLOCKED |
+| Missing official historical snapshot | UNAVAILABLE |
+| Publication timestamp unknown or after observation date | REVIEW for strict point-in-time availability |
+| Symbol matches but ISIN differs | Exclude row; REVIEW/BLOCKED per validator contract |
+| Instrument ID present on only one side | BLOCKED |
+| Duplicate Symbol / ISIN / Instrument ID | BLOCKED |
+| Expected universe member absent from Bhavcopy | Count missing; REVIEW |
+| Bhavcopy row not present in dated universe | Exclude as exception; REVIEW |
+| Yahoo or current-universe substitution for NSE membership | BLOCKED |
+
+Step 02 result: contract documented. This is a specification milestone only; no production implementation or test suite is claimed complete. The exact-date rule is consistent with the current single-date MII reconciliation, while publication-time availability and multi-date orchestration remain implementation gaps for later steps.
+
+### STEP 03 — Historical Observation Retrieval
 - Define per-date MII snapshot requirements and identity keys.
 - Define how a missing or unavailable historical MII snapshot blocks verified output.
 - Test aligned, stale, future, mixed-date and missing snapshots.
