@@ -16,6 +16,9 @@ from data.providers.nse_universe import fetch_nse_equity_universe
 from data.providers.nse_udiff_downloader import (
     download_nse_cm_udiff_equity_bhavcopy,
 )
+from data.providers.nse_bhavcopy_provenance import (
+    NSE_UDIFF_SCHEMA_REFERENCE_URL,
+)
 from services.market_intelligence.breadth_service import (
     analyze_nse_market_breadth,
 )
@@ -118,6 +121,8 @@ def analyze_nse_market_breadth_from_udiff(
         universe=verified_universe,
         source_bytes=downloaded["raw_bytes"],
         source_filename=downloaded["source_filename"],
+        source_url=downloaded["source_url"],
+        schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
     )
 
     breadth = analyze_nse_market_breadth(
