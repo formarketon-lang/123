@@ -169,7 +169,7 @@ def test_duplicate_observation_dates_are_rejected():
 def test_verified_observation_count_must_match_retrieval_metadata():
     with pytest.raises(AdvanceDeclineClassificationError, match="count mismatch"):
         classify_historical_daily_advance_decline({
-            "per_date": [record(verified=2)],
+            "per_date": [record(verified=2, missing=1, coverage=66.6666667)],
         })
 
 
