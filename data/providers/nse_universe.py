@@ -453,6 +453,13 @@ def fetch_nse_equity_universe(
                 "source_size_bytes": len(source_bytes),
                 "fetched_at_utc": fetched_at_utc,
                 "snapshot_date": candidate_date.isoformat(),
+                "published_at_utc": None,
+                "publication_time_status": "UNKNOWN",
+                "point_in_time_status": "REVIEW",
+                "point_in_time_reason": (
+                    "NSE MII archive publication timestamp is not supplied "
+                    "by the retrieved source response."
+                ),
                 "verification_status": "MII_DATED",
             }
             result.attrs["source_provenance"] = source_provenance
