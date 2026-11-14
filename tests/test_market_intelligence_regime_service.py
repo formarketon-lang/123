@@ -16,6 +16,7 @@ def make_index_data():
         "Source": ["NSE"] * 202,
         "Validation Status": ["PASS"] * 202,
         "Fallback Reason": [""] * 202,
+        "Fetched At UTC": ["2025-08-01T00:00:00Z"] * 202,
     })
 
 
@@ -38,6 +39,7 @@ def test_regime_service_integrates_validated_index(monkeypatch):
     assert result["regime"] == "BULLISH"
     assert result["analysis_status"] == "PASS"
     assert result["source"] == "NSE"
+    assert result["fetched_at_utc"] == "2025-08-01T00:00:00Z"
 
 
 def test_regime_service_blocks_unknown_index():
