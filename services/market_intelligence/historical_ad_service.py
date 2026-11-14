@@ -23,15 +23,48 @@ from data.providers.nse_trading_calendar import (
 )
 
 
-
 _RECONCILIATION_DETAIL_COLUMNS = [
-    "observation_date", "issue_type", "symbol", "observed_isin",
-    "mii_isin", "observed_instrument_id", "mii_instrument_id", "reason",
+    "observation_date",
+    "issue_type",
+    "symbol",
+    "observed_isin",
+    "mii_isin",
+    "observed_instrument_id",
+    "mii_instrument_id",
+    "observed_series",
+    "mii_series",
+    "mii_company",
+    "reason",
 ]
 
 
+def _identity_lookup(
+    frame: Any,
+    *,
+    fields: tuple[str, ...],
+) -> dict[str, dict]:
+    """Build a safe symbol-keyed identity lookup from an optional frame."""
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        return {}
+    if "Symbol" not in frame.columns:
+        return {}
+
+    available = [field for field in fields if field in frame.columns]
+    if not available:
+        return {}
+
+    indexed = frame.drop_duplicates("Symbol", keep="last").set_index("Symbol")
+    return {
+        str(symbol): {
+            field: row.get(field)
+            for field in available
+        }
+        for symbol, row in indexed.iterrows()
+    }
+
+
 def _build_reconciliation_details(per_date: list[dict]) -> pd.DataFrame:
-    """Expose symbol-level missing and identity exceptions for audit artifacts."""
+    """Expose both sides of each identity gap for forensic audit artifacts."""
     rows = []
     for item in per_date:
         day = item.get("observation_date")
@@ -42,6 +75,15 @@ def _build_reconciliation_details(per_date: list[dict]) -> pd.DataFrame:
         if not isinstance(reconciliation, dict):
             continue
 
+        mii_by_symbol = _identity_lookup(
+            result.get("universe"),
+            fields=("ISIN", "Instrument ID", "Series", "Company"),
+        )
+        observed_by_symbol = _identity_lookup(
+            result.get("normalized"),
+            fields=("ISIN", "Instrument ID", "Series"),
+        )
+
         exceptions = reconciliation.get("identity_exceptions") or []
         exception_by_symbol = {
             str(exception.get("symbol")): exception
@@ -50,9 +92,11 @@ def _build_reconciliation_details(per_date: list[dict]) -> pd.DataFrame:
         }
         seen_symbols = set()
 
-        for symbol in reconciliation.get("missing_symbols") or []:
-            symbol = str(symbol)
+        for raw_symbol in reconciliation.get("missing_symbols") or []:
+            symbol = str(raw_symbol)
             exception = exception_by_symbol.get(symbol, {})
+            observed = observed_by_symbol.get(symbol, {})
+            mii = mii_by_symbol.get(symbol, {})
             rows.append({
                 "observation_date": day,
                 "issue_type": (
@@ -60,10 +104,19 @@ def _build_reconciliation_details(per_date: list[dict]) -> pd.DataFrame:
                     if exception else "MISSING_EXPECTED_MEMBER"
                 ),
                 "symbol": symbol,
-                "observed_isin": exception.get("observed_isin"),
-                "mii_isin": exception.get("mii_isin"),
-                "observed_instrument_id": exception.get("observed_instrument_id"),
-                "mii_instrument_id": exception.get("mii_instrument_id"),
+                "observed_isin": exception.get(
+                    "observed_isin", observed.get("ISIN")
+                ),
+                "mii_isin": exception.get("mii_isin", mii.get("ISIN")),
+                "observed_instrument_id": exception.get(
+                    "observed_instrument_id", observed.get("Instrument ID")
+                ),
+                "mii_instrument_id": exception.get(
+                    "mii_instrument_id", mii.get("Instrument ID")
+                ),
+                "observed_series": observed.get("Series"),
+                "mii_series": mii.get("Series"),
+                "mii_company": mii.get("Company"),
                 "reason": exception.get("reason") or "NO_VALID_BHAVCOPY_OBSERVATION",
             })
             seen_symbols.add(symbol)
@@ -74,14 +127,25 @@ def _build_reconciliation_details(per_date: list[dict]) -> pd.DataFrame:
             symbol = str(exception.get("symbol") or "")
             if symbol and symbol in seen_symbols:
                 continue
+            observed = observed_by_symbol.get(symbol, {})
+            mii = mii_by_symbol.get(symbol, {})
             rows.append({
                 "observation_date": day,
                 "issue_type": "IDENTITY_EXCEPTION",
                 "symbol": symbol or None,
-                "observed_isin": exception.get("observed_isin"),
-                "mii_isin": exception.get("mii_isin"),
-                "observed_instrument_id": exception.get("observed_instrument_id"),
-                "mii_instrument_id": exception.get("mii_instrument_id"),
+                "observed_isin": exception.get(
+                    "observed_isin", observed.get("ISIN")
+                ),
+                "mii_isin": exception.get("mii_isin", mii.get("ISIN")),
+                "observed_instrument_id": exception.get(
+                    "observed_instrument_id", observed.get("Instrument ID")
+                ),
+                "mii_instrument_id": exception.get(
+                    "mii_instrument_id", mii.get("Instrument ID")
+                ),
+                "observed_series": observed.get("Series"),
+                "mii_series": mii.get("Series"),
+                "mii_company": mii.get("Company"),
                 "reason": exception.get("reason") or "IDENTITY_EXCEPTION",
             })
 
