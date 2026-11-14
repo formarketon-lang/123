@@ -174,7 +174,7 @@ def audit_nse_bhavcopy_provenance(
 
     if reconciliation.get("unknown_count", 0):
         audit_reasons.append(
-            "BHAVCOPY_SYMBOLS_NOT_PRESENT_IN_DATED_MII"
+            "BHAVCOPY_SYMBOLS_NOT_IN_VERIFIED_MII_UNIVERSE"
         )
 
     if reconciliation.get("isin_mismatch_count", 0):
