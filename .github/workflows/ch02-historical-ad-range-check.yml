@@ -43,7 +43,7 @@ jobs:
 
       - name: Upload multi-month historical evidence
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: tlp-mim-ch02-multi-month-historical-ad-evidence
           path: artifacts/ch02_historical_ad_range/
