@@ -76,7 +76,10 @@ def make_universe(include_mismatch=False):
 def make_archive():
     buffer = BytesIO()
     with ZipFile(buffer, "w") as archive:
-        archive.writestr("bhavcopy.csv", "Symbol\nAAA\n")
+        archive.writestr(
+            "bhavcopy.csv",
+            make_raw().to_csv(index=False),
+        )
     return buffer.getvalue()
 
 
