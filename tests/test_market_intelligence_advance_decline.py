@@ -224,3 +224,16 @@ def test_reported_coverage_must_match_verified_universe_count():
         classify_historical_daily_advance_decline({
             "per_date": [record(coverage=99.0)],
         })
+
+
+
+def test_verified_observations_must_match_requested_observation_date():
+    observations = observation_frame([
+        ("2026-11-12", "AAA", "INE000A01010", 100, 110),
+        ("2026-11-13", "BBB", "INE000B01010", 100, 90),
+        ("2026-11-13", "CCC", "INE000C01010", 100, 100),
+    ])
+    with pytest.raises(AdvanceDeclineClassificationError, match="mismatched date"):
+        classify_historical_daily_advance_decline({
+            "per_date": [record(observations=observations)],
+        })
