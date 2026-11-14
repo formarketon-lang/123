@@ -200,11 +200,13 @@ def normalize_nse_cm_udiff_equity(
             "Normalized UDiFF rows lost OHLCV values during identity join."
         )
 
+    # Previous Close belongs to the prior session and must not be
+    # included in the current session's OHLC candle consistency check.
     invalid_high = merged["High"] < merged[
-        ["Open", "Low", "Previous Close", "Current Close"]
+        ["Open", "Low", "Current Close"]
     ].max(axis=1)
     invalid_low = merged["Low"] > merged[
-        ["Open", "High", "Previous Close", "Current Close"]
+        ["Open", "High", "Current Close"]
     ].min(axis=1)
 
     if invalid_high.any() or invalid_low.any():
