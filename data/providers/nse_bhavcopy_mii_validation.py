@@ -16,8 +16,9 @@ def reconcile_bhavcopy_with_mii(
 ) -> dict:
     """Verify every observed Symbol + ISIN against the NSE MII snapshot.
 
-    Missing universe observations are reported as REVIEW, not fabricated.
-    Unknown symbols, mismatched ISINs and invalid universe identities fail.
+    Missing universe observations and symbols absent from the dated MII
+    snapshot are reported as REVIEW. Unknown rows are excluded from the
+    verified observation set. A symbol/ISIN mismatch remains a hard failure.
     """
 
     if not isinstance(bhavcopy, pd.DataFrame) or bhavcopy.empty:
@@ -138,16 +139,11 @@ def reconcile_bhavcopy_with_mii(
     mii_symbols = set(mii_identity)
 
     unknown_symbols = sorted(observed_symbols - mii_symbols)
-
-    if unknown_symbols:
-        raise NSEMIIReconciliationError(
-            "Bhavcopy symbols absent from MII: "
-            + ", ".join(unknown_symbols)
-        )
+    verified_symbols = observed_symbols.intersection(mii_symbols)
 
     mismatches = sorted(
         symbol
-        for symbol in observed_symbols
+        for symbol in verified_symbols
         if observed.loc[
             observed["Symbol"] == symbol, "ISIN"
         ].iloc[0] != mii_identity[symbol]
@@ -159,22 +155,43 @@ def reconcile_bhavcopy_with_mii(
             + ", ".join(mismatches)
         )
 
-    missing_symbols = sorted(mii_symbols - observed_symbols)
+    missing_symbols = sorted(mii_symbols - verified_symbols)
+    verified_observations = observed[
+        observed["Symbol"].isin(verified_symbols)
+    ].copy()
+    unverified_observations = observed[
+        observed["Symbol"].isin(unknown_symbols)
+    ].copy()
 
     coverage_pct = (
-        len(observed_symbols) / len(mii_symbols)
+        len(verified_symbols) / len(mii_symbols)
     ) * 100.0
 
+    identity_status = "REVIEW" if unknown_symbols else "PASS"
+    coverage_status = (
+        "PASS"
+        if not missing_symbols and not unknown_symbols
+        else "REVIEW"
+    )
+
     return {
-        "observations": observed.sort_values("Symbol").reset_index(drop=True),
+        "observations": verified_observations.sort_values(
+            "Symbol"
+        ).reset_index(drop=True),
+        "unverified_observations": unverified_observations.sort_values(
+            "Symbol"
+        ).reset_index(drop=True),
         "observation_date": observation_date.date().isoformat(),
         "mii_snapshot_date": snapshot_date.date().isoformat(),
-        "observed_symbols": len(observed_symbols),
+        "observed_symbols": len(verified_symbols),
+        "raw_observed_symbols": len(observed_symbols),
         "expected_symbols": len(mii_symbols),
+        "unknown_symbols": unknown_symbols,
+        "unknown_count": len(unknown_symbols),
         "missing_symbols": missing_symbols,
         "missing_count": len(missing_symbols),
         "coverage_pct": round(coverage_pct, 4),
-        "identity_status": "PASS",
-        "coverage_status": "PASS" if not missing_symbols else "REVIEW",
-        "reconciliation_status": "PASS" if not missing_symbols else "REVIEW",
+        "identity_status": identity_status,
+        "coverage_status": coverage_status,
+        "reconciliation_status": coverage_status,
     }
