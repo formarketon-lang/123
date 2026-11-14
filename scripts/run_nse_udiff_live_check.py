@@ -105,7 +105,7 @@ def main() -> None:
     )
     raw_mii_response.raise_for_status()
     raw_mii_bytes = raw_mii_response.content
-    if raw_mii_bytes[:2] == b"\\x1f\\x8b":
+    if raw_mii_bytes[:2] == b"\x1f\x8b":
         raw_mii_bytes = gzip.decompress(raw_mii_bytes)
     raw_mii = pd.read_csv(
         BytesIO(raw_mii_bytes),
