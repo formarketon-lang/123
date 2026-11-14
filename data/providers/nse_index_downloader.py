@@ -1,6 +1,6 @@
 """NSE historical index downloader using current NSE API."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -184,6 +184,7 @@ def download_index_history(index_name, start_date, end_date):
     # Keep each NSE request within a maximum 365-calendar-day window.
     # This avoids sending a multi-year range in one API request.
     all_records = []
+    fetched_at_utc = None
     chunk_start = start
 
     while chunk_start <= end:
@@ -198,6 +199,7 @@ def download_index_history(index_name, start_date, end_date):
             chunk_start=chunk_start,
             chunk_end=chunk_end,
         )
+        fetched_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
         all_records.extend(chunk_records)
 
@@ -280,6 +282,7 @@ def download_index_history(index_name, start_date, end_date):
     output["Source"] = "NSE"
     output["Symbol"] = index_name
 
+    output.attrs["fetched_at_utc"] = fetched_at_utc
     return output
 
 
