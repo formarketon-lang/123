@@ -131,6 +131,29 @@ def audit_nse_bhavcopy_provenance(
         schema_reference_url == NSE_UDIFF_SCHEMA_REFERENCE_URL
     )
 
+    raw_schema_verified = False
+    raw_schema_error = None
+    if schema_mapping_verified:
+        try:
+            from data.providers.nse_udiff_downloader import (
+                REQUIRED_RAW_FIELDS,
+            )
+            from data.providers.nse_udiff_bhavcopy import (
+                read_nse_udiff_bhavcopy,
+            )
+
+            raw_frame = read_nse_udiff_bhavcopy(source_bytes)
+            raw_schema_verified = REQUIRED_RAW_FIELDS.issubset(
+                raw_frame.columns
+            )
+            if not raw_schema_verified:
+                raw_schema_error = (
+                    "Live raw header does not contain every approved "
+                    "NSE UDiFF field."
+                )
+        except Exception as exc:
+            raw_schema_error = f"{type(exc).__name__}: {exc}"
+
     audit_reasons = []
 
     if not official_endpoint:
@@ -141,6 +164,8 @@ def audit_nse_bhavcopy_provenance(
 
     if not schema_mapping_verified:
         audit_reasons.append("OFFICIAL_UDIFF_SCHEMA_CONTENT_REVIEW_PENDING")
+    elif not raw_schema_verified:
+        audit_reasons.append("LIVE_RAW_UDIFF_FIELDS_DO_NOT_MATCH_APPROVED_SCHEMA")
 
     if reconciliation["coverage_status"] != "PASS":
         audit_reasons.append(
@@ -213,11 +238,16 @@ def audit_nse_bhavcopy_provenance(
         "coverage_pct": reconciliation["coverage_pct"],
         "identity_status": reconciliation["identity_status"],
         "coverage_status": reconciliation["coverage_status"],
+        "raw_schema_status": (
+            "PASS" if raw_schema_verified else "REVIEW"
+        ),
+        "raw_schema_error": raw_schema_error,
         "schema_mapping_status": (
             "PASS"
             if (
                 official_schema_reference
                 and schema_mapping_verified
+                and raw_schema_verified
             )
             else (
                 "REVIEW_REFERENCE_RECORDED"
