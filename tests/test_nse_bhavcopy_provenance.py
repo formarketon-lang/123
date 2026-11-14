@@ -119,12 +119,16 @@ def test_incomplete_coverage_is_review():
     )
 
 
-def test_identity_mismatch_is_rejected():
+def test_identity_mismatch_is_reported_in_provenance_review():
     bhavcopy = make_bhavcopy()
     bhavcopy.loc[0, "ISIN"] = "INE999Z01010"
 
-    with pytest.raises(ValueError, match="mismatch"):
-        run_audit(bhavcopy=bhavcopy)
+    result = run_audit(bhavcopy=bhavcopy)
+
+    assert result["identity_status"] == "REVIEW"
+    assert result["isin_mismatch_symbols"] == ["AAA"]
+    assert result["isin_mismatch_count"] == 1
+    assert "BHAVCOPY_SYMBOL_ISIN_MISMATCH" in result["audit_reasons"]
 
 
 def test_unknown_symbol_is_reported_in_provenance_review():
