@@ -127,12 +127,18 @@ def test_identity_mismatch_is_rejected():
         run_audit(bhavcopy=bhavcopy)
 
 
-def test_unknown_symbol_is_rejected():
+def test_unknown_symbol_is_reported_in_provenance_review():
     bhavcopy = make_bhavcopy()
     bhavcopy.loc[0, "Symbol"] = "UNKNOWN"
 
-    with pytest.raises(ValueError, match="absent from MII"):
-        run_audit(bhavcopy=bhavcopy)
+    result = run_audit(bhavcopy=bhavcopy)
+
+    assert result["identity_status"] == "REVIEW"
+    assert result["unknown_symbols"] == ["UNKNOWN"]
+    assert result["unknown_count"] == 1
+    assert "BHAVCOPY_SYMBOLS_NOT_PRESENT_IN_DATED_MII" in (
+        result["audit_reasons"]
+    )
 
 
 def test_empty_archive_bytes_are_rejected():
