@@ -30,6 +30,7 @@ def captured_streamlit_calls(monkeypatch):
         "write": [],
         "divider": [],
         "date_input": [],
+        "selectbox": [],
         "button": [],
         "dataframe": [],
     }
@@ -58,6 +59,7 @@ def test_market_intelligence_page_renders_without_error(
     assert calls["info"]
     assert calls["warning"]
     assert calls["date_input"]
+    assert calls["selectbox"]
     assert calls["button"]
 
 
@@ -143,7 +145,9 @@ def test_market_intelligence_calls_service_and_displays_review(
     monkeypatch.setattr(
         st,
         "button",
-        lambda *args, **kwargs: True,
+        lambda label, *args, **kwargs: (
+            label == "Run NSE Market Breadth"
+        ),
     )
     monkeypatch.setattr(
         market_intelligence,
@@ -179,7 +183,9 @@ def test_market_intelligence_handles_service_failure(
     monkeypatch.setattr(
         st,
         "button",
-        lambda *args, **kwargs: True,
+        lambda label, *args, **kwargs: (
+            label == "Run NSE Market Breadth"
+        ),
     )
 
     def fail_service(_):
@@ -218,6 +224,10 @@ def test_market_intelligence_ui_imports_service_not_core_or_data():
         "services.market_intelligence.bhavcopy_service"
         in imported_modules
     )
+    assert (
+        "services.market_intelligence.regime_service"
+        in imported_modules
+    )
 
     assert not any(
         module == "core"
@@ -226,3 +236,61 @@ def test_market_intelligence_ui_imports_service_not_core_or_data():
         or module.startswith("data.")
         for module in imported_modules
     )
+
+
+def test_market_intelligence_calls_regime_service_and_displays_pass(
+    monkeypatch,
+    captured_streamlit_calls,
+):
+    service_calls = []
+
+    monkeypatch.setattr(
+        st,
+        "selectbox",
+        lambda *args, **kwargs: "^NSEI",
+    )
+    monkeypatch.setattr(
+        st,
+        "date_input",
+        lambda *args, **kwargs: date(2026, 11, 13),
+    )
+    monkeypatch.setattr(
+        st,
+        "button",
+        lambda label, *args, **kwargs: (
+            label == "Run NSE Market Regime"
+        ),
+    )
+    monkeypatch.setattr(
+        market_intelligence,
+        "analyze_index_market_regime",
+        lambda symbol, start, end: (
+            service_calls.append((symbol, start, end))
+            or {
+                "analysis_status": "PASS",
+                "index_name": "NIFTY 50",
+                "regime": "BULLISH",
+                "close": 25000.0,
+                "short_sma": 24900.0,
+                "long_sma": 24800.0,
+                "source": "NSE",
+                "fetched_at_utc": "2026-11-13T10:00:00Z",
+                "fallback_reason": "",
+            }
+        ),
+    )
+
+    market_intelligence.render_market_intelligence_page()
+
+    assert service_calls == [
+        (
+            "^NSEI",
+            date(2026, 11, 13),
+            date(2026, 11, 13),
+        )
+    ]
+    assert any(
+        "NIFTY 50 Regime: BULLISH" in str(value)
+        for value in captured_streamlit_calls["success"]
+    )
+    assert "Close: 25000.00" in captured_streamlit_calls["write"]
