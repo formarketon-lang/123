@@ -40,6 +40,7 @@ REQUIRED_RAW_FIELDS = {
     "Src",
     "FinInstrmTp",
     "FinInstrmId",
+    "SsnId",
     "ISIN",
     "TckrSymb",
     "SctySrs",
@@ -138,6 +139,18 @@ def normalize_nse_cm_udiff_equity(
     instrument_type = _text_column(raw_data, "FinInstrmTp")
     series = _text_column(raw_data, "SctySrs")
 
+    # The F filename denotes a final bhavcopy; interim I1/I2 files
+    # must not enter the production daily close series.
+    session_ids = _text_column(raw_data, "SsnId")
+    if (
+        session_ids.isna().any()
+        or session_ids.nunique() != 1
+        or session_ids.iloc[0] not in {"F1", "F2"}
+    ):
+        raise NSEUdiFFDownloadError(
+            "NSE final UDiFF file must contain one F1/F2 session only."
+        )
+
     # Cash-equity only. No FO/CD/COM rows and no non-EQ series.
     mask = (
         segment.eq("CM")
@@ -174,9 +187,19 @@ def normalize_nse_cm_udiff_equity(
         fetched_at_utc=fetched_at_utc,
     )
 
+    instrument_ids = _text_column(equity, "FinInstrmId")
+    if (
+        instrument_ids.isna().any()
+        or not instrument_ids.str.fullmatch(r"\\d+").all()
+        or instrument_ids.duplicated().any()
+    ):
+        raise NSEUdiFFDownloadError(
+            "NSE UDiFF Instrument ID values must be unique numeric identifiers."
+        )
+
     extras = pd.DataFrame({
         "Symbol": _text_column(equity, "TckrSymb"),
-        "Instrument ID": _text_column(equity, "FinInstrmId"),
+        "Instrument ID": instrument_ids,
         "Open": _numeric_column(equity, "OpnPric", "Open", positive=True),
         "High": _numeric_column(equity, "HghPric", "High", positive=True),
         "Low": _numeric_column(equity, "LwPric", "Low", positive=True),
