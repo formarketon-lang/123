@@ -30,11 +30,12 @@ PR: #2 — Draft / Unmerged
 
 ## 2. Latest GitHub Actions verification
 
-Latest PR regression commit: `35ab609c7ae524bc10b18c36b7cf83e412c79c99`.
+Latest PR regression commit: `181423957f28253059c5a41fb792ed7e7f9b917d`.
 
-- TradeLab Pro Tests: **727 passed**, workflow run `43564395698`.
-- Yahoo Adapter Unit Tests: **56 passed**, workflow run `43564395706`.
+- TradeLab Pro Tests: **731 passed**, workflow run `43568642666`.
+- Yahoo Adapter Unit Tests: **56 passed**, workflow run `43568642668`.
 - Both latest PR workflows completed successfully; no failures in these latest runs.
+- The additional two tests validate accurate range-report aggregation and safe handling of absent evidence frames.
 - Earlier failures were found and corrected:
   - Historical live check rejected the official NSE redirect host `nseindia.in`; allowlist now accepts both official NSE domains.
   - Multi-month workflow initially failed due to its trigger/input configuration; the workflow was corrected and a later range run completed successfully.
@@ -143,6 +144,23 @@ Notable coverage exceptions for investigation:
 Daily A-D values and ratios are verified-subset diagnostics only. The cumulative A-D field is null for all 83 dates because non-PASS sessions must not be joined into a verified cumulative series. No incomplete date is promoted to PASS.
 
 A subsequent alignment run (43564379235) was observed IN PROGRESS while this register was updated; it changes the service default to 180 sessions. The reviewed 83-session artifact above already used max_sessions=180 explicitly and covers the complete official session list. Recheck the alignment run before final acceptance.
+
+## 5B. Range report aggregation correction — committed; rerun pending
+
+Artifact 14102646012 from successful workflow run 43565284657 was inspected directly. The new symbol-level reconciliation CSV contains 1,398 rows:
+- 1,110 `MISSING_EXPECTED_MEMBER`
+- 268 `IDENTITY_EXCEPTION` (`SYMBOL_NOT_IN_VERIFIED_MII_UNIVERSE`)
+- 20 `IDENTITY_EXCEPTION_NOT_VERIFIED` (`SYMBOL_ISIN_MISMATCH`)
+
+The coverage CSV independently totals 1,130 missing member-observations and 288 identity exceptions. The 20 ISIN mismatch rows are deliberately represented as not-verified missing rows as well as identity exceptions; the 1,398 detail rows therefore avoid double-counting those 20 symbols.
+
+A report defect was found: `range_verification.json` used a nonexistent top-level `missing_count` and consequently reported zero despite nonzero CSV totals. Corrected:
+- Commit `c4c6e135bd0cdc4a584b17b2214fb745c2b97acb`: JSON summary now derives missing, identity, expected and verified totals from the coverage DataFrame, and emits issue-type counts from the detail CSV.
+- Commit `181423957f28253059c5a41fb792ed7e7f9b917d`: added two tests for aggregate totals and missing-frame behavior.
+- Regression on the test commit: **731 passed** (run `43568642666`); Yahoo Adapter **56 passed** (run `43568642668`).
+- Corrected range rerun: workflow run `43568626542` on script-fix commit `c4c6e135bd0cdc4a584b17b2214fb745c2b97acb`; last observed IN PROGRESS. Its final JSON/CSV artifact must be inspected before this correction is accepted.
+
+The reconciliation output remains evidence, not automatic authorization to approve any symbol. Unknown MII symbols and ISIN mismatches require source-level resolution.
 
 ## 6. Remaining acceptance conditions
 
