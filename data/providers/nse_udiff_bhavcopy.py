@@ -148,7 +148,7 @@ def normalize_nse_udiff_equity_bhavcopy(
     data: pd.DataFrame,
     column_map: dict[str, str],
     *,
-    fetched_at_utc,
+    fetched_at_utc=None,
 ) -> pd.DataFrame:
     """Normalize UDiFF data using a verified map and actual fetch time."""
 
