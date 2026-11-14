@@ -298,10 +298,11 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-03-IMPLEMENTED-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-03-REGRESSION-PASS`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
+- Step 03 status: REGRESSION PASS; feature branch remains unmerged.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
 - Step 03 full TradeLab Pro regression: PASS — 626 tests.
 - Step 03 Yahoo Adapter regression: PASS — 56 tests.
