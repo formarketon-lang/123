@@ -73,6 +73,7 @@ def test_normalizes_official_nse_cm_udiff_iso_tags():
     )
 
     assert result["Symbol"].tolist() == ["AAA", "BBB", "CCC"]
+    assert result["Instrument ID"].tolist() == ["1", "2", "3"]
     assert result["ISIN"].tolist() == [
         "INE000A01010",
         "INE000B01010",
