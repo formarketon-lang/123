@@ -112,7 +112,12 @@ def classify_historical_daily_advance_decline(history: dict[str, Any]) -> dict:
                     f"{label} must be a non-negative integer for {day_key}."
                 )
 
-        if expected < 1 or verified > expected or missing > expected:
+        if (
+            expected < 1
+            or verified > expected
+            or missing > expected
+            or verified + missing != expected
+        ):
             raise AdvanceDeclineClassificationError(
                 f"Universe counts are inconsistent for {day_key}."
             )
@@ -144,9 +149,15 @@ def classify_historical_daily_advance_decline(history: dict[str, Any]) -> dict:
             )
 
         coverage = float(item.get("coverage_pct")) if item.get("coverage_pct") is not None else None
-        if coverage is not None and (not pd.notna(coverage) or not 0 <= coverage <= 100):
+        expected_coverage = (verified / expected) * 100.0
+        if (
+            coverage is None
+            or not pd.notna(coverage)
+            or not 0 <= coverage <= 100
+            or abs(coverage - expected_coverage) > 1e-6
+        ):
             raise AdvanceDeclineClassificationError(
-                f"Coverage percentage is invalid for {day_key}."
+                f"Coverage percentage is invalid or inconsistent for {day_key}."
             )
 
         final_status = (
