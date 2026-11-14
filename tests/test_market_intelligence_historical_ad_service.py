@@ -91,7 +91,37 @@ def test_service_exposes_symbol_level_reconciliation_details(monkeypatch):
                             "reason": "SYMBOL_NOT_IN_VERIFIED_MII_UNIVERSE",
                         },
                     ],
-                }
+                },
+                "universe": pd.DataFrame([
+                    {
+                        "Symbol": "MISSING1",
+                        "ISIN": "IN0000000011",
+                        "Instrument ID": "101",
+                        "Series": "EQ",
+                        "Company": "Missing Company",
+                    },
+                    {
+                        "Symbol": "MISMATCH1",
+                        "ISIN": "IN0000000002",
+                        "Instrument ID": "202",
+                        "Series": "EQ",
+                        "Company": "Mismatch Company",
+                    },
+                ]),
+                "normalized": pd.DataFrame([
+                    {
+                        "Symbol": "MISMATCH1",
+                        "ISIN": "IN0000000001",
+                        "Instrument ID": "202",
+                        "Series": "EQ",
+                    },
+                    {
+                        "Symbol": "UNKNOWN1",
+                        "ISIN": "IN0000000003",
+                        "Instrument ID": "303",
+                        "Series": "EQ",
+                    },
+                ]),
             },
         }
     ]
@@ -112,11 +142,20 @@ def test_service_exposes_symbol_level_reconciliation_details(monkeypatch):
     assert len(details) == 3
     missing = details.loc[details["symbol"] == "MISSING1"].iloc[0]
     assert missing["issue_type"] == "MISSING_EXPECTED_MEMBER"
+    assert missing["mii_isin"] == "IN0000000011"
+    assert missing["mii_instrument_id"] == "101"
+    assert missing["mii_company"] == "Missing Company"
     mismatch = details.loc[details["symbol"] == "MISMATCH1"].iloc[0]
     assert mismatch["issue_type"] == "IDENTITY_EXCEPTION_NOT_VERIFIED"
     assert mismatch["reason"] == "SYMBOL_ISIN_MISMATCH"
+    assert mismatch["mii_isin"] == "IN0000000002"
+    assert mismatch["observed_isin"] == "IN0000000001"
+    assert mismatch["observed_instrument_id"] == "202"
     unknown = details.loc[details["symbol"] == "UNKNOWN1"].iloc[0]
     assert unknown["issue_type"] == "IDENTITY_EXCEPTION"
+    assert unknown["observed_instrument_id"] == "303"
+    assert unknown["observed_series"] == "EQ"
+
 
 def test_service_preserves_unavailable_retrieval_status(monkeypatch):
     history = fake_history()
