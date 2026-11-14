@@ -34,7 +34,7 @@ The following existing modules are the starting point:
 - `data/constituent_audit.py`
 - `data/market_intelligence/index_service.py`
 - `data/providers/nse_udiff_bhavcopy.py`
-- `data/providers/nse_udiff_ingestion.py`
+
 
 Existing standardized fields include Date, Open, High, Low,
 Close, Volume, Symbol, Source, Exchange, Timeframe and
@@ -43,11 +43,12 @@ Fallback Reason.
 Market Intelligence index and breadth services additionally
 validate Fetched At UTC and Validation Status.
 
-The UDiFF ingestion caller retrieves the dated CM archive from
-the NSE archive host, captures the completed-response timestamp,
-normalizes only through an explicitly supplied column map, and
-runs the existing archive/MII provenance audit. It does not
-invent a default field mapping or claim source authenticity.
+The canonical production path is `data/providers/nse_udiff_downloader.py`.
+It retrieves the dated NSE CM UDiFF ZIP, checks the HTTPS archive host,
+validates ZIP integrity, filters CM / NSE / STK / EQ rows, normalizes
+explicit ISO-tag fields, captures the actual response timestamp,
+retains raw bytes and SHA-256, and reports schema mapping as REVIEW
+until the official workbook evidence is archived and independently checked.
 
 ## 3. Source Priority
 
@@ -103,10 +104,13 @@ Current implementation review:
   and all six configured NSE index/sector benchmarks.
 - NSE UDiFF normalizer requires an explicit timezone-aware
   fetched_at_utc argument and emits Fetched At UTC.
-- Production UDiFF retrieval caller now captures the actual
-  successful HTTP-response time, preserves the original archive
-  bytes for SHA-256 audit, and reconciles normalized identities
-  against the dated MII universe.
+- `nse_udiff_downloader.py` captures the actual response timestamp,
+  checks official archive host and ZIP structure, retains raw bytes,
+  computes SHA-256, and filters NSE CM STK EQ cash-equity rows.
+- Its explicit field map includes TradDt, TckrSymb, ISIN, SctySrs,
+  PrvsClsgPric, ClsPric, OpnPric, HghPric, LwPric and TtlTradgVol.
+- Code-level mapping is present; official workbook field-by-field
+  evidence has not yet been archived in this repository.
 
 The standard NSE Equity/Index timestamp handoff is verified.
 The UDiFF retrieval and normalization caller is implemented,
@@ -319,18 +323,22 @@ Current decision: REVIEW — NOT APPROVED.
 
 Remaining verification items:
 
-1. Obtain and archive the official NSE CM UDiFF format
-   specification/readme and independently verify every raw field
-   used by the production column map.
+1. Archive the official NSE CM UDiFF format workbook and record
+   a field-by-field evidence matrix for the production ISO tags.
+   NSE publishes the CM Bhavcopy format workbook at:
+   https://www.nseindia.com/static/resources/forms-formats-members
+   (UDiFF Report Name: Bhavcopy File; Segment: CM; File Format).
 2. Verify archive authenticity and live retrieval evidence
-   independently; an HTTPS download and SHA-256 hash alone do
-   not prove exchange-origin authenticity.
-3. Run the new ingestion tests and full repository regression.
+   independently; HTTPS host validation and SHA-256 alone do not
+   prove exchange-origin authenticity.
+3. Run the existing UDiFF downloader tests and full repository
+   regression. Current PR run has 6 failures / 595 passes; the
+   downloader validation exception class is being corrected.
 4. Complete navigation integration and final acceptance evidence.
 
-The production caller does not enable itself or activate the
-Market Intelligence UI. A reviewed official mapping must be
-supplied explicitly; test fixtures are not production mappings.
+The canonical downloader remains schema_mapping_status REVIEW
+until the official workbook has been archived and reviewed. The
+Market Intelligence UI is not activated by this change.
 
 CH01 STATUS: NOT ACCEPTED  
 CH02 STATUS: NOT STARTED
