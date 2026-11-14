@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–06 VERIFIED; STEP 07 IMPLEMENTED; CI PENDING  
+Status: CHAPTER PLAN DRAFT — STEPS 01–07 VERIFIED; STEP 08 IN PROGRESS  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -294,7 +294,7 @@ Exit: implementation and 18 test cases committed to the draft feature branch; Gi
 
 ### STEP 07 — Cumulative A-D Line
 
-Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+Status: PASS — FULL REGRESSION VERIFIED
 
 Implementation:
 - Added `core/market_intelligence/cumulative_ad_line.py`.
@@ -316,7 +316,7 @@ Limitations:
 - A missing date can only be identified when it is present in the supplied expected-session calendar.
 - No live historical date range or UI integration is claimed.
 
-Exit: implementation and 15 test cases committed to the draft feature branch; GitHub Actions verification pending.
+Exit: implementation and 15 test cases pass in GitHub Actions; TradeLab Pro full regression 687 passed and Yahoo Adapter workflow PASS.
 
 ### STEP 08 — Core Analysis Module
 - Implement pure calculations only; no network or Streamlit imports.
@@ -378,7 +378,7 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-07-CUMULATIVE-AD-LINE-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-08-CORE-ANALYSIS-IN-PROGRESS`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
