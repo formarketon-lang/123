@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–08 VERIFIED; STEP 09 IMPLEMENTED; CI PENDING  
+Status: CHAPTER PLAN DRAFT — STEPS 01–09 VERIFIED; STEP 10 IN PROGRESS  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -345,7 +345,7 @@ Exit: implementation and 12 focused tests pass in GitHub Actions; TradeLab Pro f
 
 ### STEP 09 — Market Intelligence Service
 
-Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+Status: PASS — FULL REGRESSION VERIFIED
 
 Implementation:
 - Added `services/market_intelligence/historical_ad_service.py`.
@@ -365,7 +365,7 @@ Limitations:
 - Existing historical retrieval is NSE UDiFF + dated MII; no Yahoo membership substitution or second downloader.
 - No live historical date-range run or Streamlit UI integration is claimed.
 
-Exit: implementation and 10 focused test cases committed to the draft feature branch; GitHub Actions verification pending.
+Exit: implementation and 10 focused test cases pass in GitHub Actions; TradeLab Pro full regression 708 passed and Yahoo Adapter workflow PASS.
 
 ### STEP 10 — UI Integration
 - Add Historical Advance / Decline view to the existing Market Intelligence page.
@@ -414,7 +414,7 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-09-SERVICE-INTEGRATION-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-10-UI-INTEGRATION-IN-PROGRESS`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
