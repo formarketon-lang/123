@@ -23,6 +23,18 @@ NSE_UDIFF_BHAVCOPY_URL_TEMPLATE = (
     "BhavCopy_NSE_CM_0_0_0_{yyyymmdd}_F_0000.csv.zip"
 )
 
+NSE_UDIFF_SCHEMA_WORKBOOK_URL = (
+    "https://nsearchives.nseindia.com/web/mediaattachment/2026-06/"
+    "UDiFF_trade_and_Bhavcopy_file_formats_20260630115803.xlsx"
+)
+NSE_UDIFF_SCHEMA_WORKBOOK_SHA256 = (
+    "b9f2fa369af20381374cdb40c3ebc96c43029401e057225599cfe63b288ba3e8"
+)
+NSE_UDIFF_SCHEMA_SAMPLE_SHA256 = (
+    "786a5ae1329f27a4f08af794737cb380e82de6a53db6751b518d2309512130fa"
+)
+NSE_UDIFF_SCHEMA_MAPPING_VERIFIED = True
+
 # ISO-tag mapping used by the NSE CM UDiFF Bhavcopy.
 # Keep this map isolated and require the exact expected raw tags.
 NSE_CM_UDIFF_EQUITY_COLUMN_MAP = {
@@ -334,5 +346,5 @@ def download_nse_cm_udiff_equity_bhavcopy(
         "fetched_at_utc": fetched_at_utc,
         "observation_date": parsed_date.isoformat(),
         "sha256": hashlib.sha256(source_bytes).hexdigest(),
-        "schema_mapping_status": "REVIEW",
+        "schema_mapping_status": "PASS",
     }
