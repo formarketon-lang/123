@@ -3,6 +3,17 @@ name: TLP MIM CH02 Multi-Month Historical A-D Range Verification
 on:
   workflow_dispatch:
     inputs:
+  push:
+    branches:
+      - ch02-advance-decline-plan
+    paths:
+      - "scripts/run_ch02_historical_ad_range_check.py"
+      - "services/market_intelligence/historical_ad_service.py"
+      - "services/market_intelligence/historical_observation_service.py"
+      - "data/providers/nse_trading_calendar.py"
+      - "data/providers/nse_universe.py"
+      - "data/providers/nse_udiff_downloader.py"
+      - ".github/workflows/ch02-historical-ad-range-check.yml"
       calendar_days:
         description: "Calendar-day lookback (30–370)"
         required: true
