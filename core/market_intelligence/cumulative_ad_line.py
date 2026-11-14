@@ -7,7 +7,8 @@ a new segment from the configured initial anchor.
 
 from __future__ import annotations
 
-from numbers import Integral
+from numbers import Integral, Real
+import math
 from typing import Any, Iterable
 
 import pandas as pd
@@ -111,7 +112,12 @@ def calculate_cumulative_ad_line(
             continue
 
         difference = item["ad_difference"]
-        if not isinstance(difference, Integral) or isinstance(difference, bool):
+        if (
+            isinstance(difference, bool)
+            or not isinstance(difference, Real)
+            or not math.isfinite(float(difference))
+            or not float(difference).is_integer()
+        ):
             raise CumulativeADLineError(
                 f"PASS session requires an integer A-D difference for {day}."
             )
