@@ -186,11 +186,31 @@ Before Step 02 can be marked fully PASS, tests must cover:
 Step 02 result: contract documented. This is a specification milestone only; no production implementation or test suite is claimed complete. The exact-date rule is consistent with the current single-date MII reconciliation, while publication-time availability and multi-date orchestration remain implementation gaps for later steps.
 
 ### STEP 03 — Historical Observation Retrieval
-- Reuse existing NSE UDiFF downloader and Bhavcopy service.
-- Retrieve only requested NSE CM / STK / EQ observations.
-- Preserve archive hash and actual fetch timestamp per date.
-- Test retrieval failure, corrupt archive, wrong trade date and source provenance.
-- Exit: validated date-indexed observations.
+
+Status: IMPLEMENTED ON FEATURE BRANCH — AUTOMATED TESTS PENDING
+
+Implementation:
+- Added `services/market_intelligence/historical_observation_service.py`.
+- Reuses the existing `analyze_nse_market_breadth_from_udiff` production service once per requested date.
+- Sorts dates chronologically and rejects empty input, malformed dates, duplicate dates and a single string passed instead of an iterable.
+- Keeps each date's NSE Bhavcopy source URL, archive filename, SHA-256, actual fetch timestamp, MII snapshot date, coverage and identity counts.
+- Retains per-date verified and unverified observations separately.
+- Records a failed date as `UNAVAILABLE` and continues to the next requested date; no previous/next date data or MII universe is carried over.
+- Aggregates verified observations in date/Symbol order and exposes a per-date summary table.
+
+Tests added:
+- `tests/test_market_intelligence_historical_observation_service.py`
+- Covers date sorting, malformed/empty/duplicate input, per-date provenance, failure isolation, REVIEW propagation and no cross-date reuse.
+- The parameterized invalid-date test contributes five input cases.
+
+Limitations and safety:
+- This step retrieves historical NSE observations only; it does not calculate the A/D series.
+- The existing single-date service remains responsible for same-date NSE MII validation and UDiFF provenance audit.
+- The current MII fetcher does not expose the raw MII archive SHA-256 / fetch timestamp in its returned DataFrame; this remains an evidence gap and must not be claimed complete by this step.
+- No live historical date range has been executed in this step.
+- No production UI or Main branch change.
+
+Exit: implementation and focused tests are committed to the Chapter 02 draft branch; automated workflow result is pending.
 
 ### STEP 04 — Prior-Session Price Validation
 - Validate Previous Close and Current Close for each eligible identity.
