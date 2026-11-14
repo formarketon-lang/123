@@ -14,7 +14,10 @@ import streamlit as st
 from services.market_intelligence.bhavcopy_service import (
     analyze_nse_market_breadth_from_udiff,
 )
-from services.market_intelligence.historical_ad_service import (\n    analyze_nse_historical_advance_decline,\n)\nfrom services.market_intelligence.regime_service import (
+from services.market_intelligence.historical_ad_service import (
+    analyze_nse_historical_advance_decline,
+)
+from services.market_intelligence.regime_service import (
     SUPPORTED_NSE_INDEXES,
     analyze_index_market_regime,
 )
