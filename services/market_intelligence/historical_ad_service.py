@@ -84,6 +84,7 @@ def analyze_nse_historical_advance_decline_for_range(
     end_date,
     *,
     initial_anchor: int = 0,
+    max_sessions: int = 60,
     session=None,
 ) -> dict:
     """Discover official NSE CM sessions and analyze the bounded date range.
@@ -92,6 +93,15 @@ def analyze_nse_historical_advance_decline_for_range(
     and holiday exceptions are included only when an official final UDiFF
     archive is successfully downloaded and validated.
     """
+    if (
+        not isinstance(max_sessions, int)
+        or isinstance(max_sessions, bool)
+        or max_sessions < 1
+    ):
+        raise HistoricalADServiceError(
+            "max_sessions must be a positive integer."
+        )
+
     calendar = discover_nse_cm_trading_sessions(
         start_date,
         end_date,
@@ -133,8 +143,9 @@ def analyze_nse_historical_advance_decline_for_range(
             "retrieval_summary": pd.DataFrame(),
         }
 
+    selected_sessions = calendar["session_dates"][-max_sessions:]
     result = analyze_nse_historical_advance_decline(
-        calendar["session_dates"],
+        selected_sessions,
         initial_anchor=initial_anchor,
         session=session,
     )
@@ -142,5 +153,7 @@ def analyze_nse_historical_advance_decline_for_range(
         **result,
         "calendar_status": calendar["calendar_status"],
         "calendar_provenance": calendar,
-        "session_count": len(calendar["session_dates"]),
+        "session_count": len(selected_sessions),
+        "calendar_session_count": len(calendar["session_dates"]),
+        "analyzed_session_dates": selected_sessions,
     }
