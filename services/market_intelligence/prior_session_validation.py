@@ -65,6 +65,7 @@ def validate_prior_session_prices(
     observations: pd.DataFrame,
     trading_sessions: Iterable,
     *,
+    observation_dates: Iterable,
     calendar_verified: bool,
     calendar_source: str | None,
     tolerance: float = PRICE_TOLERANCE,
@@ -78,7 +79,9 @@ def validate_prior_session_prices(
     - UNAVAILABLE: calendar evidence or an entire prior-session observation
       is unavailable. No weekday-based fallback is attempted.
 
-    Include one warm-up NSE session before the first date to be validated.
+    Include one warm-up NSE session before the first date to be validated,
+    and pass only dates whose Previous Close values should be checked in
+    observation_dates. Warm-up rows are not themselves validated.
     The supplied calendar must cover every observation date and its prior
     NSE session. A source label alone is not proof; calendar_verified must
     be set only after the caller has independently checked official evidence.
@@ -106,9 +109,10 @@ def validate_prior_session_prices(
         )
 
     calendar = _normalize_dates(trading_sessions)
+    targets = _normalize_dates(observation_dates)
     source = str(calendar_source or "").strip()
 
-    if not calendar_verified or not source or not calendar:
+    if not calendar_verified or not source or not calendar or not targets:
         return {
             "analysis_status": "UNAVAILABLE",
             "calendar_status": "UNVERIFIED",
@@ -161,12 +165,19 @@ def validate_prior_session_prices(
         )
 
     calendar_index = {day: index for index, day in enumerate(calendar)}
-    observation_dates = sorted(data["Date"].unique())
+    if not set(targets).issubset(set(calendar)):
+        raise PriorSessionValidationError(
+            "Requested observation dates must exist in the verified NSE calendar."
+        )
+    if not set(targets).issubset(set(data["Date"])):
+        raise PriorSessionValidationError(
+            "Requested observation dates are missing from historical observations."
+        )
+
     symbol_rows = []
     date_rows = []
 
-    for current_value in observation_dates:
-        current_date = pd.Timestamp(current_value).normalize()
+    for current_date in targets:
         index = calendar_index[current_date]
         current = data.loc[data["Date"].eq(current_date)].copy()
 
@@ -202,11 +213,11 @@ def validate_prior_session_prices(
         previous_by_symbol = previous.set_index("Symbol", drop=False)
         previous_by_isin = previous.set_index("ISIN", drop=False)
 
-        for row in current.itertuples(index=False):
-            symbol = str(row.Symbol)
-            isin = str(row.ISIN)
-            reported_previous = getattr(row, "_4")
-            current_close = getattr(row, "_5")
+        for _, row in current.iterrows():
+            symbol = str(row["Symbol"])
+            isin = str(row["ISIN"])
+            reported_previous = float(row["Previous Close"])
+            current_close = float(row["Current Close"])
             status = "PASS"
             reason = "Previous Close matches prior NSE session Close."
             prior_close = np.nan
