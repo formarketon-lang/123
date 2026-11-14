@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–10 VERIFIED; STEP 11 LIVE VERIFICATION IN PROGRESS  
+Status: STEP 01–11 TECHNICAL VERIFICATION COMPLETE; CHAPTER ACCEPTANCE HELD FOR REVIEW CONDITIONS  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -384,23 +384,28 @@ Exit: Step 10 implementation and regression verified.
 
 ### STEP 11 — Final Verification and Acceptance
 
-Status: LIVE VERIFICATION WORKFLOW ADDED — ACTIONS PENDING
+Status: PASS WITH LIVE REVIEW CONDITION — GITHUB ACTIONS VERIFIED
 
-- Added `scripts/run_ch02_historical_ad_live_check.py`.
-- Added `.github/workflows/ch02-historical-ad-live-check.yml`.
-- Searches a bounded recent window for the latest available official NSE session, then calls the production historical A/D service for that date.
-- Candidate weekdays are only attempts; official NSE source availability determines the usable session.
-- Produces JSON, daily metrics, coverage, provenance and NSE retrieval-summary artifacts.
-- REVIEW remains REVIEW; BLOCKED fails the live gate; no source result is promoted.
-- Workflow runs on relevant feature-branch pushes and supports manual dispatch.
+Implementation:
+- Added `scripts/run_ch02_historical_ad_live_check.py` and `.github/workflows/ch02-historical-ad-live-check.yml`.
+- Latest full TradeLab Pro regression: **714 passed**.
+- Latest Yahoo Adapter regression: **56 passed**.
+- Live NSE verification workflow completed successfully; run `43561818820`; evidence artifact uploaded and reviewed.
+- Official NSE CM Bhavcopy date: 2026-11-13; dated MII snapshot also 2026-11-13.
+- Bhavcopy archive SHA-256: `758ec3b60fd492a29ff3ebc6c069269bc326dc5ca662cfba8892f16939841b7b`.
+- Fetched at UTC: `2026-11-14T05:30:35.075915Z`.
+- Expected universe 2,762; verified 2,742; missing 20; identity exceptions 2; coverage 99.2759%.
+- Verified-subset daily counts: Advancing 938, Declining 1,776, Unchanged 28; A-D Difference -838; A/D Ratio 0.5281531532.
+- Live data status is **REVIEW**, not PASS. The 2,742 verified observations reconcile; the 20 missing members and 2 identity exceptions keep the full date in REVIEW. Cumulative A-D is not emitted for this REVIEW session.
+- Added formal register: `docs/architecture/market_intelligence_ch02_acceptance_register.md`.
 
-Pending:
-- Review live NSE Actions result and uploaded artifact.
-- Review latest full TradeLab Pro and Yahoo regressions for Step 11 commits.
-- One-session smoke test does not constitute multi-month historical-range validation.
-- Official NSE calendar automation and MII raw archive hash/fetch timestamp evidence remain separate limitations.
+Acceptance conditions still open:
+- Official NSE calendar retrieval/authentication is not implemented; verified sessions remain caller-supplied.
+- Only a one-session live smoke test has been run; multi-month historical-range verification remains pending.
+- Raw dated MII archive SHA-256 and fetch timestamp are not yet exposed in the production historical service.
+- Step 02's 12 cases remain a documented contract matrix, not 12 automated tests.
 
-Exit: Step 11 is not PASS until live evidence and latest regression are reviewed.
+Exit: Step 11 technical verification PASS with explicit live REVIEW condition. Chapter 02 is not marked fully accepted until the open point-in-time evidence gaps are closed or explicitly approved as review conditions.
 
 ### STEP 11 — Final Verification and Acceptance
 - Run focused Chapter 02 tests.
@@ -441,25 +446,29 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-LIVE-VERIFICATION-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-VERIFIED-REVIEW-CONDITIONS`
 
-- Chapter 01: ACCEPTED WITH REVIEW CONDITIONS; separate from Chapter 02.
-- Steps 01–02: inventory and point-in-time universe contract documented; Step 02's 12 cases are a specification matrix, not automated tests.
-- Steps 03–05: historical retrieval, prior-session validation and daily classification implemented; earlier regression checkpoints recorded in their step sections.
+- Chapter 01: ACCEPTED WITH REVIEW CONDITIONS; remains separate.
+- Steps 01–02: inventory and point-in-time universe contract documented. Step 02's 12 cases are a contract matrix, not 12 automated tests.
+- Steps 03–05: historical retrieval, prior-session validation and daily classification implemented and regression-tested.
 - Step 06: A-D Difference and A/D Ratio — PASS; 17 focused cases.
 - Step 07: Cumulative A-D Line — PASS; 15 focused cases.
-- Step 08: Core Analysis — PASS; 12 focused cases; earlier full regression 699 passed.
-- Step 09: Historical A/D Service — PASS; 10 focused cases; earlier full regression 708 passed.
-- Step 10: UI Integration — PASS; 4 focused tests; TradeLab Pro 712 passed; Yahoo Adapter PASS.
-- Step 11: live NSE script and workflow committed; live Actions and evidence review pending.
-- Step 11 latest commit: `6c963904d9d46652db38087ff293dfc8b755a011`.
-- Latest full regression for Step 11 commits must be reviewed; previous 712 result is not a substitute.
-- Official NSE calendar automation: NOT IMPLEMENTED; caller-supplied verified sessions remain required.
+- Step 08: Core Analysis — PASS; 12 focused cases.
+- Step 09: Historical A/D Service — PASS; 10 focused cases.
+- Step 10: UI Integration — PASS; 4 focused UI tests.
+- Step 11: technical verification PASS WITH LIVE REVIEW CONDITION.
+- Latest TradeLab Pro full regression: **714 passed**.
+- Latest Yahoo Adapter regression: **56 passed**.
+- Live NSE workflow: run `43561818820`, PASS as a workflow; selected date 2026-11-13 has data status REVIEW.
+- Live NSE evidence: 2,762 expected; 2,742 verified; 20 missing; 2 identity exceptions; coverage 99.2759%; A=938, D=1,776, U=28; A-D=-838; A/D=0.5281531532.
+- Bhavcopy SHA-256: `758ec3b60fd492a29ff3ebc6c069269bc326dc5ca662cfba8892f16939841b7b`; fetched 2026-11-14T05:30:35.075915Z; MII snapshot date 2026-11-13.
+- Formal acceptance register: `docs/architecture/market_intelligence_ch02_acceptance_register.md`.
+- Official NSE calendar automation: NOT IMPLEMENTED; caller-supplied verified sessions required.
 - Multi-month historical-range live validation: NOT RUN.
 - MII raw archive SHA-256 / fetch timestamp exposure: REMAINS AN EVIDENCE GAP.
 - Sector Mapping Expansion: OFF. BSE: DISABLED. F&O Scanner: EXCLUDED.
 - PR #2: DRAFT / UNMERGED; Main branch unchanged.
 
-This is an in-progress acceptance checkpoint. Chapter 02 is not accepted until Step 11 live evidence and latest regression are reviewed.
+Chapter 02 is technically verified through Step 11 but is not declared fully accepted while point-in-time evidence gaps remain open. The live date is REVIEW, not a full-universe PASS.
 
 End of Chapter 02 Plan.
