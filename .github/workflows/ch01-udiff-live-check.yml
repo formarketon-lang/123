@@ -1,0 +1,49 @@
+name: TLP CH01 NSE UDiFF Live Verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "data/providers/nse_udiff_downloader.py"
+      - "data/providers/nse_bhavcopy_mii_validation.py"
+      - "data/providers/nse_bhavcopy_provenance.py"
+      - "data/providers/nse_udiff_bhavcopy.py"
+      - "data/providers/nse_universe.py"
+      - "scripts/run_nse_udiff_live_check.py"
+      - ".github/workflows/ch01-udiff-live-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  live-udiff-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run official NSE UDiFF live verification
+        run: |
+          python scripts/run_nse_udiff_live_check.py
+
+      - name: Upload NSE UDiFF audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tlp-ch01-nse-udiff-live-audit
+          path: artifacts/nse_udiff_live/
+          if-no-files-found: warn
+          retention-days: 14
