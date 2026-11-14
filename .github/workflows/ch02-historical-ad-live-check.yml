@@ -46,7 +46,7 @@ jobs:
 
       - name: Upload Chapter 02 live evidence
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: tlp-mim-ch02-historical-ad-live-evidence
           path: artifacts/ch02_historical_ad_live/
