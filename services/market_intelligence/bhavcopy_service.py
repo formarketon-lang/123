@@ -125,8 +125,10 @@ def analyze_nse_market_breadth_from_udiff(
         schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
     )
 
+    verified_observations = reconciliation["observations"]
+
     breadth = analyze_nse_market_breadth(
-        stock_data=normalized,
+        stock_data=verified_observations,
         verified_universe=verified_universe,
         observation_date=parsed_date.isoformat(),
     )
@@ -134,7 +136,8 @@ def analyze_nse_market_breadth_from_udiff(
     overall_status = (
         "PASS"
         if (
-            reconciliation["coverage_status"] == "PASS"
+            reconciliation["identity_status"] == "PASS"
+            and reconciliation["coverage_status"] == "PASS"
             and audit["audit_status"] == "PASS"
             and breadth["analysis_status"] == "PASS"
         )
@@ -150,6 +153,10 @@ def analyze_nse_market_breadth_from_udiff(
         "fetched_at_utc": downloaded["fetched_at_utc"],
         "observation_date": parsed_date.isoformat(),
         "normalized": normalized,
+        "verified_observations": verified_observations,
+        "unverified_observations": reconciliation[
+            "unverified_observations"
+        ],
         "universe": verified_universe,
         "reconciliation": reconciliation,
         "audit": audit,
