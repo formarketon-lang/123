@@ -15,6 +15,10 @@ from services.market_intelligence.historical_observation_service import (
     retrieve_nse_historical_observations,
 )
 
+from data.providers.nse_trading_calendar import (
+    discover_nse_cm_trading_sessions,
+)
+
 
 class HistoricalADServiceError(ValueError):
     """Raised when the historical A/D service request is invalid."""
@@ -70,4 +74,71 @@ def analyze_nse_historical_advance_decline(
         "retrieval_summary": history["summary"],
         "requested_sessions": history["requested_dates"],
         "source_observation_count": history["date_count"],
+    }
+
+
+def analyze_nse_historical_advance_decline_for_range(
+    start_date,
+    end_date,
+    *,
+    initial_anchor: int = 0,
+    session=None,
+) -> dict:
+    """Discover official NSE CM sessions and analyze the bounded date range.
+
+    Regular sessions come from the official NSE CM holiday master. Weekend
+    and holiday exceptions are included only when an official final UDiFF
+    archive is successfully downloaded and validated.
+    """
+    calendar = discover_nse_cm_trading_sessions(
+        start_date,
+        end_date,
+        session=session,
+    )
+    if calendar["calendar_status"] != "PASS":
+        return {
+            "analysis_status": "UNAVAILABLE",
+            "retrieval_status": "UNAVAILABLE",
+            "calendar_status": calendar["calendar_status"],
+            "calendar_provenance": calendar,
+            "date_count": 0,
+            "pass_count": 0,
+            "review_count": 0,
+            "blocked_count": 0,
+            "unavailable_count": 0,
+            "missing_count": 0,
+            "per_date_status": __import__("pandas").DataFrame(),
+            "coverage": __import__("pandas").DataFrame(),
+            "provenance": __import__("pandas").DataFrame(),
+            "retrieval_summary": __import__("pandas").DataFrame(),
+        }
+
+    if not calendar["session_dates"]:
+        return {
+            "analysis_status": "UNAVAILABLE",
+            "retrieval_status": "UNAVAILABLE",
+            "calendar_status": "PASS",
+            "calendar_provenance": calendar,
+            "date_count": 0,
+            "pass_count": 0,
+            "review_count": 0,
+            "blocked_count": 0,
+            "unavailable_count": 0,
+            "missing_count": 0,
+            "per_date_status": __import__("pandas").DataFrame(),
+            "coverage": __import__("pandas").DataFrame(),
+            "provenance": __import__("pandas").DataFrame(),
+            "retrieval_summary": __import__("pandas").DataFrame(),
+        }
+
+    result = analyze_nse_historical_advance_decline(
+        calendar["session_dates"],
+        initial_anchor=initial_anchor,
+        session=session,
+    )
+    return {
+        **result,
+        "calendar_status": calendar["calendar_status"],
+        "calendar_provenance": calendar,
+        "session_count": len(calendar["session_dates"]),
     }
