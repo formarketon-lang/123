@@ -98,11 +98,23 @@ Current implementation review:
   and all six configured NSE index/sector benchmarks.
 - NSE UDiFF normalizer requires an explicit timezone-aware
   fetched_at_utc argument and emits Fetched At UTC.
+- A production NSE CM UDiFF downloader now retrieves the official
+  final archive over HTTPS, records the actual response retrieval
+  timestamp and SHA-256, validates the raw ISO tags, and normalizes
+  only NSE / CM / STK / EQ rows.
+- A production Bhavcopy service requires an exact-date MII_DATED
+  universe, reconciles Symbol + ISIN, excludes unverified rows from
+  breadth calculations, and preserves identity exceptions.
+- Live 13-Nov-2026 UDiFF data parsed successfully. The live identity
+  audit exposed DCMFINSERV as not eligible for Normal Market and a
+  BNAGROCHEM Symbol/ISIN mismatch. Both are excluded from verified
+  breadth observations and remain REVIEW.
 
 The standard NSE Equity/Index timestamp handoff is verified.
-A production NSE UDiFF ingestion caller has not yet been
-implemented or verified. Test-only timestamps are fixtures
-and must never be used as production data.
+The production UDiFF downloader and service are implemented, but
+official workbook field-sheet review and live identity exception
+resolution remain open. Test-only timestamps are fixtures and
+must never be used as production data.
 
 ## 5. Analysis Data Requirements
 
@@ -302,10 +314,15 @@ A UI shell alone does not authorize activation.
 
 Current decision: REVIEW — NOT APPROVED.
 
-Open verification item:
-Implement and verify the production NSE UDiFF ingestion path,
-including official raw-field mapping, response retrieval timestamp
-capture, normalization, provenance preservation and audit coverage.
+Open verification items:
+1. Independently inspect the exact Bhavcopy sheet and sample headers
+   in the official NSE UDiFF format workbook; approve the production
+   ISO-tag mapping only after field-by-field confirmation.
+2. Resolve or formally document the live DCMFINSERV Normal Market
+   eligibility exception and BNAGROCHEM ISIN mismatch. Do not
+   substitute identifiers or include either row in verified breadth.
+3. Re-run live identity, coverage, provenance and full regression
+   checks after the evidence review.
 The timestamp supplied by test fixtures is not production evidence.
 
 CH01 STATUS: NOT ACCEPTED  
