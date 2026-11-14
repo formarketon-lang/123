@@ -50,7 +50,11 @@ def test_holiday_and_weekend_are_skipped_using_calendar_not_weekdays():
         ("2026-11-13", "AAA", "INE000A01010", 100, 102),
         ("2026-11-16", "AAA", "INE000A01010", 102, 110),
     ])
-    result = validate(data, observation_dates=["2026-11-16"])
+    result = validate(
+        data,
+        calendar=["2026-11-12", "2026-11-16"],
+        observation_dates=["2026-11-16"],
+    )
     row = result["per_symbol"].iloc[0]
     assert row["previous_session_date"] == "2026-11-12"
     assert result["analysis_status"] == "PASS"
