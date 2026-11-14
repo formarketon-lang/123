@@ -153,6 +153,11 @@ def audit_nse_bhavcopy_provenance(
             "BHAVCOPY_SYMBOLS_NOT_PRESENT_IN_DATED_MII"
         )
 
+    if reconciliation.get("isin_mismatch_count", 0):
+        audit_reasons.append(
+            "BHAVCOPY_SYMBOL_ISIN_MISMATCH"
+        )
+
     return {
         "source": "NSE",
         "source_format": "NSE_CM_UDIFF_ZIP",
@@ -179,6 +184,18 @@ def audit_nse_bhavcopy_provenance(
         "expected_symbols": reconciliation["expected_symbols"],
         "unknown_symbols": reconciliation.get("unknown_symbols", []),
         "unknown_count": reconciliation.get("unknown_count", 0),
+        "isin_mismatch_symbols": reconciliation.get(
+            "isin_mismatch_symbols",
+            [],
+        ),
+        "isin_mismatch_count": reconciliation.get(
+            "isin_mismatch_count",
+            0,
+        ),
+        "identity_exceptions": reconciliation.get(
+            "identity_exceptions",
+            [],
+        ),
         "missing_symbols": reconciliation["missing_symbols"],
         "missing_count": reconciliation["missing_count"],
         "coverage_pct": reconciliation["coverage_pct"],
