@@ -129,6 +129,9 @@ def analyze_nse_market_breadth_from_udiff(
     )
 
     verified_observations = reconciliation["observations"]
+    mii_source_provenance = dict(
+        verified_universe.attrs.get("source_provenance", {})
+    )
 
     breadth = analyze_nse_market_breadth(
         stock_data=verified_observations,
@@ -154,6 +157,7 @@ def analyze_nse_market_breadth_from_udiff(
         "source_filename": downloaded["source_filename"],
         "source_sha256": downloaded["sha256"],
         "fetched_at_utc": downloaded["fetched_at_utc"],
+        "mii_source_provenance": mii_source_provenance,
         "observation_date": parsed_date.isoformat(),
         "normalized": normalized,
         "verified_observations": verified_observations,
