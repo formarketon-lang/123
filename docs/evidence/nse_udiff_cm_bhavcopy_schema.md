@@ -19,6 +19,9 @@ Status: REVIEW — reference recorded; final workbook content review pending
 4. NSE Circular NSE/MSD/62142, 22-May-2024 — UDiFF update. The circular records the revision of reserved tags to Rsvd1–Rsvd4 and removal of the trailing extra comma for the CM UDiFF Bhavcopy, effective 21-Jun-2024:  
    https://nsearchives.nseindia.com/web/sites/default/files/inline-files/MSD62142.zip
 
+5. NSE Master Data Technical Specifications — Normal Market Eligibility and Security Status values:  
+   https://nsearchives.nseindia.com/web/sites/default/files/inline-files/NSE_MasterData_Technical_Specifications.pdf
+
 The official Forms & Formats page was observed to list the UDiFF catalogue through Version 4.0 and the CM Bhavcopy format/test files. The page shows an update date of 30-Jun-2026.
 
 ## Production ISO-tag mapping currently implemented
@@ -55,7 +58,12 @@ The production normalizer rejects missing required tags, wrong segment/source/in
 
 The official XLSX and ZIP are binary downloads. Their exact Bhavcopy worksheet/sample content has not yet been independently inspected in this audit session. The live downloader has parsed the official archive using the ISO tags above, but the mapping remains REVIEW until the exact official worksheet definitions and sample headers are attached or inspected and cross-checked.
 
-A live 13-Nov-2026 UDiFF/MII comparison also found `DCMFINSERV` in the UDiFF file but absent from the normalized same-date MII universe. This symbol is excluded from verified observations and remains an explicit REVIEW item; it is not auto-approved or counted as an MII constituent.
+A live 13-Nov-2026 UDiFF/MII comparison exposed two identity exceptions:
+
+- `DCMFINSERV` is present in the raw same-date MII file as EQ, but its Normal Market Eligibility is `0` (not allowed in the Normal Market). The normalizer correctly excludes it from the verified normal-market universe. Its appearance in the UDiFF EQ file is retained as an explicit REVIEW exception and is not counted as a normal-market constituent.
+- `BNAGROCHEM` appears in both sources, but the UDiFF ISIN is `INE00HZ01011` while the same-date MII ISIN is `INE00HZ01029`. Neither value is silently substituted. The observation is excluded from verified calculations and remains REVIEW pending authoritative identity resolution.
+
+The reconciliation service now returns both exceptions, preserves the raw rows in the live evidence artifact, and excludes them from verified breadth inputs.
 
 ## Decision
 
