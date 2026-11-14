@@ -3,6 +3,16 @@ name: TLP MIM CH02 Multi-Month Historical A-D Range Verification
 on:
   workflow_dispatch:
     inputs:
+      calendar_days:
+        description: "Calendar-day lookback (30–370)"
+        required: true
+        default: "120"
+        type: string
+      max_sessions:
+        description: "Maximum recent NSE sessions to analyze (10–180)"
+        required: true
+        default: "60"
+        type: string
   push:
     branches:
       - ch02-advance-decline-plan
@@ -14,16 +24,6 @@ on:
       - "data/providers/nse_universe.py"
       - "data/providers/nse_udiff_downloader.py"
       - ".github/workflows/ch02-historical-ad-range-check.yml"
-      calendar_days:
-        description: "Calendar-day lookback (30–370)"
-        required: true
-        default: "120"
-        type: string
-      max_sessions:
-        description: "Maximum recent NSE sessions to analyze (10–180)"
-        required: true
-        default: "60"
-        type: string
 
 permissions:
   contents: read
@@ -49,8 +49,8 @@ jobs:
       - name: Run official NSE multi-month historical A/D range
         run: |
           python scripts/run_ch02_historical_ad_range_check.py \
-            --calendar-days "${{ inputs.calendar_days }}" \
-            --max-sessions "${{ inputs.max_sessions }}"
+            --calendar-days "${{ inputs.calendar_days || '120' }}" \
+            --max-sessions "${{ inputs.max_sessions || '60' }}"
 
       - name: Upload multi-month historical evidence
         if: always()
