@@ -52,6 +52,7 @@ REQUIRED_UDIFF_TAGS = {
     "Src",
     "FinInstrmTp",
     "FinInstrmId",
+    "SsnId",
     "ISIN",
     "TckrSymb",
     "SctySrs",
@@ -61,6 +62,25 @@ REQUIRED_UDIFF_TAGS = {
     "ClsPric",
     "PrvsClsgPric",
     "TtlTradgVol",
+}
+
+
+EXPECTED_UDIFF_FIELD_TAGS = {
+    "Trade Date": "TradDt",
+    "Segment Indicator": "Sgmt",
+    "Source": "Src",
+    "Instrument Type": "FinInstrmTp",
+    "Unique Instrument Identifier Of Trading Exchange": "FinInstrmId",
+    "Instrument ISIN": "ISIN",
+    "Instrument Symbol or Scrip Code": "TckrSymb",
+    "Instrument Series": "SctySrs",
+    "Open": "OpnPric",
+    "High": "HghPric",
+    "Low": "LwPric",
+    "Close": "ClsPric",
+    "Previous Close": "PrvsClsgPric",
+    "Total Traded Qty": "TtlTradgVol",
+    "Session Id": "SsnId",
 }
 
 
@@ -104,6 +124,7 @@ def verify_official_udiff_schema(output_dir: Path) -> dict:
             evidence["workbook_sheets"] = list(workbook.sheetnames)
             candidates = []
 
+            mapping_checks = {}
             for sheet in workbook.worksheets:
                 rows = list(sheet.iter_rows(values_only=True))
                 flattened = {
@@ -112,17 +133,54 @@ def verify_official_udiff_schema(output_dir: Path) -> dict:
                     for value in row
                     if value is not None
                 }
-                missing = sorted(REQUIRED_UDIFF_TAGS - flattened)
-                if not missing:
-                    candidates.append(sheet.title)
+                if not REQUIRED_UDIFF_TAGS.issubset(flattened):
+                    continue
+
+                sheet_mapping = {}
+                for row in rows:
+                    if len(row) < 4:
+                        continue
+                    field_name = row[1]
+                    iso_tag = row[3]
+                    if field_name is None or iso_tag is None:
+                        continue
+                    sheet_mapping[
+                        " ".join(str(field_name).strip().split()).casefold()
+                    ] = str(iso_tag).strip()
+
+                expected_mapping = {
+                    " ".join(field.split()).casefold(): tag
+                    for field, tag in EXPECTED_UDIFF_FIELD_TAGS.items()
+                }
+                mismatches = {
+                    field: {
+                        "expected": tag,
+                        "observed": sheet_mapping.get(field),
+                    }
+                    for field, tag in expected_mapping.items()
+                    if sheet_mapping.get(field) != tag
+                }
+                mapping_checks[sheet.title] = {
+                    "mismatches": mismatches,
+                    "mapping_status": (
+                        "PASS" if not mismatches else "REVIEW"
+                    ),
+                }
+                candidates.append(sheet.title)
 
             evidence["matching_bhavcopy_sheets"] = [
                 name for name in candidates
                 if "bhav" in name.lower()
             ]
             evidence["matching_sheets"] = candidates
+            evidence["field_mapping_checks"] = mapping_checks
+            selected_sheets = evidence["matching_bhavcopy_sheets"]
             evidence["workbook_status"] = (
-                "PASS" if evidence["matching_bhavcopy_sheets"]
+                "PASS"
+                if any(
+                    mapping_checks[name]["mapping_status"] == "PASS"
+                    for name in selected_sheets
+                )
                 else "REVIEW"
             )
             workbook.close()
