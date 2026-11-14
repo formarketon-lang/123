@@ -20,6 +20,69 @@ from services.market_intelligence.historical_ad_service import (
 )
 
 
+
+def _reconciliation_summary(result: dict) -> dict:
+    """Return truthful aggregate reconciliation counts for the JSON report."""
+    coverage = result.get("coverage")
+    details = result.get("reconciliation_details")
+
+    if isinstance(coverage, pd.DataFrame):
+        missing_count = int(
+            pd.to_numeric(
+                coverage.get("missing", pd.Series(dtype="float64")),
+                errors="coerce",
+            ).fillna(0).sum()
+        )
+        identity_exception_count = int(
+            pd.to_numeric(
+                coverage.get(
+                    "identity_exceptions", pd.Series(dtype="float64")
+                ),
+                errors="coerce",
+            ).fillna(0).sum()
+        )
+        expected_observations = int(
+            pd.to_numeric(
+                coverage.get(
+                    "expected_universe", pd.Series(dtype="float64")
+                ),
+                errors="coerce",
+            ).fillna(0).sum()
+        )
+        verified_observations = int(
+            pd.to_numeric(
+                coverage.get(
+                    "verified_observations", pd.Series(dtype="float64")
+                ),
+                errors="coerce",
+            ).fillna(0).sum()
+        )
+    else:
+        missing_count = 0
+        identity_exception_count = 0
+        expected_observations = 0
+        verified_observations = 0
+
+    if isinstance(details, pd.DataFrame) and "issue_type" in details.columns:
+        issue_counts = {
+            str(key): int(value)
+            for key, value in details["issue_type"].value_counts().items()
+        }
+        detail_count = int(len(details))
+    else:
+        issue_counts = {}
+        detail_count = 0
+
+    return {
+        "missing_count": missing_count,
+        "identity_exception_count": identity_exception_count,
+        "expected_member_observations": expected_observations,
+        "verified_member_observations": verified_observations,
+        "reconciliation_detail_count": detail_count,
+        "reconciliation_issue_type_counts": issue_counts,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--calendar-days", type=int, default=120)
@@ -46,6 +109,7 @@ def main() -> None:
     )
 
     calendar = result.get("calendar_provenance", {})
+    reconciliation_summary = _reconciliation_summary(result)
     report = {
         "project": "TLP-MIM-001",
         "chapter": "02",
@@ -68,10 +132,7 @@ def main() -> None:
         "review_count": result.get("review_count", 0),
         "blocked_count": result.get("blocked_count", 0),
         "unavailable_count": result.get("unavailable_count", 0),
-        "missing_count": result.get("missing_count", 0),
-        "reconciliation_detail_count": len(
-            result.get("reconciliation_details", pd.DataFrame())
-        ),
+        **reconciliation_summary,
         "note": (
             "A range evidence run. REVIEW is retained and is not promoted "
             "to PASS. This workflow validates the requested range and "
