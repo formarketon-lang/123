@@ -255,7 +255,6 @@ def test_mii_numeric_fields_are_converted_correctly():
 def test_mii_missing_optional_fields_does_not_break_normalization():
     data = sample_mii().drop(
         columns=[
-            "FinInstrmId",
             "ListgDt",
             "ParVal",
             "IssdCptl",
@@ -270,7 +269,7 @@ def test_mii_missing_optional_fields_does_not_break_normalization():
         "RELIANCE",
     ]
 
-    assert "Instrument ID" not in result.columns
+    assert "Instrument ID" in result.columns
     assert "Listing Date" not in result.columns
     assert "Face Value" not in result.columns
     assert "Issued Capital" not in result.columns
@@ -412,3 +411,11 @@ def test_fetcher_falls_back_to_legacy_master_when_mii_fails():
     assert session.urls[-1] == NSE_EQUITY_MASTER_URL
         
 
+
+
+
+def test_mii_missing_instrument_id_is_rejected():
+    data = sample_mii().drop(columns=["FinInstrmId"])
+
+    with pytest.raises(ValueError, match="missing columns.*FININSTRMID"):
+        normalize_nse_mii_security_master(data)
