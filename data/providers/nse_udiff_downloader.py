@@ -190,7 +190,7 @@ def normalize_nse_cm_udiff_equity(
     instrument_ids = _text_column(equity, "FinInstrmId")
     if (
         instrument_ids.isna().any()
-        or not instrument_ids.str.fullmatch(r"\\d+").all()
+        or not instrument_ids.str.fullmatch(r"\d+").all()
         or instrument_ids.duplicated().any()
     ):
         raise NSEUdiFFDownloadError(
