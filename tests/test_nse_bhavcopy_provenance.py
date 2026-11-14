@@ -291,3 +291,26 @@ def test_official_endpoint_and_schema_reference_are_recorded():
     assert "OFFICIAL_UDIFF_SCHEMA_CONTENT_REVIEW_PENDING" in (
         result["audit_reasons"]
     )
+
+
+def test_official_schema_evidence_can_pass_when_verified():
+    from data.providers.nse_bhavcopy_provenance import (
+        NSE_UDIFF_SCHEMA_REFERENCE_URL,
+    )
+
+    result = audit_nse_bhavcopy_provenance(
+        bhavcopy=make_bhavcopy(),
+        universe=make_universe(),
+        source_bytes=SOURCE_BYTES,
+        source_filename=SOURCE_FILENAME,
+        source_url=(
+            "https://nsearchives.nseindia.com/content/cm/"
+            "BhavCopy_NSE_CM_0_0_0_20261112_F_0000.csv.zip"
+        ),
+        schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
+        schema_mapping_verified=True,
+    )
+
+    assert result["schema_mapping_status"] == "PASS"
+    assert result["audit_status"] == "PASS"
+    assert result["audit_reasons"] == []
