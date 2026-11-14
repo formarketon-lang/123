@@ -160,9 +160,8 @@ def test_overall_status_uses_strictest_date_status():
     assert result["review_count"] == 1
 
 
-def test_non_finite_ratio_is_never_emitted():
-    result = calculate_historical_ad_metrics(classification([
-        ("2026-11-13", 10**308, 1, 0, 10**308 + 1, "PASS"),
-    ]))
-    ratio = result["summary"].iloc[0]["ad_ratio"]
-    assert math.isfinite(ratio)
+def test_non_finite_ratio_is_rejected():
+    with pytest.raises(AdvanceDeclineMetricsError, match="Non-finite"):
+        calculate_historical_ad_metrics(classification([
+            ("2026-11-13", 10**308, 1, 0, 10**308 + 1, "PASS"),
+        ]))
