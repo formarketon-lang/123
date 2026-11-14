@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from io import BytesIO
 from pathlib import PurePosixPath
+from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
 
 import pandas as pd
@@ -16,6 +17,12 @@ from data.providers.nse_bhavcopy_mii_validation import (
 
 class NSEBhavcopyProvenanceError(ValueError):
     """Raised when NSE Bhavcopy provenance cannot be established."""
+
+
+NSE_OFFICIAL_ARCHIVE_HOST = "nsearchives.nseindia.com"
+NSE_UDIFF_SCHEMA_REFERENCE_URL = (
+    "https://www.nseindia.com/static/resources/forms-formats-members"
+)
 
 
 def _validate_bhavcopy_archive(source_bytes: bytes) -> None:
@@ -77,6 +84,8 @@ def audit_nse_bhavcopy_provenance(
     universe: pd.DataFrame,
     source_bytes: bytes,
     source_filename: str,
+    source_url: str | None = None,
+    schema_reference_url: str | None = None,
 ) -> dict:
     """Audit archive structure, hash, MII identity and coverage.
 
@@ -112,11 +121,27 @@ def audit_nse_bhavcopy_provenance(
         universe=universe,
     )
 
-    audit_reasons = [
-        "OFFICIAL_UDIFF_SCHEMA_MAPPING_UNVERIFIED",
-        "SOURCE_AUTHENTICITY_NOT_INDEPENDENTLY_VERIFIED",
-        "ARCHIVE_CONTENT_NOT_INDEPENDENTLY_AUTHENTICATED",
-    ]
+    parsed_source_url = urlparse(source_url or "")
+    official_endpoint = (
+        parsed_source_url.scheme == "https"
+        and parsed_source_url.hostname == NSE_OFFICIAL_ARCHIVE_HOST
+    )
+    official_schema_reference = (
+        schema_reference_url == NSE_UDIFF_SCHEMA_REFERENCE_URL
+    )
+
+    audit_reasons = []
+
+    if not official_endpoint:
+        audit_reasons.append("OFFICIAL_NSE_HTTPS_ENDPOINT_NOT_VERIFIED")
+
+    if not official_schema_reference:
+        audit_reasons.append("OFFICIAL_UDIFF_SCHEMA_REFERENCE_NOT_RECORDED")
+
+    # The NSE page links the current official format workbook. The
+    # mapping remains REVIEW until its exact Bhavcopy sheet is independently
+    # inspected against the production raw header and field definitions.
+    audit_reasons.append("OFFICIAL_UDIFF_SCHEMA_CONTENT_REVIEW_PENDING")
 
     if reconciliation["coverage_status"] != "PASS":
         audit_reasons.append(
@@ -131,7 +156,13 @@ def audit_nse_bhavcopy_provenance(
         "source_size_bytes": len(source_bytes),
         "archive_structure_status": "PASS",
         "source_provenance_status": "HASH_RECORDED",
-        "source_authenticity_status": "UNVERIFIED",
+        "source_url": source_url or "",
+        "source_authenticity_status": (
+            "OFFICIAL_NSE_HTTPS_HOST"
+            if official_endpoint
+            else "UNVERIFIED"
+        ),
+        "schema_reference_url": schema_reference_url or "",
         "observation_date": reconciliation["observation_date"],
         "mii_snapshot_date": reconciliation["mii_snapshot_date"],
         "raw_observation_rows": len(bhavcopy),
@@ -142,7 +173,11 @@ def audit_nse_bhavcopy_provenance(
         "coverage_pct": reconciliation["coverage_pct"],
         "identity_status": reconciliation["identity_status"],
         "coverage_status": reconciliation["coverage_status"],
-        "schema_mapping_status": "UNVERIFIED",
+        "schema_mapping_status": (
+            "REVIEW_REFERENCE_RECORDED"
+            if official_schema_reference
+            else "UNVERIFIED"
+        ),
         "audit_status": "REVIEW",
         "audit_reasons": audit_reasons,
     }
