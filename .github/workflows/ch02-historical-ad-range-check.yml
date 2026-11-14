@@ -1,0 +1,62 @@
+name: TLP MIM CH02 Multi-Month Historical A-D Range Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      calendar_days:
+        description: "Calendar-day lookback (30–370)"
+        required: true
+        default: "120"
+        type: string
+      max_sessions:
+        description: "Maximum NSE sessions to analyze across the requested calendar range (10–180)"
+        required: true
+        default: "180"
+        type: string
+  push:
+    branches:
+      - ch02-advance-decline-plan
+    paths:
+      - "scripts/run_ch02_historical_ad_range_check.py"
+      - "services/market_intelligence/historical_ad_service.py"
+      - "services/market_intelligence/historical_observation_service.py"
+      - "data/providers/nse_trading_calendar.py"
+      - "data/providers/nse_universe.py"
+      - "data/providers/nse_udiff_downloader.py"
+      - ".github/workflows/ch02-historical-ad-range-check.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  historical-ad-range:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run official NSE multi-month historical A/D range
+        run: |
+          python scripts/run_ch02_historical_ad_range_check.py \
+            --calendar-days "${{ inputs.calendar_days || '120' }}" \
+            --max-sessions "${{ inputs.max_sessions || '180' }}"
+
+      - name: Upload multi-month historical evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: tlp-mim-ch02-multi-month-historical-ad-evidence
+          path: artifacts/ch02_historical_ad_range/
+          if-no-files-found: warn
+          retention-days: 30

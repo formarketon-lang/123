@@ -14,6 +14,9 @@ import streamlit as st
 from services.market_intelligence.bhavcopy_service import (
     analyze_nse_market_breadth_from_udiff,
 )
+from services.market_intelligence.historical_ad_service import (
+    analyze_nse_historical_advance_decline,
+)
 from services.market_intelligence.regime_service import (
     SUPPORTED_NSE_INDEXES,
     analyze_index_market_regime,
@@ -205,6 +208,106 @@ def render_market_intelligence_page():
                 st.subheader("Audit Reasons")
                 for reason in audit["audit_reasons"]:
                     st.write(f"• {reason}")
+
+    st.divider()
+    st.subheader("Historical Advance / Decline Analysis")
+    st.warning(
+        "শুধু verified NSE trading-session dates দিন। Official NSE calendar "
+        "এখনও স্বয়ংক্রিয়ভাবে সংযুক্ত নয়; weekend/holiday নিজে থেকে অনুমান "
+        "করা হবে না। সর্বোচ্চ ৩০টি session একবারে বিশ্লেষণ করা যাবে।"
+    )
+    session_text = st.text_input(
+        "Verified NSE Sessions (YYYY-MM-DD, comma-separated)",
+        value="",
+        help="উদাহরণ: 2026-11-12, 2026-11-13, 2026-11-16",
+        key="market_intelligence_historical_ad_sessions",
+    )
+    initial_anchor = st.number_input(
+        "Cumulative A-D Initial Anchor",
+        value=0,
+        step=1,
+        key="market_intelligence_historical_ad_anchor",
+    )
+
+    if st.button("Run Historical A/D Analysis"):
+        try:
+            tokens = [
+                value.strip()
+                for value in session_text.split(",")
+                if value.strip()
+            ]
+            if not tokens:
+                raise ValueError("কমপক্ষে একটি verified NSE session date দিন।")
+            if len(tokens) > 30:
+                raise ValueError("একবারে সর্বোচ্চ ৩০টি session date দেওয়া যাবে।")
+            sessions = []
+            for token in tokens:
+                parsed = date.fromisoformat(token)
+                if parsed.isoformat() != token:
+                    raise ValueError(
+                        f"Date অবশ্যই YYYY-MM-DD format-এ হতে হবে: {token}"
+                    )
+                sessions.append(parsed)
+
+            historical_result = analyze_nse_historical_advance_decline(
+                sessions,
+                initial_anchor=int(initial_anchor),
+            )
+        except Exception as exc:
+            st.error(
+                "Historical A/D Analysis unavailable — "
+                f"{type(exc).__name__}: {exc}"
+            )
+        else:
+            status = historical_result["analysis_status"]
+            if status == "PASS":
+                st.success("PASS — requested sessions passed all available validation gates.")
+            elif status == "BLOCKED":
+                st.error("BLOCKED — contradictory or invalid source evidence detected.")
+            elif status == "UNAVAILABLE":
+                st.warning("UNAVAILABLE — one or more required NSE observations are unavailable.")
+            else:
+                st.warning(
+                    "REVIEW — incomplete coverage or missing sessions detected. "
+                    "The cumulative line is segmented; no missing data is filled."
+                )
+
+            st.write(
+                f"Sessions: {historical_result['date_count']} | "
+                f"PASS: {historical_result['pass_count']} | "
+                f"REVIEW: {historical_result['review_count']} | "
+                f"BLOCKED: {historical_result['blocked_count']} | "
+                f"UNAVAILABLE: {historical_result['unavailable_count']} | "
+                f"MISSING: {historical_result['missing_count']}"
+            )
+            st.subheader("Historical A/D Daily Metrics")
+            st.dataframe(
+                historical_result["per_date_status"],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.subheader("Cumulative A-D Line")
+            line_data = historical_result["per_date_status"]
+            if line_data["cumulative_ad"].notna().any():
+                st.line_chart(
+                    line_data,
+                    x="observation_date",
+                    y="cumulative_ad",
+                )
+            else:
+                st.info("No verified PASS segment is available to plot.")
+            st.subheader("Coverage and Validation")
+            st.dataframe(
+                historical_result["coverage"],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.subheader("Source and MII Provenance")
+            st.dataframe(
+                historical_result["provenance"],
+                use_container_width=True,
+                hide_index=True,
+            )
 
     st.subheader("Planned Analysis Areas")
     for area in [

@@ -129,6 +129,28 @@ def analyze_nse_market_breadth_from_udiff(
     )
 
     verified_observations = reconciliation["observations"]
+    mii_source_provenance = dict(
+        verified_universe.attrs.get("source_provenance", {})
+    )
+    point_in_time_status = str(
+        mii_source_provenance.get("point_in_time_status", "REVIEW")
+    ).strip().upper()
+    if point_in_time_status not in {"PASS", "REVIEW", "BLOCKED", "UNAVAILABLE"}:
+        raise NSEBhavcopyServiceError(
+            "MII point-in-time availability status is invalid."
+        )
+
+    published_at_utc = mii_source_provenance.get("published_at_utc")
+    if not published_at_utc:
+        point_in_time_status = "REVIEW"
+    else:
+        published_at = pd.to_datetime(published_at_utc, errors="coerce", utc=True)
+        if pd.isna(published_at):
+            raise NSEBhavcopyServiceError(
+                "MII publication timestamp is invalid."
+            )
+        if published_at.date() > parsed_date:
+            point_in_time_status = "REVIEW"
 
     breadth = analyze_nse_market_breadth(
         stock_data=verified_observations,
@@ -143,6 +165,7 @@ def analyze_nse_market_breadth_from_udiff(
             and reconciliation["coverage_status"] == "PASS"
             and audit["audit_status"] == "PASS"
             and breadth["analysis_status"] == "PASS"
+            and point_in_time_status == "PASS"
         )
         else "REVIEW"
     )
@@ -154,6 +177,8 @@ def analyze_nse_market_breadth_from_udiff(
         "source_filename": downloaded["source_filename"],
         "source_sha256": downloaded["sha256"],
         "fetched_at_utc": downloaded["fetched_at_utc"],
+        "mii_source_provenance": mii_source_provenance,
+        "point_in_time_status": point_in_time_status,
         "observation_date": parsed_date.isoformat(),
         "normalized": normalized,
         "verified_observations": verified_observations,
