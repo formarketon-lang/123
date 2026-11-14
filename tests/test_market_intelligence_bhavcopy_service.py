@@ -34,6 +34,7 @@ def make_raw(include_unknown=False, include_mismatch=False):
         "Src": ["NSE"] * count,
         "FinInstrmTp": ["STK"] * count,
         "FinInstrmId": [str(i + 1) for i in range(count)],
+        "SsnId": ["F1"] * count,
         "ISIN": isins,
         "TckrSymb": symbols,
         "SctySrs": ["EQ"] * count,
