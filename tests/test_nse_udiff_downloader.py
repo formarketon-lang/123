@@ -185,3 +185,18 @@ def test_download_rejects_non_zip_response():
             "2026-11-13",
             session=session,
         )
+
+
+def test_previous_close_outside_current_candle_is_valid():
+    raw = make_raw()
+    raw.loc[0, "PrvsClsgPric"] = "120"
+    raw.loc[0, "HghPric"] = "111"
+
+    result = downloader.normalize_nse_cm_udiff_equity(
+        raw,
+        trade_date="2026-11-13",
+        fetched_at_utc="2026-11-14T01:00:00Z",
+    )
+
+    assert result.loc[0, "Previous Close"] == 120
+    assert result.loc[0, "High"] == 111
