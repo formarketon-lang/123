@@ -341,3 +341,29 @@ def test_official_schema_evidence_can_pass_when_verified():
     assert result["schema_mapping_status"] == "PASS"
     assert result["audit_status"] == "PASS"
     assert result["audit_reasons"] == []
+
+
+def test_schema_verification_flag_does_not_override_bad_raw_header():
+    from data.providers.nse_bhavcopy_provenance import (
+        NSE_UDIFF_SCHEMA_REFERENCE_URL,
+    )
+
+    result = audit_nse_bhavcopy_provenance(
+        bhavcopy=make_bhavcopy(),
+        universe=make_universe(),
+        source_bytes=SOURCE_BYTES,
+        source_filename=SOURCE_FILENAME,
+        source_url=(
+            "https://nsearchives.nseindia.com/content/cm/"
+            "BhavCopy_NSE_CM_0_0_0_20261112_F_0000.csv.zip"
+        ),
+        schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
+        schema_mapping_verified=True,
+    )
+
+    assert result["raw_schema_status"] == "REVIEW"
+    assert result["schema_mapping_status"] == "REVIEW_REFERENCE_RECORDED"
+    assert result["audit_status"] == "REVIEW"
+    assert "LIVE_RAW_UDIFF_FIELDS_DO_NOT_MATCH_APPROVED_SCHEMA" in (
+        result["audit_reasons"]
+    )
