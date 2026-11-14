@@ -113,6 +113,18 @@ def main() -> None:
         low_memory=False,
     )
     raw_mii.columns = [str(c).strip().upper() for c in raw_mii.columns]
+    mii_isin_by_symbol = universe.set_index("Symbol")["ISIN"].to_dict()
+    normalized = downloaded["normalized"]
+    diagnostic_symbols = set()
+
+    for row in normalized[["Symbol", "ISIN"]].itertuples(index=False):
+        symbol = str(row.Symbol).strip().upper()
+        isin = str(row.ISIN).strip().upper()
+        if symbol not in mii_isin_by_symbol:
+            diagnostic_symbols.add(symbol)
+        elif isin != str(mii_isin_by_symbol[symbol]).strip().upper():
+            diagnostic_symbols.add(symbol)
+
     raw_mii_symbol_column = "TCKRSYMB"
     if raw_mii_symbol_column in raw_mii.columns:
         raw_mii_diag = raw_mii[
@@ -120,7 +132,7 @@ def main() -> None:
             .astype("string")
             .str.strip()
             .str.upper()
-            .eq("DCMFINSERV")
+            .isin(diagnostic_symbols)
         ].copy()
     else:
         raw_mii_diag = pd.DataFrame()
@@ -129,7 +141,7 @@ def main() -> None:
         .astype("string")
         .str.strip()
         .str.upper()
-        .eq("DCMFINSERV")
+        .isin(diagnostic_symbols)
     ].copy()
     raw_mii_diag.to_csv(
         output_dir / "mii_dcmfinserv_raw_diagnostic.csv",
@@ -169,6 +181,9 @@ def main() -> None:
         "identity_status": reconciliation["identity_status"],
         "unknown_symbols": reconciliation["unknown_symbols"],
         "unknown_symbol_count": reconciliation["unknown_count"],
+        "isin_mismatch_symbols": reconciliation["isin_mismatch_symbols"],
+        "isin_mismatch_count": reconciliation["isin_mismatch_count"],
+        "identity_exceptions": reconciliation["identity_exceptions"],
         "coverage_status": reconciliation["coverage_status"],
         "coverage_pct": reconciliation["coverage_pct"],
         "missing_symbol_count": reconciliation["missing_count"],
@@ -192,6 +207,10 @@ def main() -> None:
     print("Official raw ISO fields: PASS")
     print(f"NSE MII identity: {report['identity_status']}")
     print(f"Unknown MII symbols: {report['unknown_symbols']}")
+    print(
+        "Symbol/ISIN mismatches: "
+        f"{report['isin_mismatch_symbols']}"
+    )
     print(f"Historical membership coverage: {report['coverage_status']}")
     print(f"Coverage: {report['coverage_pct']}%")
     print(f"Schema mapping: {report['schema_mapping_status']}")
