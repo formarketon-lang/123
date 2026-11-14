@@ -39,5 +39,8 @@ if page == "Settings (Data)":
 elif page == "Stock Search":
     render_stock_search_page()
 
+elif page == "Market Intelligence":
+    render_market_intelligence_page()
+
 else:
     render_relative_strength_page()
