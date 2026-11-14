@@ -5,6 +5,7 @@ Repository: formarketon-lang/123
 Branch: main  
 Chapter: 01  
 Status: ACCEPTED WITH REVIEW CONDITIONS  
+Checkpoint: TLP-CP-2026-11-14-TLP-MIM-001-CH01-ACCEPTED-REVIEW-AWARE  
 Scope: NSE Cash Market Intelligence  
 F&O Scanner: Excluded
 
@@ -21,10 +22,10 @@ live market dataset must return PASS.
 ## 2. Verified Implementation Baseline
 
 Latest verified main commit:
-`6bf697bca0e119659f9521731c7de1e8a963dd76`
+`f5d77d0994fcc077a13009ac53ed5195e4f95c46`
 
 TradeLab Pro Tests:
-https://github.com/formarketon-lang/123/actions/runs/43551235668
+https://github.com/formarketon-lang/123/actions/runs/43551356536
 
 Verified result: **614/614 tests passed**.
 
