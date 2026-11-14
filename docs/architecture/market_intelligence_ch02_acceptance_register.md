@@ -6,83 +6,112 @@ Repository: formarketon-lang/123
 Branch: ch02-advance-decline-plan  
 Base: main  
 Chapter: 02 — Historical Advance / Decline Analysis  
-Checkpoint: TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-VERIFIED-REVIEW-CONDITIONS  
-Register status: STEP 11 TECHNICAL VERIFICATION PASS; CHAPTER ACCEPTANCE HELD FOR EVIDENCE GAPS  
+Checkpoint: TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-RANGE-VERIFICATION-IN-PROGRESS  
+Register status: TECHNICAL IMPLEMENTATION VERIFIED; FULL RANGE EVIDENCE AND POINT-IN-TIME REVIEW GATE OPEN  
 PR: #2 — Draft / Unmerged
 
 ---
 
 ## 1. Step acceptance
 
-| Step | Scope | Status | Verification |
+| Step | Scope | Status | Evidence |
 |---|---|---|---|
-| 01 | Existing architecture inventory | PASS | Existing NSE UDiFF/MII/breadth path inspected; no duplicate downloader |
-| 02 | Point-in-time NSE CM/EQ universe contract | CONTRACT DOCUMENTED; AUTOMATED ACCEPTANCE OPEN | 12-scenario contract matrix documented; not 12 automated tests |
+| 01 | Existing architecture inventory | PASS | Existing NSE UDiFF/MII/breadth path reused; no duplicate downloader |
+| 02 | Point-in-time NSE CM/EQ universe contract | AUTOMATED TEST COVERAGE VERIFIED; REVIEW SEMANTICS DOCUMENTED | 12 scenarios mapped to 16 focused reconciliation tests plus MII provenance tests |
 | 03 | Historical observation retrieval | PASS | Existing single-date NSE service orchestrated per requested date |
-| 04 | Prior-session validation | PASS | Existing verified-calendar contract and focused tests |
-| 05 | Daily A/D classification | PASS | Reuses existing breadth classifier; missing != unchanged |
+| 04 | Prior-session validation | PASS | Explicit verified-session calendar contract and focused tests |
+| 05 | Daily A/D classification | PASS | Existing breadth classifier reused; missing is not unchanged |
 | 06 | A-D Difference / A-D Ratio | PASS | 17 focused cases; zero-denominator state explicit |
 | 07 | Cumulative A-D Line | PASS | 15 focused cases; non-PASS sessions break segments |
 | 08 | Pure Core Analysis | PASS | 12 focused cases; provenance, coverage and status composition |
 | 09 | Historical A/D Service | PASS | 10 focused cases; existing retriever reused |
-| 10 | Market Intelligence UI | PASS | 4 focused UI tests; TradeLab Pro run #531 previously 712 passed |
-| 11 | Final Verification | PASS WITH LIVE REVIEW CONDITION | Live NSE smoke test and latest regression verified; see evidence below |
+| 10 | Market Intelligence UI | PASS | 4 focused UI tests |
+| 11 | Final Verification | IN PROGRESS | Regression green; official 120-day calendar PASS; first range artifact covers only 60/83 sessions |
 
-## 2. Latest automated verification
+## 2. Latest GitHub Actions verification
 
-- Latest full TradeLab Pro regression: **714 passed**.
-- Latest Yahoo Adapter regression: **56 passed**.
-- Latest regression commit: `e3c9ecc3e0031e96e33a2b95ea08122cb3f182a4`.
-- Historical A/D live workflow: PASS as a verification workflow; run `43561818820`.
-- Live evidence artifact: `tlp-mim-ch02-historical-ad-live-evidence`; artifact SHA-256 `dcaf9504a62183e8d0c2f62918697a8d594946cca33033e7c9a977c0d0867d52`.
-- The workflow's successful exit does not mean the NSE dataset passed full-universe validation. The actual observation status is REVIEW.
+Latest PR regression commit: `f494290101c6313c88a5b957de2bf3ca40ebc9e8`.
 
-## 3. Live NSE evidence — 2026-11-13
+- TradeLab Pro Tests: **727 passed**, workflow run `43563135790`.
+- Yahoo Adapter Unit Tests: **56 passed**, workflow run `43563135837`.
+- Both latest PR workflows completed successfully; no failures in these latest runs.
+- Earlier failures were found and corrected:
+  - Historical live check rejected the official NSE redirect host `nseindia.in`; allowlist now accepts both official NSE domains.
+  - Multi-month workflow initially failed due to its trigger/input configuration; the workflow was corrected and a later range run completed successfully.
+- A successful workflow means the evidence job ran successfully. It does not promote REVIEW market data to PASS.
 
-Official NSE CM Bhavcopy:
-- Source: NSE
-- File: `BhavCopy_NSE_CM_0_0_0_20261113_F_0000.csv.zip`
-- URL: https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_20261113_F_0000.csv.zip
-- Archive SHA-256: `758ec3b60fd492a29ff3ebc6c069269bc326dc5ca662cfba8892f16939841b7b`
-- Fetched at UTC: `2026-11-14T05:30:35.075915Z`
-- Dated MII snapshot: `2026-11-13`
+## 3. Official NSE calendar and first 120-day range evidence
 
-Reconciliation:
-- Expected NSE CM/EQ members: **2,762**
-- Verified observations: **2,742**
-- Missing expected members: **20**
-- Identity exceptions: **2**
-- Coverage: **99.2759%**
-- Daily verified-subset classification: Advancing **938**, Declining **1,776**, Unchanged **28**
-- A-D Difference: **-838**
-- A/D Ratio: **0.5281531532**
-- Daily status: **REVIEW**
-- Cumulative A-D value: **not emitted** for this REVIEW session.
+Range workflow run: `43563070544`  
+Workflow result: SUCCESS  
+Artifact: `tlp-mim-ch02-multi-month-historical-ad-evidence`  
+Artifact SHA-256: `926dc4c23034bdc987f07ee100cccc593fe73902c5a45082c6e9ff8f2f88ffd7`
 
-Reconciliation checks:
-- 938 + 1,776 + 28 = 2,742 verified observations.
-- 2,742 + 20 missing = 2,762 expected universe members.
-- 2,742 / 2,762 × 100 = 99.2759% (rounded to the official four-decimal coverage precision).
-- A-D Difference = 938 − 1,776 = -838.
-- A/D Ratio = 938 / 1,776 = 0.5281531532.
+Requested period:
+- Start: 2026-07-17
+- End: 2026-11-13
+- Calendar days: 120
+- Official NSE CM sessions discovered: **83**
+- Special session archive-verified: 2026-11-08
+- NSE holiday master status: PASS
+- Holiday-master source SHA-256: `8903f442b9b3bef9bb1e835112ffae68faab995948d591adc9dcbd6ddd056d6a`
+- Holiday-master fetched at UTC: `2026-11-14T05:46:02.142451Z`
+- Final holiday-master URL: `https://www.nseindia.in/api/holiday-master?type=trading`
 
-Interpretation:
-- These daily counts describe only the 2,742 verified observations, not the complete NSE CM/EQ universe.
-- The 20 missing rows and 2 identity exceptions correctly retain REVIEW.
-- The cumulative A-D series does not bridge or calculate through this REVIEW date.
-- No Yahoo membership substitution, forward-fill or fabricated observation was used.
+Coverage limit in the first artifact:
+- The run analyzed only the latest **60 of 83** discovered sessions because the workflow default was 60.
+- Analyzed dates: 2026-08-19 through 2026-11-13.
+- All 60 analyzed dates were REVIEW; zero were PASS.
+- Expected member-observations: **161,172**
+- Verified member-observations: **160,428**
+- Missing: **744**
+- Identity exceptions: **231**
+- Coverage range: **98.4341%–99.9251%**
+- Mean daily coverage: **99.5397%**
+- All A/D counts and ratios are verified-subset diagnostics only. No incomplete date is promoted to full-universe PASS.
 
-## 4. Open evidence / acceptance conditions
+MII provenance:
+- For all 60 analyzed dates, the retrieval-summary CSV contains MII source URL, filename, raw archive SHA-256, actual fetched-at UTC, dated MII snapshot date and point-in-time status.
+- Bhavcopy source URL, filename, SHA-256 and fetch timestamp are also present.
+- The MII response does not provide an official publication timestamp. The point-in-time status therefore remains REVIEW; do not claim that the archive was provably published before the observation date.
 
-1. Official NSE trading-session calendar retrieval/authentication is not implemented. Callers must provide independently verified NSE sessions; the UI does not infer weekdays or holidays.
-2. Historical validation is currently a one-session live smoke test. Multi-month historical-range live verification remains pending.
-3. Raw dated MII archive SHA-256 and actual fetch timestamp are not yet exposed in the production historical service result. Bhavcopy raw archive provenance is present; MII raw archive provenance remains an evidence gap.
-4. The 12 Step 02 scenarios are documented contract cases, not a completed automated test suite.
-5. Live 2026-11-13 coverage is REVIEW (99.2759%); no full-universe PASS claim is permitted.
+## 4. Step 02 — Automated scenario test mapping
 
-Chapter 02 must not be described as fully accepted until the required point-in-time universe evidence, calendar integration/verification approach, and historical-range evidence are closed or explicitly approved as review conditions by the project owner.
+The 12 contract scenarios are covered by existing focused tests. The 16 reconciliation tests in `tests/test_nse_bhavcopy_mii_validation.py` include:
 
-## 5. Safety gates
+| Contract scenario | Automated test evidence |
+|---|---|
+| Exact same-date NSE CM/EQ identity and full coverage | `test_exact_mii_identity_and_full_coverage_pass` |
+| Previous-date/stale snapshot | `test_wrong_snapshot_date_is_rejected`; rejected before verified output |
+| Future-dated snapshot | `test_future_dated_mii_snapshot_is_rejected` |
+| Mixed or missing row-level snapshot dates | `test_mixed_mii_snapshot_dates_are_rejected`; `test_partially_undated_mii_snapshot_is_rejected` |
+| Missing official historical snapshot | `test_missing_official_historical_snapshot_is_unavailable` |
+| Unknown publication timestamp | `test_fetcher_attaches_exact_mii_archive_hash_and_fetch_timestamp` in `tests/test_nse_universe.py`; asserts UNKNOWN and point-in-time REVIEW |
+| Symbol matches but ISIN differs | `test_symbol_isin_mismatch_is_review_and_excluded` |
+| Instrument ID present on only one side | `test_instrument_id_must_exist_in_both_sources` |
+| Duplicate Symbol / ISIN / Instrument ID | `test_duplicate_symbol_is_rejected`; `test_duplicate_isin_in_universe_is_rejected`; `test_duplicate_instrument_id_in_mii_is_rejected` |
+| Expected universe member missing from Bhavcopy | `test_missing_bhavcopy_symbol_is_review_not_fake_data` |
+| Bhavcopy row absent from dated MII universe | `test_unknown_symbol_is_review_and_excluded_from_verified_observations` |
+| Yahoo/current or undated-universe substitution | `test_yahoo_or_non_mii_universe_substitution_is_rejected`; `test_undated_mii_is_rejected` |
+
+Strict-date note: stale/previous-date MII is rejected before verified A/D output. It is never substituted or treated as verified. The service's strict rejection may surface as unavailable at the historical retrieval boundary; this is intentionally conservative. Unknown publication time is retained as REVIEW.
+
+## 5. Corrective action now committed
+
+The first 120-day range had 83 official sessions but the default cap analyzed only 60. Corrected:
+- `.github/workflows/ch02-historical-ad-range-check.yml`: default `max_sessions=180`.
+- `scripts/run_ch02_historical_ad_range_check.py`: default `max_sessions=180`.
+
+The next range workflow triggered by these changes must be checked for all 83 sessions and its new artifact reviewed before Step 11 can close.
+
+## 6. Remaining acceptance conditions
+
+1. Review the new 83-session range artifact. The previous 60-session artifact is not complete coverage of the 120-calendar-day period.
+2. Resolve or formally accept the official MII publication-time limitation. Until then, strict point-in-time availability remains REVIEW.
+3. Review whether missing members and identity exceptions can be authoritatively reconciled from NSE evidence. Do not lower validation thresholds or fabricate records to force PASS.
+4. Update this register and checkpoint with the final full-range artifact and latest regression run IDs.
+
+## 7. Safety gates
 
 - Main branch unchanged; PR #2 remains Draft / Unmerged.
 - Chapter 01 acceptance remains separate.
@@ -90,5 +119,6 @@ Chapter 02 must not be described as fully accepted until the required point-in-t
 - Sector Mapping Expansion: OFF.
 - F&O Scanner: EXCLUDED.
 - No fabricated, forward-filled or Yahoo-derived NSE membership observations.
+- No merge until the full-range artifact and acceptance conditions are reviewed.
 
 End of Chapter 02 Acceptance Register.
