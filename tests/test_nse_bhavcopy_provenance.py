@@ -165,7 +165,10 @@ def test_schema_mapping_remains_unverified():
 
     assert result["schema_mapping_status"] == "UNVERIFIED"
     assert result["audit_status"] == "REVIEW"
-    assert "OFFICIAL_UDIFF_SCHEMA_MAPPING_UNVERIFIED" in (
+    assert "OFFICIAL_UDIFF_SCHEMA_REFERENCE_NOT_RECORDED" in (
+        result["audit_reasons"]
+    )
+    assert "OFFICIAL_UDIFF_SCHEMA_CONTENT_REVIEW_PENDING" in (
         result["audit_reasons"]
     )
 
@@ -175,7 +178,7 @@ def test_hash_recording_does_not_claim_source_authenticity():
 
     assert result["source_provenance_status"] == "HASH_RECORDED"
     assert result["source_authenticity_status"] == "UNVERIFIED"
-    assert "SOURCE_AUTHENTICITY_NOT_INDEPENDENTLY_VERIFIED" in (
+    assert "OFFICIAL_NSE_HTTPS_ENDPOINT_NOT_VERIFIED" in (
         result["audit_reasons"]
     )
 
@@ -249,3 +252,32 @@ def test_archive_structure_is_reported():
     assert result["archive_structure_status"] == "PASS"
     assert result["source_authenticity_status"] == "UNVERIFIED"
     assert result["audit_status"] == "REVIEW"
+
+
+def test_official_endpoint_and_schema_reference_are_recorded():
+    from data.providers.nse_bhavcopy_provenance import (
+        NSE_UDIFF_SCHEMA_REFERENCE_URL,
+    )
+
+    result = audit_nse_bhavcopy_provenance(
+        bhavcopy=make_bhavcopy(),
+        universe=make_universe(),
+        source_bytes=SOURCE_BYTES,
+        source_filename=SOURCE_FILENAME,
+        source_url=(
+            "https://nsearchives.nseindia.com/content/cm/"
+            "BhavCopy_NSE_CM_0_0_0_20261112_F_0000.csv.zip"
+        ),
+        schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
+    )
+
+    assert result["source_authenticity_status"] == (
+        "OFFICIAL_NSE_HTTPS_HOST"
+    )
+    assert result["schema_mapping_status"] == (
+        "REVIEW_REFERENCE_RECORDED"
+    )
+    assert result["audit_status"] == "REVIEW"
+    assert "OFFICIAL_UDIFF_SCHEMA_CONTENT_REVIEW_PENDING" in (
+        result["audit_reasons"]
+    )
