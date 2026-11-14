@@ -152,3 +152,16 @@ def test_instrument_id_must_exist_in_both_sources():
         match="present in both",
     ):
         reconcile_bhavcopy_with_mii(bhavcopy, universe)
+
+
+def test_duplicate_instrument_id_in_mii_is_rejected():
+    bhavcopy = make_bhavcopy()
+    universe = make_universe()
+    bhavcopy["Instrument ID"] = ["1", "2", "3"]
+    universe["Instrument ID"] = ["1", "1", "3"]
+
+    with pytest.raises(
+        NSEMIIReconciliationError,
+        match="duplicate Instrument ID",
+    ):
+        reconcile_bhavcopy_with_mii(bhavcopy, universe)
