@@ -131,6 +131,20 @@ def classify_historical_daily_advance_decline(history: dict[str, Any]) -> dict:
             raise AdvanceDeclineClassificationError(
                 f"Verified observation count mismatch for {day_key}."
             )
+        if "Date" not in observations.columns:
+            raise AdvanceDeclineClassificationError(
+                f"Verified observations require a Date column for {day_key}."
+            )
+        observed_dates = pd.to_datetime(
+            observations["Date"],
+            errors="coerce",
+        )
+        if observed_dates.isna().any() or not observed_dates.dt.normalize().eq(
+            pd.Timestamp(day_key)
+        ).all():
+            raise AdvanceDeclineClassificationError(
+                f"Verified observations contain a mismatched date for {day_key}."
+            )
 
         if observations.empty:
             advancing = declining = unchanged = 0
