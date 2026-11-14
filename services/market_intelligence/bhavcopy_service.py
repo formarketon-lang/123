@@ -69,6 +69,7 @@ def analyze_nse_market_breadth_from_udiff(
 
     required_universe_fields = {
         "Symbol",
+        "Instrument ID",
         "ISIN",
         "Series",
         "Exchange",
