@@ -86,6 +86,7 @@ def audit_nse_bhavcopy_provenance(
     source_filename: str,
     source_url: str | None = None,
     schema_reference_url: str | None = None,
+    schema_mapping_verified: bool = False,
 ) -> dict:
     """Audit archive structure, hash, MII identity and coverage.
 
@@ -138,10 +139,8 @@ def audit_nse_bhavcopy_provenance(
     if not official_schema_reference:
         audit_reasons.append("OFFICIAL_UDIFF_SCHEMA_REFERENCE_NOT_RECORDED")
 
-    # The NSE page links the current official format workbook. The
-    # mapping remains REVIEW until its exact Bhavcopy sheet is independently
-    # inspected against the production raw header and field definitions.
-    audit_reasons.append("OFFICIAL_UDIFF_SCHEMA_CONTENT_REVIEW_PENDING")
+    if not schema_mapping_verified:
+        audit_reasons.append("OFFICIAL_UDIFF_SCHEMA_CONTENT_REVIEW_PENDING")
 
     if reconciliation["coverage_status"] != "PASS":
         audit_reasons.append(
@@ -215,10 +214,19 @@ def audit_nse_bhavcopy_provenance(
         "identity_status": reconciliation["identity_status"],
         "coverage_status": reconciliation["coverage_status"],
         "schema_mapping_status": (
-            "REVIEW_REFERENCE_RECORDED"
-            if official_schema_reference
-            else "UNVERIFIED"
+            "PASS"
+            if (
+                official_schema_reference
+                and schema_mapping_verified
+            )
+            else (
+                "REVIEW_REFERENCE_RECORDED"
+                if official_schema_reference
+                else "UNVERIFIED"
+            )
         ),
-        "audit_status": "REVIEW",
+        "audit_status": (
+            "PASS" if not audit_reasons else "REVIEW"
+        ),
         "audit_reasons": audit_reasons,
     }
