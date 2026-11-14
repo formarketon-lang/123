@@ -148,6 +148,11 @@ def audit_nse_bhavcopy_provenance(
             "MII_SYMBOL_COVERAGE_INCOMPLETE"
         )
 
+    if reconciliation.get("unknown_count", 0):
+        audit_reasons.append(
+            "BHAVCOPY_SYMBOLS_NOT_PRESENT_IN_DATED_MII"
+        )
+
     return {
         "source": "NSE",
         "source_format": "NSE_CM_UDIFF_ZIP",
@@ -167,7 +172,13 @@ def audit_nse_bhavcopy_provenance(
         "mii_snapshot_date": reconciliation["mii_snapshot_date"],
         "raw_observation_rows": len(bhavcopy),
         "observed_symbols": reconciliation["observed_symbols"],
+        "raw_observed_symbols": reconciliation.get(
+            "raw_observed_symbols",
+            reconciliation["observed_symbols"],
+        ),
         "expected_symbols": reconciliation["expected_symbols"],
+        "unknown_symbols": reconciliation.get("unknown_symbols", []),
+        "unknown_count": reconciliation.get("unknown_count", 0),
         "missing_symbols": reconciliation["missing_symbols"],
         "missing_count": reconciliation["missing_count"],
         "coverage_pct": reconciliation["coverage_pct"],
