@@ -9,9 +9,9 @@ on:
         default: "120"
         type: string
       max_sessions:
-        description: "Maximum recent NSE sessions to analyze (10–180)"
+        description: "Maximum NSE sessions to analyze across the requested calendar range (10–180)"
         required: true
-        default: "60"
+        default: "180"
         type: string
   push:
     branches:
@@ -50,7 +50,7 @@ jobs:
         run: |
           python scripts/run_ch02_historical_ad_range_check.py \
             --calendar-days "${{ inputs.calendar_days || '120' }}" \
-            --max-sessions "${{ inputs.max_sessions || '60' }}"
+            --max-sessions "${{ inputs.max_sessions || '180' }}"
 
       - name: Upload multi-month historical evidence
         if: always()
