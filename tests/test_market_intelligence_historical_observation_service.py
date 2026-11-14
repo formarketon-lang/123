@@ -165,3 +165,26 @@ def test_does_not_reuse_one_date_for_another(monkeypatch):
     assert seen == ["2026-11-12", "2026-11-13"]
     assert result["per_date"][0]["mii_snapshot_date"] == "2026-11-12"
     assert result["per_date"][1]["mii_snapshot_date"] == "2026-11-13"
+
+
+
+def test_unavailable_date_takes_priority_over_review_in_overall_status(monkeypatch):
+    def fake_service(day, **kwargs):
+        if day.isoformat() == "2026-11-11":
+            raise NSEUdiFFDownloadError("archive unavailable")
+        return make_result(day.isoformat(), "REVIEW")
+
+    monkeypatch.setattr(
+        history,
+        "analyze_nse_market_breadth_from_udiff",
+        fake_service,
+    )
+
+    result = history.retrieve_nse_historical_observations([
+        "2026-11-11",
+        "2026-11-12",
+    ])
+
+    assert result["analysis_status"] == "UNAVAILABLE"
+    assert result["unavailable_count"] == 1
+    assert result["review_count"] == 1
