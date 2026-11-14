@@ -39,6 +39,7 @@ REQUIRED_RAW_FIELDS = {
     "Sgmt",
     "Src",
     "FinInstrmTp",
+    "FinInstrmId",
     "ISIN",
     "TckrSymb",
     "SctySrs",
@@ -175,6 +176,7 @@ def normalize_nse_cm_udiff_equity(
 
     extras = pd.DataFrame({
         "Symbol": _text_column(equity, "TckrSymb"),
+        "Instrument ID": _text_column(equity, "FinInstrmId"),
         "Open": _numeric_column(equity, "OpnPric", "Open", positive=True),
         "High": _numeric_column(equity, "HghPric", "High", positive=True),
         "Low": _numeric_column(equity, "LwPric", "Low", positive=True),
