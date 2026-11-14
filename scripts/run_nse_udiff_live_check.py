@@ -443,7 +443,7 @@ def main() -> None:
     print("NSE UDiFF live download: PASS")
     print("Official raw ISO fields: PASS")
     print(f"NSE MII identity: {report['identity_status']}")
-    print(f"Unknown MII symbols: {report['unknown_symbols']}")
+    print(f"Symbols outside verified MII universe: {report['unknown_symbols']}")
     print(
         "Symbol/ISIN mismatches: "
         f"{report['isin_mismatch_symbols']}"
