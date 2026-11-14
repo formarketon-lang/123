@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEP 03 IMPLEMENTED ON FEATURE BRANCH; CI PENDING  
+Status: CHAPTER PLAN DRAFT — STEPS 01–05 VERIFIED; STEP 06 IMPLEMENTED; CI PENDING  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -265,10 +265,32 @@ Limitations:
 Exit: implementation and 15 focused tests pass in GitHub Actions; full TradeLab Pro regression 656 passed and Yahoo Adapter regression 56 passed.
 
 ### STEP 06 — A-D Difference and A/D Ratio
-- Calculate A-D Difference and ratio.
-- Define zero-decliner and zero-advancer states explicitly.
-- Test division-by-zero, numeric finiteness and ratio correctness.
-- Exit: no NaN/Infinity or silent capping.
+
+Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+
+Implementation:
+- Added `core/market_intelligence/ad_metrics.py`.
+- Added `calculate_historical_ad_metrics`, consuming the existing Step 05 classification summary; no duplicate daily classifier or data retrieval.
+- A-D Difference = Advancing - Declining.
+- A/D Ratio = Advancing / Declining only when Declining > 0.
+- Zero Decliners: ratio is null with `NO_DECLINERS`; no Infinity or silent cap.
+- Zero Advancers with Decliners present: ratio is exactly 0 with `NO_ADVANCERS`.
+- Both Advancing and Declining zero: ratio is null with `NO_ADVANCES_OR_DECLINES`.
+- REVIEW rows calculate metrics only for the verified subset and remain REVIEW.
+- BLOCKED / UNAVAILABLE rows receive no fabricated A-D metrics.
+- Enforces non-negative integer counts, exact reconciliation against verified observations, unique dates, chronological output and finite ratio values; overflow is rejected.
+
+Tests added:
+- `tests/test_market_intelligence_ad_metrics.py`
+- 13 test functions plus 5 parametrized cases (18 cases total) cover normal calculations, zero-decliner, zero-advancer, no movers, REVIEW behavior, BLOCKED/UNAVAILABLE, reconciliation, invalid counts, duplicate dates, chronological ordering, status precedence and overflow.
+
+Limitations:
+- This step calculates daily A-D Difference and A/D Ratio only; cumulative A-D Line is Step 07.
+- It consumes Step 05 output and does not retrieve NSE data or activate UI.
+- No live historical date range, official NSE calendar integration or MII raw archive provenance completion is claimed.
+- No Main branch change.
+
+Exit: implementation and 18 test cases committed to the draft feature branch; GitHub Actions verification pending.
 
 ### STEP 07 — Cumulative A-D Line
 - Build a date-ordered cumulative series from daily A-D differences.
@@ -337,13 +359,14 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-05-DAILY-AD-CLASSIFICATION-PASS`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-06-AD-METRICS-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
 - Step 03 status: REGRESSION PASS; feature branch remains unmerged.
 - Step 04: prior-session validation engine and 15 focused tests PASS in GitHub Actions.
-- Step 05: daily A/D classification hardened with 15 focused tests; fixture corrected and exact date-isolation guard added. Latest GitHub Actions: TradeLab Pro 656 passed; Yahoo Adapter 56 passed.
+- Step 05: daily A/D classification PASS; 15 focused tests. Latest verified GitHub Actions: TradeLab Pro 656 passed; Yahoo Adapter 56 passed.
+- Step 06: A-D Difference and A/D Ratio implementation added; 18 test cases committed; fresh GitHub Actions verification pending.
 - Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
 - Live historical-range validation: NOT RUN.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
