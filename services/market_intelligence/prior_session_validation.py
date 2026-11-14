@@ -158,10 +158,15 @@ def validate_prior_session_prices(
             "Observation dates must all exist in the verified NSE calendar."
         )
 
-    duplicate = data.duplicated(["Date", "Symbol"], keep=False)
-    if duplicate.any():
+    duplicate_symbol = data.duplicated(["Date", "Symbol"], keep=False)
+    if duplicate_symbol.any():
         raise PriorSessionValidationError(
             "Duplicate Symbol observations exist for an NSE session."
+        )
+    duplicate_isin = data.duplicated(["Date", "ISIN"], keep=False)
+    if duplicate_isin.any():
+        raise PriorSessionValidationError(
+            "Duplicate ISIN observations exist for an NSE session."
         )
 
     calendar_index = {day: index for index, day in enumerate(calendar)}
