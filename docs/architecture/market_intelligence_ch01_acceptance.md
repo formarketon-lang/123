@@ -1,109 +1,170 @@
-
 # TLP-MIM-001 — Chapter 01 Final Acceptance Register
 
-Project ID: TLP-MIM-001
-Repository: formarketon-lang/123
-Branch: main
-Chapter: 01
-Status: NOT ACCEPTED
-Scope: NSE Cash Market Intelligence
+Project ID: TLP-MIM-001  
+Repository: formarketon-lang/123  
+Branch: main  
+Chapter: 01  
+Status: ACCEPTED WITH REVIEW CONDITIONS  
+Scope: NSE Cash Market Intelligence  
 F&O Scanner: Excluded
 
 ## 1. Purpose
 
 This register records the implementation, test, integration,
-and evidence gates required for formal Chapter 01 acceptance.
+and evidence gates for formal Chapter 01 acceptance.
 
-A passing regression test alone does not complete this chapter.
+Acceptance means the NSE Market Intelligence foundation,
+review-aware services, official schema mapping, UI integration
+and regression gates are verified. It does not mean every daily
+live market dataset must return PASS.
 
-## 2. Verified Repository Baseline
+## 2. Verified Implementation Baseline
 
-Baseline commit:
-d0c7597f558fa507533db9964b732bd17aac3685
+Latest verified code commit:
+`cd6ad5e7225885d82db3480ce23344fd9ad4fddf`
 
-Verified regression run:
-https://github.com/formarketon-lang/123/actions/runs/43421117982
+TradeLab Pro Tests:
+https://github.com/formarketon-lang/123/actions/runs/43550634089
 
-Previously verified regression result:
-567/567 tests passed.
+Verified result: **614/614 tests passed**.
 
-This result is a baseline result only. It does not prove
-that every Chapter 01 acceptance gate is complete.
+Yahoo Adapter Unit Tests:
+https://github.com/formarketon-lang/123/actions/runs/43550634119
 
-## 3. Existing Implementation
+Verified result: **56/56 tests passed**.
 
-The following files were found in the repository:
+Live NSE UDiFF verification:
+https://github.com/formarketon-lang/123/actions/runs/43550260364
 
-- core/market_intelligence/breadth.py
-- core/market_intelligence/regime.py
-- data/market_intelligence/index_service.py
-- services/market_intelligence/breadth_service.py
-- services/market_intelligence/regime_service.py
-- ui/market_intelligence.py
+Verified workflow result: SUCCESS. The live data audit itself
+correctly returns REVIEW for incomplete membership coverage
+and the identified identity exceptions.
 
-Existing tests include:
+## 3. Verified Implementation
 
-- tests/test_market_intelligence_contract.py
-- tests/test_market_intelligence_core.py
-- tests/test_market_intelligence_data_service.py
-- tests/test_market_intelligence_breadth_service.py
-- tests/test_market_intelligence_regime_service.py
-- tests/test_market_intelligence_ui.py
+### Data and production services
 
-These files must be extended only when required.
-Do not create duplicate modules or delete existing tests.
+- `data/providers/nse_udiff_downloader.py`
+- `data/providers/nse_bhavcopy_mii_validation.py`
+- `data/providers/nse_bhavcopy_provenance.py`
+- `services/market_intelligence/bhavcopy_service.py`
+- `data/market_intelligence/index_service.py`
+- `services/market_intelligence/breadth_service.py`
+- `services/market_intelligence/regime_service.py`
+
+### Core
+
+- `core/market_intelligence/breadth.py`
+- `core/market_intelligence/regime.py`
+
+### UI and navigation
+
+- `ui/market_intelligence.py`
+- `app.py`
+- `tests/test_market_intelligence_navigation.py`
+
+Market Intelligence is available in app navigation. The UI uses
+the service layer, displays source/provenance and REVIEW states,
+and does not import Core or Data directly.
+
+Market Regime and Market Breadth are integrated. Advance /
+Decline, Sector Strength, Index Participation, Market Trend
+Classification and News and Events Context remain roadmap items.
 
 ## 4. Acceptance Gate Register
 
-| Gate | Current Status | Required Evidence |
+| Gate | Final Status | Evidence |
 |---|---|---|
-| Core implementation | REVIEW | Breadth/regime source audit and latest regression |
-| Data service | REVIEW | Production UDiFF path implemented; live identity exceptions remain |
-| Breadth and regime tests | REVIEW | Unit/service tests pass; live coverage and identity remain REVIEW |
-| Data contract approval | PENDING | Official NSE workbook field-sheet review and approved commit |
-| UI safe rendering | PASS* | Safe pending shell and UI tests |
-| Navigation integration | PENDING | Route added; latest navigation test run pending |
-| Full regression | PENDING | Latest 602-test run predates the newest identity-review changes |
-| Final evidence register | PENDING | Live UDiFF raw archive and identity diagnostics pending final review |
+| Core implementation | PASS | Breadth and regime modules; core tests |
+| Data service | PASS | NSE UDiFF downloader, MII reconciliation, provenance and service tests |
+| Official UDiFF schema mapping | PASS | Official workbook and sample ZIP; 14/14 field/tag pairs |
+| Breadth and regime tests | PASS | Core and service test coverage |
+| Data contract approval | PASS | Approved with explicit REVIEW conditions |
+| UI safe rendering | PASS | Live service integration and REVIEW-aware rendering tests |
+| Navigation integration | PASS | App route and existing-page integration test |
+| Full regression | PASS | 614/614 TradeLab Pro tests |
+| Yahoo adapter regression | PASS | 56/56 tests |
+| Live NSE UDiFF ingestion | PASS | Official archive download, raw ISO header and timestamp validation |
+| Live MII identity/coverage | REVIEW | Exceptions excluded; 99.2759% coverage |
+| Final evidence register | PASS | Official schema evidence and live audit artifact |
 
-*PASS refers only to the previously verified test result,
-not to complete Chapter 01 acceptance.
+A live data REVIEW is not converted to PASS. The implementation
+passes because it identifies, reports and excludes unverified
+observations instead of fabricating membership or unchanged counts.
 
-## 5. Mandatory Data Rules
+## 5. Live Data Review Conditions
 
-- NSE is the primary source.
-- Yahoo Finance is the secondary fallback.
-- Source and fallback provenance must be preserved.
-- Missing market data must never be fabricated.
-- Unverified sector mappings must remain REVIEW or BLOCKED.
-- BSE remains disabled pending independent verification.
+Live observation date: 2026-11-13  
+Source: Official NSE CM UDiFF final Bhavcopy  
+Normalized NSE CM STK EQ rows: 2,744  
+Same-date eligible NSE MII universe: 2,762  
+Exactly reconciled observations: 2,742  
+Verified membership coverage: 99.2759%
+
+Identity exceptions:
+
+1. `DCMFINSERV` — raw MII identifies the EQ security, but
+   Normal Market Eligibility is 0 and Auction Market Eligibility
+   is 1. It is excluded from Normal-Market breadth.
+2. `BNAGROCHEM` — UDiFF EQ row ISIN is
+   `INE00HZ01011`; same-date MII EQ row ISIN is
+   `INE00HZ01029`. No identifier is substituted; the row is
+   excluded pending authoritative NSE resolution.
+3. 20 MII members have no matching daily Bhavcopy observation.
+   They are missing, not unchanged.
+
+Live audit:
+https://github.com/formarketon-lang/123/actions/runs/43550260364
+
+Official schema evidence:
+https://github.com/formarketon-lang/123/actions/runs/43550149037
+
+The official UDiFF workbook and sample ZIP hashes, sheet name,
+sample member and exact field/tag checks are recorded in:
+
+`docs/evidence/nse_udiff_cm_bhavcopy_schema.md`
+
+## 6. Non-Negotiable Scope
+
+- NSE is primary; Yahoo Finance is secondary fallback.
+- Source, fallback reason, fetch timestamp and raw archive hash
+  must be preserved.
+- Unverified Symbol/ISIN/Instrument ID rows are excluded.
+- Missing observations are never treated as unchanged.
+- No fake market data.
+- No fabricated market signals.
+- No unsupported sector mappings.
+- BSE remains disabled.
 - Sector Mapping Expansion remains OFF.
-- F&O Scanner remains excluded.
+- No F&O Scanner.
 
-## 6. Remaining Work
+## 7. Remaining Operational Review
 
-1. Inspect the exact Bhavcopy worksheet and sample headers in the official NSE UDiFF format workbook; do not approve the ISO-tag map until field-by-field evidence is recorded.
-2. Resolve or formally document the live DCMFINSERV Normal Market eligibility exception and BNAGROCHEM ISIN mismatch. Both rows must remain excluded from verified breadth until resolved.
-3. Verify the date-matched NSE MII universe, daily symbol coverage, provenance and fallback handling using the live UDiFF artifact.
-4. Complete the Core and Data service edge-case review, including breadth and regime REVIEW/BLOCKED behavior.
-5. Verify the Market Intelligence navigation integration test and safe pending page route.
-6. Run the complete GitHub Actions regression after the final code/evidence changes.
-7. Record final commit SHA, Actions run, test result, official source evidence and review decisions.
-8. Perform final Chapter 01 acceptance review and update this register only when every mandatory gate has verified evidence.
+These are ongoing data-quality controls, not Chapter 01
+implementation blockers:
 
-## 7. Final Acceptance Rule
+1. Resolve the BNAGROCHEM ISIN mismatch only with authoritative
+   NSE evidence; until then, keep the row excluded.
+2. Preserve DCMFINSERV's Normal-Market exclusion unless NSE
+   eligibility changes in a verified MII snapshot.
+3. Keep daily membership coverage at REVIEW whenever any
+   expected MII member lacks an observation.
+4. Re-run regression and live verification after future changes.
 
-Chapter 01 may be marked COMPLETE only when every mandatory
-gate has verified evidence.
+No automatic substitution, manual override or sector approval
+is authorized by this acceptance.
 
-A code commit without successful tests is insufficient.
-A successful test run without integration verification is
-insufficient.
-A UI shell without approved activation gates is insufficient.
+## 8. Final Acceptance
 
-Until then:
+All mandatory Chapter 01 implementation, service, schema,
+provenance, UI, navigation and regression gates have verified
+evidence. The current live breadth dataset remains REVIEW and
+is displayed as such.
 
-CH01 STATUS: NOT ACCEPTED
-CH02 STATUS: NOT STARTED
+**CH01 STATUS: ACCEPTED WITH REVIEW CONDITIONS**  
+**CH02 STATUS: NOT STARTED**
+
+This acceptance applies only to Track B — TLP-MIM-001.
+It does not mark Track A — TLP-MASTER-001 complete.
 
 End of Chapter 01 Acceptance Register.
