@@ -215,7 +215,7 @@ Exit: implementation and focused tests are committed to the Chapter 02 draft bra
 
 ### STEP 04 — Prior-Session Price Validation
 
-Status: IMPLEMENTED ON FEATURE BRANCH — AUTOMATED TESTS PENDING
+Status: VALIDATION ENGINE PASS — GITHUB ACTIONS VERIFIED; OFFICIAL CALENDAR INTEGRATION PENDING
 
 Implementation:
 - Added `services/market_intelligence/prior_session_validation.py`.
@@ -237,7 +237,7 @@ Important limitations:
 - The MII raw archive SHA-256 / fetch timestamp gap from Step 03 remains open.
 - This is a pure validation module; no production UI, live service activation or Main branch change.
 
-Exit: deterministic validation engine and focused tests added; CI and calendar-source integration remain pending.
+Exit: deterministic validation engine and focused tests pass in GitHub Actions. Official calendar-source integration and live historical verification remain pending.
 
 ### STEP 05 — Daily A/D Classification
 - Reuse existing classification rules where suitable.
@@ -318,13 +318,14 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-04-IMPLEMENTED-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-04-ENGINE-REGRESSION-PASS-CALENDAR-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
 - Step 03 status: REGRESSION PASS; feature branch remains unmerged.
-- Step 04: prior-session validation module and 14 focused tests added; CI pending.
+- Step 04: prior-session validation engine and 15 focused tests PASS in GitHub Actions.
 - Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
+- Live historical-range validation: NOT RUN.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
 - Step 03 full TradeLab Pro regression: PASS — 626 tests.
 - Step 03 Yahoo Adapter regression: PASS — 56 tests.
