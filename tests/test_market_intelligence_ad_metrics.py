@@ -1,6 +1,5 @@
 """Tests for historical A-D difference and A/D ratio metrics."""
 
-import math
 
 import pandas as pd
 import pytest
