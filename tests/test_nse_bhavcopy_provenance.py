@@ -167,7 +167,7 @@ def test_unknown_symbol_is_reported_in_provenance_review():
     assert result["identity_status"] == "REVIEW"
     assert result["unknown_symbols"] == ["UNKNOWN"]
     assert result["unknown_count"] == 1
-    assert "BHAVCOPY_SYMBOLS_NOT_PRESENT_IN_DATED_MII" in (
+    assert "BHAVCOPY_SYMBOLS_NOT_IN_VERIFIED_MII_UNIVERSE" in (
         result["audit_reasons"]
     )
 
