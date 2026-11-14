@@ -63,6 +63,33 @@ def make_zip(files=None):
 SOURCE_BYTES = make_zip()
 
 
+def make_schema_archive():
+    from data.providers.nse_udiff_downloader import REQUIRED_RAW_FIELDS
+
+    values = {
+        "TradDt": "2026-11-12",
+        "Sgmt": "CM",
+        "Src": "NSE",
+        "FinInstrmTp": "STK",
+        "FinInstrmId": "1",
+        "SsnId": "F1",
+        "ISIN": "INE000A01010",
+        "TckrSymb": "AAA",
+        "SctySrs": "EQ",
+        "OpnPric": "100",
+        "HghPric": "110",
+        "LwPric": "90",
+        "ClsPric": "105",
+        "PrvsClsgPric": "100",
+        "TtlTradgVol": "1000",
+    }
+    return make_zip({
+        "bhavcopy.csv": pd.DataFrame(
+            [{field: values[field] for field in REQUIRED_RAW_FIELDS}]
+        ).to_csv(index=False)
+    })
+
+
 def run_audit(
     bhavcopy=None,
     universe=None,
@@ -301,7 +328,7 @@ def test_official_schema_evidence_can_pass_when_verified():
     result = audit_nse_bhavcopy_provenance(
         bhavcopy=make_bhavcopy(),
         universe=make_universe(),
-        source_bytes=SOURCE_BYTES,
+        source_bytes=make_schema_archive(),
         source_filename=SOURCE_FILENAME,
         source_url=(
             "https://nsearchives.nseindia.com/content/cm/"
