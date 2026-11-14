@@ -37,7 +37,18 @@ def validate_result(df, name):
     if not isinstance(df, pd.DataFrame) or df.empty:
         raise ValueError(f"{name}: empty or invalid dataset.")
 
-    required = ["Date", "Open", "High", "Low", "Close"]
+    required = [
+        "Date",
+        "Open",
+        "High",
+        "Low",
+        "Close",
+        "Source",
+        "Exchange",
+        "Fetched At UTC",
+        "Validation Status",
+        "Fallback Reason",
+    ]
 
     missing = [column for column in required if column not in df.columns]
 
@@ -58,6 +69,42 @@ def validate_result(df, name):
 
     if not result["Date"].between(start, end).all():
         raise ValueError(f"{name}: dates outside requested range.")
+
+    sources = result["Source"].astype(str).str.strip().str.upper()
+    if sources.nunique(dropna=False) != 1:
+        raise ValueError(f"{name}: mixed or missing data sources.")
+    source = sources.iloc[0]
+    if source not in {"NSE", "YAHOO"}:
+        raise ValueError(f"{name}: unsupported source {source!r}.")
+
+    exchanges = result["Exchange"].astype(str).str.strip().str.upper()
+    if exchanges.nunique(dropna=False) != 1 or exchanges.iloc[0] != "NSE":
+        raise ValueError(f"{name}: exchange provenance must be NSE.")
+
+    statuses = (
+        result["Validation Status"].astype(str).str.strip().str.upper()
+    )
+    if statuses.nunique(dropna=False) != 1 or statuses.iloc[0] != "PASS":
+        raise ValueError(f"{name}: validation status is not PASS.")
+
+    fetched_values = result["Fetched At UTC"].dropna().astype(str).str.strip()
+    if fetched_values.empty or fetched_values.nunique() != 1:
+        raise ValueError(f"{name}: missing or inconsistent fetch timestamp.")
+    fetched_at = pd.to_datetime(
+        fetched_values.iloc[0],
+        errors="coerce",
+        utc=True,
+    )
+    if pd.isna(fetched_at):
+        raise ValueError(f"{name}: invalid Fetched At UTC timestamp.")
+
+    fallback_reasons = (
+        result["Fallback Reason"].fillna("").astype(str).str.strip()
+    )
+    if source == "YAHOO" and (
+        fallback_reasons.empty or not fallback_reasons.iloc[0]
+    ):
+        raise ValueError(f"{name}: Yahoo fallback reason is missing.")
 
     for column in ["Open", "High", "Low", "Close"]:
         result[column] = pd.to_numeric(
