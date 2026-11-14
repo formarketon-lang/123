@@ -22,6 +22,13 @@ def observation_frame(rows):
     )
 
 
+def large_observation_frame(day, count):
+    return observation_frame([
+        (day, f"SYM{i:04d}", f"ISIN{i:010d}", 100, 100)
+        for i in range(count)
+    ])
+
+
 def record(
     day="2026-11-13",
     status="PASS",
@@ -232,6 +239,7 @@ def test_rounded_four_decimal_nse_coverage_is_accepted_within_precision():
     result = classify_historical_daily_advance_decline({
         "per_date": [record(
             status="REVIEW",
+            observations=large_observation_frame("2026-11-13", 2730),
             expected=2749,
             verified=2730,
             missing=19,
@@ -248,6 +256,7 @@ def test_coverage_outside_four_decimal_rounding_tolerance_is_rejected():
         classify_historical_daily_advance_decline({
             "per_date": [record(
                 status="REVIEW",
+                observations=large_observation_frame("2026-11-13", 2730),
                 expected=2749,
                 verified=2730,
                 missing=19,
