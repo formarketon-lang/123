@@ -228,7 +228,7 @@ Implementation:
 
 Tests added:
 - `tests/test_market_intelligence_prior_session_validation.py`
-- 14 focused test functions cover prior-session equality, holiday/weekend gaps, special sessions, tolerance boundaries, missing prior rows, ISIN mismatch, unavailable archives, unverified calendar, duplicate dates/identities and invalid prices.
+- 15 focused test functions cover prior-session equality, holiday/weekend gaps, special sessions, tolerance boundaries, missing prior rows, ISIN mismatch, unavailable archives, unverified calendar, duplicate dates/identities and invalid prices.
 
 Important limitations:
 - This module validates against a supplied calendar; it does not yet download or independently authenticate the official NSE trading calendar.
@@ -255,7 +255,7 @@ Implementation:
 
 Tests added:
 - `tests/test_market_intelligence_advance_decline.py`
-- 12 focused tests cover advances/declines/unchanged, missing observations, all-missing dates, identity exceptions, unavailable/blocked dates, date ordering, duplicate dates, metadata mismatch and invalid prices.
+- 14 focused tests cover advances/declines/unchanged, missing observations, all-missing dates, identity exceptions, unavailable/blocked dates, date ordering, duplicate dates, metadata mismatch and invalid prices.
 
 Limitations:
 - This is a pure historical classification layer; it does not fetch NSE data or calculate A-D Difference, A/D Ratio or cumulative A-D Line.
@@ -337,13 +337,13 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-05-IMPLEMENTED-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-05-COVERAGE-HARDENED-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
 - Step 03 status: REGRESSION PASS; feature branch remains unmerged.
 - Step 04: prior-session validation engine and 15 focused tests PASS in GitHub Actions.
-- Step 05: daily A/D classification module and 12 focused tests added; GitHub Actions pending.
+- Step 05: daily A/D classification module and 14 focused tests added; initial full regression PASS (653); stricter coverage reconciliation added and fresh CI pending.
 - Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
 - Live historical-range validation: NOT RUN.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
