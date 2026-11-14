@@ -204,3 +204,23 @@ def test_overall_status_uses_strictest_date_status():
     assert result["analysis_status"] == "UNAVAILABLE"
     assert result["pass_count"] == 1
     assert result["unavailable_count"] == 1
+
+
+
+def test_missing_count_must_reconcile_with_verified_and_expected():
+    with pytest.raises(AdvanceDeclineClassificationError, match="counts are inconsistent"):
+        classify_historical_daily_advance_decline({
+            "per_date": [record(
+                status="REVIEW",
+                verified=2,
+                missing=2,
+                coverage=66.6666667,
+            )],
+        })
+
+
+def test_reported_coverage_must_match_verified_universe_count():
+    with pytest.raises(AdvanceDeclineClassificationError, match="inconsistent"):
+        classify_historical_daily_advance_decline({
+            "per_date": [record(coverage=99.0)],
+        })
