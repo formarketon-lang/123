@@ -32,6 +32,7 @@ def _standardize_adapter_result(
     interval,
     instrument_type,
     fallback_reason="",
+    fetched_at_utc=None,
 ):
     """Apply common schema and attach provenance metadata."""
 
@@ -57,6 +58,7 @@ def _standardize_adapter_result(
         timeframe=interval,
         fallback_reason=fallback_reason,
         validation_status="PASS",
+        fetched_at_utc=fetched_at_utc,
     )
 
 
@@ -77,6 +79,7 @@ def _validate_nse_data(data, symbol, is_index):
             + ", ".join(sorted(missing))
         )
 
+    fetched_at_utc = data.attrs.get("fetched_at_utc")
     result = data.copy()
     result["Date"] = pd.to_datetime(result["Date"], errors="coerce")
 
@@ -142,10 +145,11 @@ def _validate_nse_data(data, symbol, is_index):
         exchange="NSE",
         interval="1d",
         instrument_type="index" if is_index else "equity",
+        fetched_at_utc=fetched_at_utc,
     )
 
 
-def _add_yahoo_metadata(data, symbol, exchange, interval, reason):
+def _add_yahoo_metadata(data, symbol, exchange, interval, reason, fetched_at_utc):
     """Validate Yahoo data and attach fallback provenance."""
 
     if not isinstance(data, pd.DataFrame) or data.empty:
@@ -159,6 +163,7 @@ def _add_yahoo_metadata(data, symbol, exchange, interval, reason):
         interval=interval,
         instrument_type="index" if symbol.startswith("^") else "equity",
         fallback_reason=reason,
+        fetched_at_utc=fetched_at_utc,
     )
 
 
@@ -247,12 +252,14 @@ def fetch_market_history(
             exchange=exchange,
         )
 
+        yahoo_fetched_at_utc = pd.Timestamp.now(tz="UTC").isoformat().replace("+00:00", "Z")
         return _add_yahoo_metadata(
             yahoo_data,
             symbol,
             exchange,
             interval,
             primary_error,
+            yahoo_fetched_at_utc,
         )
 
     except Exception as yahoo_error:
