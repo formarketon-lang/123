@@ -137,6 +137,18 @@ def render_market_intelligence_page():
         for reason in audit["audit_reasons"]:
             st.write(f"• {reason}")
 
+    st.subheader("Planned Analysis Areas")
+    for area in [
+        "Market Regime Analysis",
+        "Market Breadth",
+        "Advance / Decline Analysis",
+        "Sector Strength",
+        "Index Participation",
+        "Market Trend Classification",
+        "News and Events Context",
+    ]:
+        st.write(f"• {area}")
+
     st.caption(
         "No fabricated signals. No unsupported sector mappings. "
         "No F&O Scanner. BSE remains disabled."
