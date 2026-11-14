@@ -39,6 +39,10 @@ def analyze_index_market_regime(
 
     result["index_symbol"] = normalized_symbol
     result["index_name"] = NSE_INDEX_SYMBOLS[normalized_symbol]
+    result["exchange"] = "NSE"
+    result["fetched_at_utc"] = str(
+        index_data["Fetched At UTC"].iloc[0]
+    )
 
     return result
   
