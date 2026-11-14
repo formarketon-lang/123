@@ -196,12 +196,13 @@ Implementation:
 - Keeps each date's NSE Bhavcopy source URL, archive filename, SHA-256, actual fetch timestamp, MII snapshot date, coverage and identity counts.
 - Retains per-date verified and unverified observations separately.
 - Records a failed date as `UNAVAILABLE` and continues to the next requested date; no previous/next date data or MII universe is carried over.
+- Overall status precedence is `BLOCKED` → `UNAVAILABLE` → `REVIEW` → `PASS`, so a missing requested date cannot be hidden by a REVIEW date.
 - Aggregates verified observations in date/Symbol order and exposes a per-date summary table.
 
 Tests added:
 - `tests/test_market_intelligence_historical_observation_service.py`
-- Covers date sorting, malformed/empty/duplicate input, per-date provenance, failure isolation, REVIEW propagation and no cross-date reuse.
-- The parameterized invalid-date test contributes five input cases.
+- Covers date sorting, malformed/empty/duplicate input, per-date provenance, failure isolation, REVIEW propagation, no cross-date reuse and mixed-status precedence.
+- Seven test functions plus five parameterized invalid-date cases are defined; GitHub Actions execution remains pending.
 
 Limitations and safety:
 - This step retrieves historical NSE observations only; it does not calculate the A/D series.
