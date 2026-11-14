@@ -64,11 +64,11 @@ def make_universe(include_mismatch=False):
         "Symbol": symbols,
         "Instrument ID": [str(i + 1) for i in range(len(symbols))],
         "ISIN": isins,
-        "Series": ["EQ"] * 3,
-        "Exchange": ["NSE"] * 3,
-        "Source": ["NSE MII Security Master"] * 3,
-        "Universe As Of Date": ["2026-11-13"] * 3,
-        "Universe Verification Status": ["MII_DATED"] * 3,
+        "Series": ["EQ"] * len(symbols),
+        "Exchange": ["NSE"] * len(symbols),
+        "Source": ["NSE MII Security Master"] * len(symbols),
+        "Universe As Of Date": ["2026-11-13"] * len(symbols),
+        "Universe Verification Status": ["MII_DATED"] * len(symbols),
     })
 
 
