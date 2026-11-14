@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–07 VERIFIED; STEP 08 IN PROGRESS  
+Status: CHAPTER PLAN DRAFT — STEPS 01–07 VERIFIED; STEP 08 IMPLEMENTED; CI PENDING  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -319,10 +319,29 @@ Limitations:
 Exit: implementation and 15 test cases pass in GitHub Actions; TradeLab Pro full regression 687 passed and Yahoo Adapter workflow PASS.
 
 ### STEP 08 — Core Analysis Module
-- Implement pure calculations only; no network or Streamlit imports.
-- Return metrics, per-date status, coverage and provenance references.
-- Test independent calculations and invalid-input rejection.
-- Exit: Core test suite passes.
+
+Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+
+Implementation:
+- Added `core/market_intelligence/historical_ad_analysis.py`.
+- Added `analyze_historical_advance_decline(history, expected_sessions, initial_anchor=0)`.
+- Pure orchestration only; imports no network client, data provider or Streamlit.
+- Reuses Step 05 daily classifier, Step 06 daily metrics and Step 07 cumulative line; no duplicate calculations.
+- Returns daily classification, A-D metrics, cumulative line, combined per-date status, coverage table and source provenance table.
+- Retains source, URL, filename, SHA-256, fetch timestamp and MII snapshot date by observation date.
+- Includes missing expected sessions explicitly as MISSING; missing sessions affect overall REVIEW and break cumulative segments.
+- Preserves REVIEW, BLOCKED and UNAVAILABLE without fabricating counts or metrics.
+
+Tests:
+- Added `tests/test_market_intelligence_historical_ad_analysis.py`.
+- 12 focused tests cover output contract, source provenance, missing-session handling, REVIEW/BLOCKED/UNAVAILABLE propagation, duplicate/out-of-calendar/wrong-date rejection, anchor handling and pure-module import boundaries.
+
+Limitations:
+- Requires caller-supplied verified NSE session calendar and already retrieved historical observations.
+- Does not fetch NSE data or connect Streamlit UI.
+- Live historical date-range validation remains pending.
+
+Exit: implementation and 12 focused tests committed to the draft feature branch; GitHub Actions verification pending.
 
 ### STEP 09 — Market Intelligence Service
 - Orchestrate existing Data adapters and Core calculations.
@@ -378,7 +397,7 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-08-CORE-ANALYSIS-IN-PROGRESS`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-08-CORE-ANALYSIS-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
