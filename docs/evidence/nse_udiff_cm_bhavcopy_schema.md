@@ -3,7 +3,7 @@
 Project: TLP-MIM-001  
 Parent: TLP-MASTER-001  
 Scope: NSE Cash Market, CM segment, STK instrument type, EQ series  
-Status: REVIEW — reference recorded; final workbook content review pending
+Status: PASS — official workbook field map and sample header verified; live membership identity/coverage remains REVIEW
 
 ## Official NSE references
 
@@ -23,6 +23,23 @@ Status: REVIEW — reference recorded; final workbook content review pending
    https://nsearchives.nseindia.com/web/sites/default/files/inline-files/NSE_MasterData_Technical_Specifications.pdf
 
 The official Forms & Formats page was observed to list the UDiFF catalogue through Version 4.0 and the CM Bhavcopy format/test files. The page shows an update date of 30-Jun-2026.
+
+## Verified official schema evidence
+
+GitHub Actions live evidence run:  
+https://github.com/formarketon-lang/123/actions/runs/43550149037
+
+Artifact: `tlp-ch01-nse-udiff-live-audit` (14-day retention)
+
+- Official workbook SHA-256: `b9f2fa369af20381374cdb40c3ebc96c43029401e057225599cfe63b288ba3e8`
+- Official sample ZIP SHA-256: `786a5ae1329f27a4f08af794737cb380e82de6a53db6751b518d2309512130fa`
+- Workbook sheet verified: `Bhavcopy File Format`
+- Official sample member verified: `Bhavcopy/BhavCopy_NSE_CM_0_0_0_20231207_F_0000.csv`
+- Exact expected field-name to ISO-tag pairs: 14/14 matched.
+- Official sample header: required CM UDiFF tags present.
+- Production live header: required tags present; 34 columns parsed.
+
+The mapping approval is pinned in `data/providers/nse_udiff_downloader.py` against these official source hashes. The live audit checks the raw production header again before the provenance audit can report schema PASS.
 
 ## Production ISO-tag mapping currently implemented
 
@@ -57,7 +74,7 @@ The production normalizer rejects missing required tags, wrong segment/source/in
 
 ## Outstanding evidence
 
-The official XLSX and ZIP are binary downloads. Their exact Bhavcopy worksheet/sample content has not yet been independently inspected in this audit session. The live downloader has parsed the official archive using the ISO tags above, but the mapping remains REVIEW until the exact official worksheet definitions and sample headers are attached or inspected and cross-checked.
+The exact official Bhavcopy worksheet and official sample CSV header have now been downloaded and inspected in GitHub Actions. All 14 required field-name/ISO-tag pairs match the code map, and the official CM sample header contains the required tags. Schema mapping status is PASS. The official workbook and sample hashes are pinned in code and this evidence record.
 
 A live 13-Nov-2026 UDiFF/MII comparison exposed two identity exceptions:
 
@@ -73,7 +90,8 @@ The reconciliation service now returns both exceptions, preserves the raw rows i
 - Raw archive hash: RECORDED
 - Live raw-field parsing: IMPLEMENTED; latest rerun pending
 - Symbol/ISIN reconciliation: REVIEW where unknown rows occur
-- Official schema mapping approval: PENDING
+- Official schema mapping approval: PASS
+- Live MII identity/coverage: REVIEW
 - Chapter 01 acceptance: NOT ACCEPTED
 
 No sector mapping, BSE mapping, or F&O Scanner scope is authorized by this evidence record.
