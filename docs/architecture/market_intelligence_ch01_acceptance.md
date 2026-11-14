@@ -57,14 +57,14 @@ Do not create duplicate modules or delete existing tests.
 
 | Gate | Current Status | Required Evidence |
 |---|---|---|
-| Core implementation | REVIEW | Source and unit-test audit |
-| Data service | REVIEW | Adapter and provenance audit |
-| Breadth and regime tests | REVIEW | Test results and edge-case audit |
-| Data contract approval | PENDING | Formal review and approved commit |
-| UI safe rendering | PASS* | Existing UI test evidence |
-| Navigation integration | PENDING | Integration test and verified routing |
-| Full regression | PASS* | Verified Actions run |
-| Final evidence register | PENDING | All evidence linked and reviewed |
+| Core implementation | REVIEW | Breadth/regime source audit and latest regression |
+| Data service | REVIEW | Production UDiFF path implemented; live identity exceptions remain |
+| Breadth and regime tests | REVIEW | Unit/service tests pass; live coverage and identity remain REVIEW |
+| Data contract approval | PENDING | Official NSE workbook field-sheet review and approved commit |
+| UI safe rendering | PASS* | Safe pending shell and UI tests |
+| Navigation integration | PENDING | Route added; latest navigation test run pending |
+| Full regression | PENDING | Latest 602-test run predates the newest identity-review changes |
+| Final evidence register | PENDING | Live UDiFF raw archive and identity diagnostics pending final review |
 
 *PASS refers only to the previously verified test result,
 not to complete Chapter 01 acceptance.
@@ -82,13 +82,14 @@ not to complete Chapter 01 acceptance.
 
 ## 6. Remaining Work
 
-1. Complete the Data Contract review.
-2. Audit Core and Data service interfaces.
-3. Add and verify Navigation Integration tests.
-4. Integrate the page only after activation gates are satisfied.
-5. Run the complete GitHub Actions regression.
-6. Record commit SHA, Actions run, test result, and review evidence.
-7. Perform final Chapter 01 acceptance review.
+1. Inspect the exact Bhavcopy worksheet and sample headers in the official NSE UDiFF format workbook; do not approve the ISO-tag map until field-by-field evidence is recorded.
+2. Resolve or formally document the live DCMFINSERV Normal Market eligibility exception and BNAGROCHEM ISIN mismatch. Both rows must remain excluded from verified breadth until resolved.
+3. Verify the date-matched NSE MII universe, daily symbol coverage, provenance and fallback handling using the live UDiFF artifact.
+4. Complete the Core and Data service edge-case review, including breadth and regime REVIEW/BLOCKED behavior.
+5. Verify the Market Intelligence navigation integration test and safe pending page route.
+6. Run the complete GitHub Actions regression after the final code/evidence changes.
+7. Record final commit SHA, Actions run, test result, official source evidence and review decisions.
+8. Perform final Chapter 01 acceptance review and update this register only when every mandatory gate has verified evidence.
 
 ## 7. Final Acceptance Rule
 
