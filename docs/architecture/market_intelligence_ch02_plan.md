@@ -250,12 +250,12 @@ Implementation:
 - Produces per-date Advancing, Declining, Unchanged, Missing, Identity Exceptions, Verified Observations, Expected Universe, Coverage and status.
 - Missing members are counted separately and never added to Unchanged. If all observations are missing, the result is 0/0/0 plus the full missing count and REVIEW.
 - REVIEW dates may show verified-subset counts but remain REVIEW. BLOCKED and UNAVAILABLE dates never receive fabricated classification counts.
-- Enforces count reconciliation, unique dates, supported status values, verified-observation row counts and valid coverage values.
+- Enforces count reconciliation, unique dates, supported status values, verified-observation row counts, exact observation-date isolation and valid coverage values.
 - Overall status precedence is BLOCKED → UNAVAILABLE → REVIEW → PASS.
 
 Tests added:
 - `tests/test_market_intelligence_advance_decline.py`
-- 14 focused tests cover advances/declines/unchanged, missing observations, all-missing dates, identity exceptions, unavailable/blocked dates, date ordering, duplicate dates, metadata mismatch and invalid prices.
+- 15 focused tests cover advances/declines/unchanged, missing observations, all-missing dates, identity exceptions, unavailable/blocked dates, date ordering, duplicate dates, metadata mismatch, exact date isolation and invalid prices.
 
 Limitations:
 - This is a pure historical classification layer; it does not fetch NSE data or calculate A-D Difference, A/D Ratio or cumulative A-D Line.
@@ -337,13 +337,13 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-05-COVERAGE-HARDENED-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-05-FIXTURE-AND-DATE-GUARD-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
 - Step 03 status: REGRESSION PASS; feature branch remains unmerged.
 - Step 04: prior-session validation engine and 15 focused tests PASS in GitHub Actions.
-- Step 05: daily A/D classification module and 14 focused tests added; initial full regression PASS (653); stricter coverage reconciliation added and fresh CI pending.
+- Step 05: daily A/D classification hardened with 15 focused tests. Latest earlier CI found one test-fixture inconsistency (654 passed, 1 failed); fixture corrected, exact date-isolation guard added; fresh CI pending.
 - Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
 - Live historical-range validation: NOT RUN.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
