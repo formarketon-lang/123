@@ -12,6 +12,10 @@ from data.providers.nse_downloader import (
 
 NSE_INDEX_URL = f"{NSE_BASE_URL}/api/historicalOR/indicesHistory"
 
+# NSE index history responses can be truncated when a long date range is
+# requested. Keep requests below the observed response cap.
+MAX_INDEX_QUERY_DAYS = 60
+
 INDEX_ALIASES = {
     "NIFTY 50": "NIFTY 50",
     "NIFTY NEXT 50": "NIFTY NEXT 50",
@@ -181,15 +185,16 @@ def download_index_history(index_name, start_date, end_date):
 
     session = create_nse_session()
 
-    # Keep each NSE request within a maximum 365-calendar-day window.
-    # This avoids sending a multi-year range in one API request.
+    # Use short windows to avoid NSE API response truncation. A successful
+    # HTTP response can still contain only the first ~80 trading sessions
+    # for a much longer requested period.
     all_records = []
     fetched_at_utc = None
     chunk_start = start
 
     while chunk_start <= end:
         chunk_end = min(
-            chunk_start + timedelta(days=364),
+            chunk_start + timedelta(days=MAX_INDEX_QUERY_DAYS - 1),
             end,
         )
 

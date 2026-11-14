@@ -326,3 +326,60 @@ def test_index_downloader_records_actual_response_fetch_timestamp(monkeypatch):
     fetched_at = pd.Timestamp(result.attrs["fetched_at_utc"])
     assert fetched_at.tzinfo is not None
     assert str(fetched_at.tz_convert("UTC").tz) == "UTC"
+
+
+def test_index_downloader_splits_long_history_into_bounded_chunks(
+    monkeypatch,
+):
+    from datetime import datetime
+
+    class RangeSession:
+        def __init__(self):
+            self.calls = []
+
+        def get(self, url, *args, **kwargs):
+            params = kwargs["params"]
+            chunk_start = datetime.strptime(
+                params["from"], "%d-%m-%Y"
+            )
+            chunk_end = datetime.strptime(
+                params["to"], "%d-%m-%Y"
+            )
+            self.calls.append((chunk_start, chunk_end))
+            records = [
+                index_record(chunk_start.strftime("%d-%b-%Y")),
+                index_record(chunk_end.strftime("%d-%b-%Y")),
+            ]
+            return FakeResponse(
+                records=records,
+                content_type="application/json",
+            )
+
+    session = RangeSession()
+    monkeypatch.setattr(
+        nse_index_downloader,
+        "create_nse_session",
+        lambda: session,
+    )
+
+    result = nse_index_downloader.download_index_history(
+        "NIFTY 50",
+        "2025-10-31",
+        "2026-11-14",
+    )
+
+    assert len(session.calls) >= 6
+    assert result["Date"].min() == pd.Timestamp("2025-10-31")
+    assert result["Date"].max() == pd.Timestamp("2026-11-14")
+    assert len(result) == len(session.calls) * 2
+
+    for chunk_start, chunk_end in session.calls:
+        assert (
+            chunk_end - chunk_start
+        ).days < nse_index_downloader.MAX_INDEX_QUERY_DAYS
+
+    for previous, current in zip(
+        session.calls,
+        session.calls[1:],
+    ):
+        assert current[0] == previous[1] + pd.Timedelta(days=1)
