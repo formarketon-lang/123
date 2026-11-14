@@ -33,6 +33,8 @@ The following existing modules are the starting point:
 - `data/universe.py`
 - `data/constituent_audit.py`
 - `data/market_intelligence/index_service.py`
+- `data/providers/nse_udiff_bhavcopy.py`
+- `data/providers/nse_udiff_ingestion.py`
 
 Existing standardized fields include Date, Open, High, Low,
 Close, Volume, Symbol, Source, Exchange, Timeframe and
@@ -41,8 +43,11 @@ Fallback Reason.
 Market Intelligence index and breadth services additionally
 validate Fetched At UTC and Validation Status.
 
-Existing interfaces must be reviewed before adding new adapters
-or duplicate data structures.
+The UDiFF ingestion caller retrieves the dated CM archive from
+the NSE archive host, captures the completed-response timestamp,
+normalizes only through an explicitly supplied column map, and
+runs the existing archive/MII provenance audit. It does not
+invent a default field mapping or claim source authenticity.
 
 ## 3. Source Priority
 
@@ -98,11 +103,17 @@ Current implementation review:
   and all six configured NSE index/sector benchmarks.
 - NSE UDiFF normalizer requires an explicit timezone-aware
   fetched_at_utc argument and emits Fetched At UTC.
+- Production UDiFF retrieval caller now captures the actual
+  successful HTTP-response time, preserves the original archive
+  bytes for SHA-256 audit, and reconciles normalized identities
+  against the dated MII universe.
 
 The standard NSE Equity/Index timestamp handoff is verified.
-A production NSE UDiFF ingestion caller has not yet been
-implemented or verified. Test-only timestamps are fixtures
-and must never be used as production data.
+The UDiFF retrieval and normalization caller is implemented,
+but official raw-field mapping and independent archive/source
+authenticity remain UNVERIFIED. Synthetic test headers are not
+official NSE schema evidence and must never be used in production.
+The UDiFF pipeline therefore remains REVIEW, not PASS.
 
 ## 5. Analysis Data Requirements
 
@@ -265,6 +276,10 @@ Before activation, tests must cover:
 - Data freshness and timestamp handling
 - Core calculation correctness
 - UI integration and existing-page regression
+- UDiFF HTTP retrieval failure and timeout handling
+- Actual response timestamp capture
+- Archive integrity, SHA-256 and MII identity reconciliation
+- Official UDiFF raw-field mapping evidence
 
 Existing tests must not be deleted to make new tests pass.
 A passing test suite does not independently prove that every
@@ -302,11 +317,20 @@ A UI shell alone does not authorize activation.
 
 Current decision: REVIEW — NOT APPROVED.
 
-Open verification item:
-Implement and verify the production NSE UDiFF ingestion path,
-including official raw-field mapping, response retrieval timestamp
-capture, normalization, provenance preservation and audit coverage.
-The timestamp supplied by test fixtures is not production evidence.
+Remaining verification items:
+
+1. Obtain and archive the official NSE CM UDiFF format
+   specification/readme and independently verify every raw field
+   used by the production column map.
+2. Verify archive authenticity and live retrieval evidence
+   independently; an HTTPS download and SHA-256 hash alone do
+   not prove exchange-origin authenticity.
+3. Run the new ingestion tests and full repository regression.
+4. Complete navigation integration and final acceptance evidence.
+
+The production caller does not enable itself or activate the
+Market Intelligence UI. A reviewed official mapping must be
+supplied explicitly; test fixtures are not production mappings.
 
 CH01 STATUS: NOT ACCEPTED  
 CH02 STATUS: NOT STARTED
