@@ -155,7 +155,7 @@ def main() -> None:
     )
 
     report = {
-        "workflow_status": "PASS",
+        "ingestion_status": "PASS",
         "observation_date": selected_date.isoformat(),
         "source": downloaded["source"],
         "source_url": downloaded["source_url"],
@@ -167,6 +167,8 @@ def main() -> None:
         "normalized_eq_row_count": len(downloaded["normalized"]),
         "mii_universe_row_count": len(universe),
         "identity_status": reconciliation["identity_status"],
+        "unknown_symbols": reconciliation["unknown_symbols"],
+        "unknown_symbol_count": reconciliation["unknown_count"],
         "coverage_status": reconciliation["coverage_status"],
         "coverage_pct": reconciliation["coverage_pct"],
         "missing_symbol_count": reconciliation["missing_count"],
@@ -188,7 +190,8 @@ def main() -> None:
 
     print("NSE UDiFF live download: PASS")
     print("Official raw ISO fields: PASS")
-    print("NSE MII identity: PASS")
+    print(f"NSE MII identity: {report['identity_status']}")
+    print(f"Unknown MII symbols: {report['unknown_symbols']}")
     print(f"Historical membership coverage: {report['coverage_status']}")
     print(f"Coverage: {report['coverage_pct']}%")
     print(f"Schema mapping: {report['schema_mapping_status']}")
