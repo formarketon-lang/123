@@ -141,7 +141,7 @@ def reconcile_bhavcopy_with_mii(
     unknown_symbols = sorted(observed_symbols - mii_symbols)
     verified_symbols = observed_symbols.intersection(mii_symbols)
 
-    mismatches = sorted(
+    isin_mismatch_symbols = sorted(
         symbol
         for symbol in verified_symbols
         if observed.loc[
@@ -149,28 +149,55 @@ def reconcile_bhavcopy_with_mii(
         ].iloc[0] != mii_identity[symbol]
     )
 
-    if mismatches:
-        raise NSEMIIReconciliationError(
-            "Symbol/ISIN mismatch against MII: "
-            + ", ".join(mismatches)
-        )
+    verified_symbols = verified_symbols.difference(
+        isin_mismatch_symbols
+    )
+    exception_symbols = set(unknown_symbols).union(
+        isin_mismatch_symbols
+    )
 
     missing_symbols = sorted(mii_symbols - verified_symbols)
     verified_observations = observed[
         observed["Symbol"].isin(verified_symbols)
     ].copy()
     unverified_observations = observed[
-        observed["Symbol"].isin(unknown_symbols)
+        observed["Symbol"].isin(exception_symbols)
     ].copy()
+
+    identity_exceptions = []
+    for symbol in unknown_symbols:
+        row = observed.loc[observed["Symbol"] == symbol].iloc[0]
+        identity_exceptions.append({
+            "symbol": symbol,
+            "observed_isin": row["ISIN"],
+            "mii_isin": None,
+            "reason": "SYMBOL_NOT_IN_DATED_MII_UNIVERSE",
+        })
+    for symbol in isin_mismatch_symbols:
+        row = observed.loc[observed["Symbol"] == symbol].iloc[0]
+        identity_exceptions.append({
+            "symbol": symbol,
+            "observed_isin": row["ISIN"],
+            "mii_isin": mii_identity[symbol],
+            "reason": "SYMBOL_ISIN_MISMATCH",
+        })
 
     coverage_pct = (
         len(verified_symbols) / len(mii_symbols)
     ) * 100.0
 
-    identity_status = "REVIEW" if unknown_symbols else "PASS"
+    identity_status = (
+        "REVIEW"
+        if unknown_symbols or isin_mismatch_symbols
+        else "PASS"
+    )
     coverage_status = (
         "PASS"
-        if not missing_symbols and not unknown_symbols
+        if (
+            not missing_symbols
+            and not unknown_symbols
+            and not isin_mismatch_symbols
+        )
         else "REVIEW"
     )
 
@@ -188,6 +215,9 @@ def reconcile_bhavcopy_with_mii(
         "expected_symbols": len(mii_symbols),
         "unknown_symbols": unknown_symbols,
         "unknown_count": len(unknown_symbols),
+        "isin_mismatch_symbols": isin_mismatch_symbols,
+        "isin_mismatch_count": len(isin_mismatch_symbols),
+        "identity_exceptions": identity_exceptions,
         "missing_symbols": missing_symbols,
         "missing_count": len(missing_symbols),
         "coverage_pct": round(coverage_pct, 4),
