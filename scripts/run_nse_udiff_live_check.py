@@ -121,12 +121,12 @@ def main() -> None:
     normalized = downloaded["normalized"]
     diagnostic_symbols = set()
 
-    for row in normalized[
+    for symbol_value, isin_value, instrument_id_value in normalized[
         ["Symbol", "ISIN", "Instrument ID"]
-    ].itertuples(index=False):
-        symbol = str(row.Symbol).strip().upper()
-        isin = str(row.ISIN).strip().upper()
-        instrument_id = str(row._2).strip().upper()
+    ].itertuples(index=False, name=None):
+        symbol = str(symbol_value).strip().upper()
+        isin = str(isin_value).strip().upper()
+        instrument_id = str(instrument_id_value).strip().upper()
         if symbol not in mii_isin_by_symbol:
             diagnostic_symbols.add(symbol)
         elif (
