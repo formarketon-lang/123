@@ -177,3 +177,14 @@ def test_no_prior_session_in_supplied_calendar_is_unavailable():
     ])
     result = validate(data, calendar=["2026-11-12"], observation_dates=["2026-11-12"])
     assert result["analysis_status"] == "UNAVAILABLE"
+
+
+
+def test_duplicate_isin_in_one_session_is_rejected():
+    data = frame([
+        ("2026-11-12", "AAA", "INE000A01010", 95, 100),
+        ("2026-11-12", "BBB", "INE000A01010", 95, 100),
+        ("2026-11-13", "AAA", "INE000A01010", 100, 105),
+    ])
+    with pytest.raises(PriorSessionValidationError, match="Duplicate ISIN"):
+        validate(data, observation_dates=["2026-11-13"])
