@@ -209,7 +209,7 @@ def reconcile_bhavcopy_with_mii(
             "symbol": symbol,
             "observed_isin": row["ISIN"],
             "mii_isin": None,
-            "reason": "SYMBOL_NOT_IN_DATED_MII_UNIVERSE",
+            "reason": "SYMBOL_NOT_IN_VERIFIED_MII_UNIVERSE",
         })
     for symbol in isin_mismatch_symbols:
         row = observed.loc[observed["Symbol"] == symbol].iloc[0]
