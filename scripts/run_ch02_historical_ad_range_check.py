@@ -23,7 +23,7 @@ from services.market_intelligence.historical_ad_service import (
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--calendar-days", type=int, default=120)
-    parser.add_argument("--max-sessions", type=int, default=60)
+    parser.add_argument("--max-sessions", type=int, default=180)
     args = parser.parse_args()
 
     if not 30 <= args.calendar_days <= 370:
