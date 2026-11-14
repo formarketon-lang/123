@@ -102,7 +102,7 @@ Step 01 result: inventory completed. No production code was changed. Focused tes
 
 ### STEP 02 — Historical Point-in-Time Universe Contract
 
-Status: CONTRACT DEFINED — REVIEW GATE; IMPLEMENTATION NOT STARTED
+Status: CONTRACT + AUTOMATED TEST COVERAGE VERIFIED — STRICT DATE-ALIGNMENT GATE
 
 #### 2.1 Purpose and population
 
@@ -183,7 +183,7 @@ Before Step 02 can be marked fully PASS, tests must cover:
 | Bhavcopy row not present in dated universe | Exclude as exception; REVIEW |
 | Yahoo or current-universe substitution for NSE membership | BLOCKED |
 
-Step 02 result: contract documented. This is a specification milestone only; no production implementation or test suite is claimed complete. The exact-date rule is consistent with the current single-date MII reconciliation, while publication-time availability and multi-date orchestration remain implementation gaps for later steps.
+Step 02 result: the 12-scenario contract matrix now has automated coverage in the existing NSE MII reconciliation and universe-provider tests. The mapped test functions are recorded in the Chapter 02 Acceptance Register. Stale/previous-date MII snapshots are rejected before verified output; this is deliberately stricter than allowing a diagnostic REVIEW result and prevents stale membership from entering historical A/D. The official MII archive hash and fetch timestamp are now exposed per requested date. NSE does not supply a publication timestamp in the retrieved archive response, so strict point-in-time availability remains REVIEW. Multi-date orchestration is implemented in Step 03.
 
 ### STEP 03 — Historical Observation Retrieval
 
@@ -408,13 +408,36 @@ Acceptance conditions still open:
 Exit: Step 11 technical verification PASS with explicit live REVIEW condition. Chapter 02 is not marked fully accepted until the open point-in-time evidence gaps are closed or explicitly approved as review conditions.
 
 ### STEP 11 — Final Verification and Acceptance
-- Run focused Chapter 02 tests.
-- Run full TradeLab Pro regression.
-- Run Yahoo adapter regression.
-- Run live NSE UDiFF/MII verification for a selected valid trading date/range.
-- Review generated evidence and compare all counts against source rows.
-- Update Chapter 02 acceptance register and checkpoint.
-- Exit: all mandatory implementation gates PASS; live coverage may remain REVIEW only if accurately disclosed and excluded from verified conclusions.
+
+Status: TECHNICAL WORKFLOW PASS; MULTI-MONTH EVIDENCE REVIEWED WITH COVERAGE LIMIT
+
+Latest regression:
+- TradeLab Pro full regression: **727 passed** (PR workflow run 43563135790).
+- Yahoo Adapter regression: **56 passed** (PR workflow run 43563135837).
+- No failures in the latest PR regression runs.
+
+NSE calendar and range evidence:
+- The official NSE holiday master redirect validation now accepts the official nseindia.in host as well as nseindia.com.
+- Calendar evidence: status PASS; official NSE source URL, raw-response SHA-256 and UTC fetch timestamp are present.
+- 120-calendar-day request: 2026-07-17 through 2026-11-13.
+- Official calendar found **83** NSE CM sessions, including one archive-verified special session on 2026-11-08.
+- First range run analyzed only the latest **60 of 83** sessions because the workflow default was 60. Its workflow passed and uploaded an artifact, but it is not full 120-day session coverage.
+- Across those 60 sessions: 60 REVIEW, 0 PASS; 161,172 expected member-observations, 160,428 verified, 744 missing and 231 identity exceptions. Coverage ranged 98.4341%–99.9251%, mean 99.5397%.
+- The daily A-D values are verified-subset diagnostics only; no date is promoted to full-universe PASS.
+- Bhavcopy and MII source URL, filename, SHA-256, fetched-at UTC and dated MII snapshot are all present in the range retrieval summary for all 60 analyzed sessions. The MII publication timestamp remains unavailable, so strict point-in-time status is REVIEW.
+- Corrected workflow and script defaults to max_sessions=180, so the next run will analyze all sessions in the requested 120-day range rather than silently truncating at 60.
+
+Step 02 automated scenario coverage:
+- The 12 contract scenarios are mapped to existing focused tests; 16 reconciliation test functions cover the matrix, plus MII raw-provenance tests.
+- A stale/previous-date snapshot is rejected before verified output (strict no-look-ahead gate); it is not silently substituted.
+- Publication timestamp unknown is explicitly tested as point-in-time REVIEW.
+
+Open acceptance conditions:
+- Await the new full 83-session live range run and review its artifact.
+- The NSE source does not provide an official publication timestamp in the retrieved MII response; strict point-in-time availability remains REVIEW.
+- Live universe reconciliation has missing members and identity exceptions; no full-universe PASS is claimed.
+
+Exit: Step 11 technical verification is progressing; the 60-session evidence run passed as a workflow but did not cover all 83 sessions. Chapter 02 remains unaccepted until the corrected full-range artifact is reviewed and the point-in-time REVIEW condition is explicitly accepted or resolved.
 
 ## 6. Chapter 02 Acceptance Gates
 
@@ -446,29 +469,25 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-VERIFIED-REVIEW-CONDITIONS`
+Checkpoint ID: TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-RANGE-VERIFICATION-IN-PROGRESS
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS; remains separate.
-- Steps 01–02: inventory and point-in-time universe contract documented. Step 02's 12 cases are a contract matrix, not 12 automated tests.
-- Steps 03–05: historical retrieval, prior-session validation and daily classification implemented and regression-tested.
+- Steps 01–11: implementation and technical verification recorded; Chapter 02 acceptance remains held for full-range evidence and point-in-time REVIEW.
+- Step 02: 12-scenario contract matrix mapped to 16 focused reconciliation test functions plus MII provenance tests. Stale snapshots are rejected before verified output.
 - Step 06: A-D Difference and A/D Ratio — PASS; 17 focused cases.
 - Step 07: Cumulative A-D Line — PASS; 15 focused cases.
 - Step 08: Core Analysis — PASS; 12 focused cases.
 - Step 09: Historical A/D Service — PASS; 10 focused cases.
 - Step 10: UI Integration — PASS; 4 focused UI tests.
-- Step 11: technical verification PASS WITH LIVE REVIEW CONDITION.
-- Latest TradeLab Pro full regression: **714 passed**.
-- Latest Yahoo Adapter regression: **56 passed**.
-- Live NSE workflow: run `43561818820`, PASS as a workflow; selected date 2026-11-13 has data status REVIEW.
-- Live NSE evidence: 2,762 expected; 2,742 verified; 20 missing; 2 identity exceptions; coverage 99.2759%; A=938, D=1,776, U=28; A-D=-838; A/D=0.5281531532.
-- Bhavcopy SHA-256: `758ec3b60fd492a29ff3ebc6c069269bc326dc5ca662cfba8892f16939841b7b`; fetched 2026-11-14T05:30:35.075915Z; MII snapshot date 2026-11-13.
-- Formal acceptance register: `docs/architecture/market_intelligence_ch02_acceptance_register.md`.
-- Official NSE calendar automation: NOT IMPLEMENTED; caller-supplied verified sessions required.
-- Multi-month historical-range live validation: NOT RUN.
-- MII raw archive SHA-256 / fetch timestamp exposure: REMAINS AN EVIDENCE GAP.
+- Latest PR regression: TradeLab Pro **727 passed**; Yahoo Adapter **56 passed**.
+- Official NSE Calendar: implemented; 120-day calendar evidence PASS, 83 sessions discovered, one special session archive-verified.
+- First range artifact: 60 of 83 sessions analyzed; all 60 REVIEW; 744 missing and 231 identity exceptions across those sessions; mean coverage 99.5397%.
+- MII raw SHA-256 and fetched-at UTC are present in retrieval summary for all 60 analyzed dates. MII publication timestamp unavailable; strict point-in-time status remains REVIEW.
+- Workflow/script defaults corrected from 60 to 180 sessions. Full 83-session rerun is pending.
+- Latest Actions page: https://github.com/formarketon-lang/123/actions
+- PR #2: DRAFT / UNMERGED; Main unchanged.
 - Sector Mapping Expansion: OFF. BSE: DISABLED. F&O Scanner: EXCLUDED.
-- PR #2: DRAFT / UNMERGED; Main branch unchanged.
 
-Chapter 02 is technically verified through Step 11 but is not declared fully accepted while point-in-time evidence gaps remain open. The live date is REVIEW, not a full-universe PASS.
+Chapter 02 is not declared accepted. Await the corrected 83-session artifact; do not convert REVIEW data into PASS.
 
 End of Chapter 02 Plan.
