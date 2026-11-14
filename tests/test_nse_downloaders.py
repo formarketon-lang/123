@@ -295,3 +295,33 @@ def test_index_downloader_uses_current_api(monkeypatch):
     assert url == nse_index_downloader.NSE_INDEX_URL
     assert kwargs["params"]["indexType"] == "NIFTY 50"
     
+
+
+
+def test_equity_downloader_records_actual_response_fetch_timestamp(monkeypatch):
+    response = FakeResponse(text=equity_csv(["05-Oct-2026"]))
+    patch_equity_session(monkeypatch, response)
+
+    result = nse_downloader.download_equity_history(
+        "MARICO", "2026-10-01", "2026-10-10"
+    )
+
+    fetched_at = pd.Timestamp(result.attrs["fetched_at_utc"])
+    assert fetched_at.tzinfo is not None
+    assert str(fetched_at.tz_convert("UTC").tz) == "UTC"
+
+
+def test_index_downloader_records_actual_response_fetch_timestamp(monkeypatch):
+    response = FakeResponse(
+        records=[index_record("05-Oct-2026")],
+        content_type="application/json",
+    )
+    patch_index_session(monkeypatch, response)
+
+    result = nse_index_downloader.download_index_history(
+        "NIFTY 50", "2026-10-01", "2026-10-10"
+    )
+
+    fetched_at = pd.Timestamp(result.attrs["fetched_at_utc"])
+    assert fetched_at.tzinfo is not None
+    assert str(fetched_at.tz_convert("UTC").tz) == "UTC"
