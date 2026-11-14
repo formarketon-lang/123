@@ -220,3 +220,42 @@ def test_range_service_does_not_guess_sessions_when_calendar_unavailable(
     assert result["analysis_status"] == "UNAVAILABLE"
     assert result["calendar_status"] == "UNAVAILABLE"
     assert result["date_count"] == 0
+
+
+def test_range_service_default_covers_all_83_verified_sessions(monkeypatch):
+    sessions = pd.bdate_range("2026-07-17", periods=83).strftime("%Y-%m-%d").tolist()
+    calendar = {
+        "calendar_status": "PASS",
+        "source": "NSE",
+        "source_sha256": "d" * 64,
+        "session_dates": sessions,
+        "special_sessions": [],
+    }
+    calls = {}
+    monkeypatch.setattr(
+        service,
+        "discover_nse_cm_trading_sessions",
+        lambda *args, **kwargs: calendar,
+    )
+
+    def analyze(dates, *, initial_anchor, session=None):
+        calls["dates"] = dates
+        return {
+            "analysis_status": "REVIEW",
+            "retrieval_status": "REVIEW",
+            "date_count": len(dates),
+            "per_date_status": pd.DataFrame(),
+            "coverage": pd.DataFrame(),
+            "provenance": pd.DataFrame(),
+            "retrieval_summary": pd.DataFrame(),
+        }
+
+    monkeypatch.setattr(service, "analyze_nse_historical_advance_decline", analyze)
+    result = service.analyze_nse_historical_advance_decline_for_range(
+        "2026-07-17",
+        "2026-11-13",
+    )
+
+    assert result["calendar_session_count"] == 83
+    assert result["session_count"] == 83
+    assert calls["dates"] == sessions
