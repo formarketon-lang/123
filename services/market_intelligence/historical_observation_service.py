@@ -110,6 +110,7 @@ def retrieve_nse_historical_observations(
                 "source_sha256": None,
                 "fetched_at_utc": None,
                 "mii_snapshot_date": None,
+                "point_in_time_status": "UNAVAILABLE",
                 "mii_source_url": None,
                 "mii_source_filename": None,
                 "mii_source_sha256": None,
@@ -143,6 +144,9 @@ def retrieve_nse_historical_observations(
             "source_sha256": result["source_sha256"],
             "fetched_at_utc": result["fetched_at_utc"],
             "mii_snapshot_date": reconciliation["mii_snapshot_date"],
+            "point_in_time_status": result.get(
+                "point_in_time_status", "REVIEW"
+            ),
             "mii_source_provenance": result.get(
                 "mii_source_provenance", {}
             ),
@@ -203,6 +207,7 @@ def retrieve_nse_historical_observations(
                 "source_sha256",
                 "fetched_at_utc",
                 "mii_snapshot_date",
+                "point_in_time_status",
                 "mii_source_url",
                 "mii_source_filename",
                 "mii_source_sha256",
