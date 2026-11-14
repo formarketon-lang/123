@@ -17,6 +17,7 @@ def make_raw():
         "Src": ["NSE"] * 3,
         "FinInstrmTp": ["STK"] * 3,
         "FinInstrmId": ["1", "2", "3"],
+        "SsnId": ["F1"] * 3,
         "ISIN": [
             "INE000A01010",
             "INE000B01010",
@@ -201,3 +202,33 @@ def test_previous_close_outside_current_candle_is_valid():
 
     assert result.loc[0, "Previous Close"] == 120
     assert result.loc[0, "High"] == 111
+
+
+def test_rejects_interim_udiff_session_in_final_archive():
+    raw = make_raw()
+    raw["SsnId"] = "I1"
+
+    with pytest.raises(
+        downloader.NSEUdiFFDownloadError,
+        match="final UDiFF file",
+    ):
+        downloader.normalize_nse_cm_udiff_equity(
+            raw,
+            trade_date="2026-11-13",
+            fetched_at_utc="2026-11-14T01:00:00Z",
+        )
+
+
+def test_rejects_duplicate_instrument_ids():
+    raw = make_raw()
+    raw.loc[1, "FinInstrmId"] = raw.loc[0, "FinInstrmId"]
+
+    with pytest.raises(
+        downloader.NSEUdiFFDownloadError,
+        match="unique numeric identifiers",
+    ):
+        downloader.normalize_nse_cm_udiff_equity(
+            raw,
+            trade_date="2026-11-13",
+            fetched_at_utc="2026-11-14T01:00:00Z",
+        )
