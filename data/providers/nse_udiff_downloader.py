@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import hashlib
 from io import BytesIO
 from urllib.parse import urlparse
 from zipfile import BadZipFile, ZipFile
@@ -278,7 +279,11 @@ def download_nse_cm_udiff_equity_bhavcopy(
 
     try:
         with ZipFile(BytesIO(source_bytes)) as archive:
-            archive.testzip()
+            corrupt_member = archive.testzip()
+            if corrupt_member is not None:
+                raise NSEUdiFFDownloadError(
+                    f"NSE UDiFF ZIP contains a corrupt member: {corrupt_member}"
+                )
     except BadZipFile as exc:
         raise NSEUdiFFDownloadError(
             "NSE UDiFF response is not a valid ZIP archive."
@@ -301,6 +306,6 @@ def download_nse_cm_udiff_equity_bhavcopy(
         "source_filename": filename,
         "fetched_at_utc": fetched_at_utc,
         "observation_date": parsed_date.isoformat(),
-        "sha256": __import__("hashlib").sha256(source_bytes).hexdigest(),
+        "sha256": hashlib.sha256(source_bytes).hexdigest(),
         "schema_mapping_status": "REVIEW",
     }
