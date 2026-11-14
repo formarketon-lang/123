@@ -69,6 +69,10 @@ class NSEUdiFFDownloadError(RuntimeError):
     """Raised when the official NSE CM UDiFF file cannot be verified."""
 
 
+class NSEUdiFFArchiveNotFoundError(NSEUdiFFDownloadError):
+    """Raised when NSE explicitly reports no archive for a requested date."""
+
+
 def _as_trade_date(value: date | str) -> date:
     """Validate a calendar date used in the NSE archive filename."""
 
@@ -278,6 +282,7 @@ def download_nse_cm_udiff_equity_bhavcopy(
 
     client = session or create_nse_session()
 
+    response = None
     try:
         response = client.get(
             source_url,
@@ -294,6 +299,10 @@ def download_nse_cm_udiff_equity_bhavcopy(
         )
         response.raise_for_status()
     except Exception as exc:
+        if getattr(response, "status_code", None) == 404:
+            raise NSEUdiFFArchiveNotFoundError(
+                f"No official NSE UDiFF archive exists for {date_token}."
+            ) from exc
         raise NSEUdiFFDownloadError(
             f"Official NSE UDiFF download failed for {date_token}: "
             f"{type(exc).__name__}: {exc}"
