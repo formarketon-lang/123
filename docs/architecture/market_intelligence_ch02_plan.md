@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–09 VERIFIED; STEP 10 IMPLEMENTED; CI PENDING  
+Status: CHAPTER PLAN DRAFT — STEPS 01–10 VERIFIED; STEP 11 LIVE VERIFICATION IN PROGRESS  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -369,28 +369,38 @@ Exit: implementation and 10 focused test cases pass in GitHub Actions; TradeLab 
 
 ### STEP 10 — UI Integration
 
-Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+Status: PASS — GITHUB ACTIONS VERIFIED
 
-Implementation:
-- Updated `ui/market_intelligence.py`; existing Market Regime, live Market Breadth and navigation are retained.
-- Added Historical Advance / Decline Analysis section wired to `analyze_nse_historical_advance_decline`.
-- Requires explicitly entered NSE session dates in ISO format. A conventional date range is intentionally not converted into weekdays because the official NSE holiday/session calendar is not yet integrated.
-- Limits one UI request to 30 sessions to avoid unbounded sequential archive retrieval.
-- Exposes initial cumulative anchor, daily counts, A-D Difference, A/D Ratio, cumulative A-D chart, coverage and source/MII provenance.
-- PASS, REVIEW, BLOCKED and UNAVAILABLE have distinct UI messages; missing/review sessions are not filled or presented as verified PASS.
-- Existing Market Regime, Breadth and navigation remain unchanged; BSE and F&O remain disabled/excluded.
+- Integrated Historical A/D Analysis into `ui/market_intelligence.py`; existing Regime, Breadth and navigation retained.
+- Requires explicit ISO NSE session dates; no weekday/holiday inference; maximum 30 sessions per request.
+- Displays daily metrics, A-D Difference, A/D Ratio, cumulative chart, coverage and source/MII provenance.
+- PASS / REVIEW / BLOCKED / UNAVAILABLE remain distinct; missing observations are never filled.
+- Added 4 focused UI tests.
+- GitHub Actions TradeLab Pro run #531: **712 passed**.
+- Yahoo Adapter run #349: **PASS**.
+- Official calendar automation and live historical verification remain pending.
 
-Tests:
-- Added `tests/test_market_intelligence_historical_ad_ui.py`.
-- 4 focused UI tests cover service invocation, required session input, 30-session limit and strict ISO date validation.
-- Existing navigation tests remain in place.
+Exit: Step 10 implementation and regression verified.
 
-Limitations:
-- Official NSE session calendar is not yet automatically sourced; users must supply verified NSE dates.
-- No live historical date range has been executed.
-- UI integration does not activate Sector Mapping Expansion, BSE or F&O.
+### STEP 11 — Final Verification and Acceptance
 
-Exit: UI integration and 4 focused tests committed to the draft feature branch; GitHub Actions verification pending.
+Status: LIVE VERIFICATION WORKFLOW ADDED — ACTIONS PENDING
+
+- Added `scripts/run_ch02_historical_ad_live_check.py`.
+- Added `.github/workflows/ch02-historical-ad-live-check.yml`.
+- Searches a bounded recent window for the latest available official NSE session, then calls the production historical A/D service for that date.
+- Candidate weekdays are only attempts; official NSE source availability determines the usable session.
+- Produces JSON, daily metrics, coverage, provenance and NSE retrieval-summary artifacts.
+- REVIEW remains REVIEW; BLOCKED fails the live gate; no source result is promoted.
+- Workflow runs on relevant feature-branch pushes and supports manual dispatch.
+
+Pending:
+- Review live NSE Actions result and uploaded artifact.
+- Review latest full TradeLab Pro and Yahoo regressions for Step 11 commits.
+- One-session smoke test does not constitute multi-month historical-range validation.
+- Official NSE calendar automation and MII raw archive hash/fetch timestamp evidence remain separate limitations.
+
+Exit: Step 11 is not PASS until live evidence and latest regression are reviewed.
 
 ### STEP 11 — Final Verification and Acceptance
 - Run focused Chapter 02 tests.
@@ -431,25 +441,25 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-10-UI-INTEGRATION-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-LIVE-VERIFICATION-PENDING`
 
-- Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
-- Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
-- Step 03 status: REGRESSION PASS; feature branch remains unmerged.
-- Step 04: prior-session validation engine and 15 focused tests PASS in GitHub Actions.
-- Step 05: daily A/D classification PASS; 15 focused tests. Latest verified GitHub Actions: TradeLab Pro 656 passed; Yahoo Adapter 56 passed.
-- Step 06: A-D Difference and A/D Ratio implementation added; 17 test cases committed; oversized-number test replaced with unsupported-status contract test after Pandas coerced the impossible fixture before metric calculation; fresh GitHub Actions verification pending.
-- Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
-- Live historical-range validation: NOT RUN.
-- Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
-- Step 03 full TradeLab Pro regression: PASS — 626 tests.
-- Step 03 Yahoo Adapter regression: PASS — 56 tests.
-- Step 03 live historical-range verification: NOT RUN.
+- Chapter 01: ACCEPTED WITH REVIEW CONDITIONS; separate from Chapter 02.
+- Steps 01–02: inventory and point-in-time universe contract documented; Step 02's 12 cases are a specification matrix, not automated tests.
+- Steps 03–05: historical retrieval, prior-session validation and daily classification implemented; earlier regression checkpoints recorded in their step sections.
+- Step 06: A-D Difference and A/D Ratio — PASS; 17 focused cases.
+- Step 07: Cumulative A-D Line — PASS; 15 focused cases.
+- Step 08: Core Analysis — PASS; 12 focused cases; earlier full regression 699 passed.
+- Step 09: Historical A/D Service — PASS; 10 focused cases; earlier full regression 708 passed.
+- Step 10: UI Integration — PASS; 4 focused tests; TradeLab Pro 712 passed; Yahoo Adapter PASS.
+- Step 11: live NSE script and workflow committed; live Actions and evidence review pending.
+- Step 11 latest commit: `6c963904d9d46652db38087ff293dfc8b755a011`.
+- Latest full regression for Step 11 commits must be reviewed; previous 712 result is not a substitute.
+- Official NSE calendar automation: NOT IMPLEMENTED; caller-supplied verified sessions remain required.
+- Multi-month historical-range live validation: NOT RUN.
 - MII raw archive SHA-256 / fetch timestamp exposure: REMAINS AN EVIDENCE GAP.
-- Sector Mapping Expansion: OFF.
-- BSE: DISABLED.
-- F&O Scanner: EXCLUDED.
+- Sector Mapping Expansion: OFF. BSE: DISABLED. F&O Scanner: EXCLUDED.
+- PR #2: DRAFT / UNMERGED; Main branch unchanged.
 
-This document is a plan draft. It does not activate Chapter 02 code or approve any live data result.
+This is an in-progress acceptance checkpoint. Chapter 02 is not accepted until Step 11 live evidence and latest regression are reviewed.
 
 End of Chapter 02 Plan.
