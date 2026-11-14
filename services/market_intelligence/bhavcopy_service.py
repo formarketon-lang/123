@@ -140,6 +140,18 @@ def analyze_nse_market_breadth_from_udiff(
             "MII point-in-time availability status is invalid."
         )
 
+    published_at_utc = mii_source_provenance.get("published_at_utc")
+    if not published_at_utc:
+        point_in_time_status = "REVIEW"
+    else:
+        published_at = pd.to_datetime(published_at_utc, errors="coerce", utc=True)
+        if pd.isna(published_at):
+            raise NSEBhavcopyServiceError(
+                "MII publication timestamp is invalid."
+            )
+        if published_at.date() > parsed_date:
+            point_in_time_status = "REVIEW"
+
     breadth = analyze_nse_market_breadth(
         stock_data=verified_observations,
         verified_universe=verified_universe,
