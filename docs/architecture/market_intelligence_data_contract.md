@@ -17,8 +17,10 @@ This contract defines the data requirements, validation rules,
 source provenance, service boundaries and activation restrictions
 for Market Intelligence.
 
-This document is a review candidate. It does not independently
-approve production activation or authorize unsupported analysis.
+This contract is approved for the review-aware NSE cash-market
+foundation under the conditions recorded in the Review Decision.
+It does not approve incomplete live datasets as PASS, authorize
+unsupported analysis, or enable BSE / sector expansion.
 
 Existing Data Layer interfaces must be reused where suitable.
 No duplicate market-data adapter may be introduced.
