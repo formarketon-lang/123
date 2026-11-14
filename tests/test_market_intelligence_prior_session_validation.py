@@ -47,7 +47,6 @@ def test_previous_close_matches_immediately_prior_nse_session():
 def test_holiday_and_weekend_are_skipped_using_calendar_not_weekdays():
     data = frame([
         ("2026-11-12", "AAA", "INE000A01010", 90, 100),
-        ("2026-11-13", "AAA", "INE000A01010", 100, 102),
         ("2026-11-16", "AAA", "INE000A01010", 102, 110),
     ])
     result = validate(
