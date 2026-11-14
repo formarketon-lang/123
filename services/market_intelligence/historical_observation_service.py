@@ -152,14 +152,14 @@ def retrieve_nse_historical_observations(
         })
 
     statuses = [item["status"] for item in results]
-    if all(status == "PASS" for status in statuses):
-        overall_status = "PASS"
-    elif any(status == "BLOCKED" for status in statuses):
+    if any(status == "BLOCKED" for status in statuses):
         overall_status = "BLOCKED"
+    elif any(status == "UNAVAILABLE" for status in statuses):
+        overall_status = "UNAVAILABLE"
     elif any(status == "REVIEW" for status in statuses):
         overall_status = "REVIEW"
     else:
-        overall_status = "UNAVAILABLE"
+        overall_status = "PASS"
 
     observations = (
         pd.concat(verified_frames, ignore_index=True)
