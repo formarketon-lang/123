@@ -69,6 +69,9 @@ def main() -> None:
         "blocked_count": result.get("blocked_count", 0),
         "unavailable_count": result.get("unavailable_count", 0),
         "missing_count": result.get("missing_count", 0),
+        "reconciliation_detail_count": len(
+            result.get("reconciliation_details", pd.DataFrame())
+        ),
         "note": (
             "A range evidence run. REVIEW is retained and is not promoted "
             "to PASS. This workflow validates the requested range and "
@@ -86,6 +89,7 @@ def main() -> None:
         ("coverage", "historical_ad_coverage.csv"),
         ("provenance", "historical_ad_provenance.csv"),
         ("retrieval_summary", "nse_retrieval_summary.csv"),
+        ("reconciliation_details", "historical_ad_reconciliation_details.csv"),
     ):
         frame = result.get(key)
         if isinstance(frame, pd.DataFrame):
