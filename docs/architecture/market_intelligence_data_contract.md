@@ -89,13 +89,20 @@ Current implementation review:
 - Breadth Service validates source, exchange, timeframe,
   fallback reason, observation date and universe evidence.
 - Regime Service uses the validated Index Data Service.
+- NSE Equity and Index downloaders capture a timezone-aware UTC
+  retrieval timestamp from the completed HTTP response.
+- Market Data Adapter preserves the downloader timestamp in
+  the common provenance fields.
+- Live NSE verification confirmed actual NSE source provenance,
+  timestamp propagation and continuous daily coverage for MARICO
+  and all six configured NSE index/sector benchmarks.
 - NSE UDiFF normalizer requires an explicit timezone-aware
   fetched_at_utc argument and emits Fetched At UTC.
 
-The normalizer does not prove that a production downloader
-captures and passes the actual retrieval time. The production
-ingestion handoff remains an open verification item. Test-only
-timestamps are fixtures and must never be used as production data.
+The standard NSE Equity/Index timestamp handoff is verified.
+A production NSE UDiFF ingestion caller has not yet been
+implemented or verified. Test-only timestamps are fixtures
+and must never be used as production data.
 
 ## 5. Analysis Data Requirements
 
@@ -296,8 +303,9 @@ A UI shell alone does not authorize activation.
 Current decision: REVIEW — NOT APPROVED.
 
 Open verification item:
-Confirm that the production NSE download/ingestion caller captures
-the actual retrieval timestamp and passes it to the UDiFF normalizer.
+Implement and verify the production NSE UDiFF ingestion path,
+including official raw-field mapping, response retrieval timestamp
+capture, normalization, provenance preservation and audit coverage.
 The timestamp supplied by test fixtures is not production evidence.
 
 CH01 STATUS: NOT ACCEPTED  
