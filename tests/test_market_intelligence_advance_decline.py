@@ -227,6 +227,35 @@ def test_reported_coverage_must_match_verified_universe_count():
 
 
 
+
+def test_rounded_four_decimal_nse_coverage_is_accepted_within_precision():
+    result = classify_historical_daily_advance_decline({
+        "per_date": [record(
+            status="REVIEW",
+            expected=2749,
+            verified=2730,
+            missing=19,
+            coverage=round((2730 / 2749) * 100.0, 4),
+        )],
+    })
+    row = result["summary"].iloc[0]
+    assert row["analysis_status"] == "REVIEW"
+    assert row["coverage_pct"] == round((2730 / 2749) * 100.0, 4)
+
+
+def test_coverage_outside_four_decimal_rounding_tolerance_is_rejected():
+    with pytest.raises(AdvanceDeclineClassificationError, match="inconsistent"):
+        classify_historical_daily_advance_decline({
+            "per_date": [record(
+                status="REVIEW",
+                expected=2749,
+                verified=2730,
+                missing=19,
+                coverage=99.0,
+            )],
+        })
+
+
 def test_verified_observations_must_match_requested_observation_date():
     observations = observation_frame([
         ("2026-11-12", "AAA", "INE000A01010", 100, 110),
