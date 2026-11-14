@@ -100,7 +100,12 @@ def calculate_historical_ad_metrics(classification: dict[str, Any]) -> dict:
         difference = advancing - declining
 
         if declining > 0:
-            ratio = advancing / declining
+            try:
+                ratio = advancing / declining
+            except OverflowError as exc:
+                raise AdvanceDeclineMetricsError(
+                    f"Non-finite A/D ratio for {day}."
+                ) from exc
             if not math.isfinite(ratio):
                 raise AdvanceDeclineMetricsError(f"Non-finite A/D ratio for {day}.")
             ratio_status = "NO_ADVANCERS" if advancing == 0 else "CALCULATED"
