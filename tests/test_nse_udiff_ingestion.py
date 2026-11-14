@@ -14,24 +14,26 @@ from data.providers.nse_udiff_ingestion import (
 )
 
 
-COLUMN_MAP = {
-    "Date": "TradDt",
-    "Symbol": "TckrSymb",
-    "ISIN": "ISIN",
-    "Series": "SctySrs",
-    "Previous Close": "PrvsClsgPric",
-    "Current Close": "ClsPric",
+# Synthetic test-only headers. These are deliberately NOT claimed as
+# the official NSE UDiFF field mapping.
+TEST_ONLY_COLUMN_MAP = {
+    "Date": "TradeDate",
+    "Symbol": "Ticker",
+    "ISIN": "SecurityISIN",
+    "Series": "SecuritySeries",
+    "Previous Close": "PrevClose",
+    "Current Close": "ClosePrice",
 }
 
 
 def make_archive():
     raw = pd.DataFrame({
-        "TradDt": ["2026-11-12", "2026-11-12"],
-        "TckrSymb": ["AAA", "BBB"],
-        "ISIN": ["INE000A01010", "INE000B01010"],
-        "SctySrs": ["EQ", "EQ"],
-        "PrvsClsgPric": ["100", "200"],
-        "ClsPric": ["110", "190"],
+        "TradeDate": ["2026-11-12", "2026-11-12"],
+        "Ticker": ["AAA", "BBB"],
+        "SecurityISIN": ["INE000A01010", "INE000B01010"],
+        "SecuritySeries": ["EQ", "EQ"],
+        "PrevClose": ["100", "200"],
+        "ClosePrice": ["110", "190"],
     })
     buffer = BytesIO()
     with ZipFile(buffer, "w") as archive:
@@ -79,7 +81,7 @@ def test_fetches_official_archive_and_captures_real_fetch_time():
 
     result = fetch_nse_udiff_bhavcopy(
         date(2026, 11, 12),
-        COLUMN_MAP,
+        TEST_ONLY_COLUMN_MAP,
         make_universe(),
         session=session,
     )
@@ -118,7 +120,7 @@ def test_rejects_invalid_as_of_date():
     with pytest.raises(TypeError, match="datetime.date"):
         fetch_nse_udiff_bhavcopy(
             "2026-11-12",
-            COLUMN_MAP,
+            TEST_ONLY_COLUMN_MAP,
             make_universe(),
             session=FakeSession(FakeResponse(make_archive())),
         )
@@ -131,7 +133,7 @@ def test_retrieval_failure_is_reported_without_fallback():
     with pytest.raises(NSEUdiFFIngestionError, match="retrieval failed"):
         fetch_nse_udiff_bhavcopy(
             date(2026, 11, 12),
-            COLUMN_MAP,
+            TEST_ONLY_COLUMN_MAP,
             make_universe(),
             session=session,
         )
@@ -141,7 +143,7 @@ def test_corrupt_archive_is_rejected_after_retrieval():
     with pytest.raises(NSEUdiFFIngestionError, match="normalization or audit"):
         fetch_nse_udiff_bhavcopy(
             date(2026, 11, 12),
-            COLUMN_MAP,
+            TEST_ONLY_COLUMN_MAP,
             make_universe(),
             session=FakeSession(FakeResponse(b"not-a-zip")),
         )
@@ -154,7 +156,7 @@ def test_mii_date_mismatch_does_not_pass():
     with pytest.raises(NSEUdiFFIngestionError, match="normalization or audit"):
         fetch_nse_udiff_bhavcopy(
             date(2026, 11, 12),
-            COLUMN_MAP,
+            TEST_ONLY_COLUMN_MAP,
             universe,
             session=FakeSession(FakeResponse(make_archive())),
         )
