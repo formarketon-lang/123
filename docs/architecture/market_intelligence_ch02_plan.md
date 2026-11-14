@@ -186,12 +186,6 @@ Before Step 02 can be marked fully PASS, tests must cover:
 Step 02 result: contract documented. This is a specification milestone only; no production implementation or test suite is claimed complete. The exact-date rule is consistent with the current single-date MII reconciliation, while publication-time availability and multi-date orchestration remain implementation gaps for later steps.
 
 ### STEP 03 — Historical Observation Retrieval
-- Define per-date MII snapshot requirements and identity keys.
-- Define how a missing or unavailable historical MII snapshot blocks verified output.
-- Test aligned, stale, future, mixed-date and missing snapshots.
-- Exit: documented point-in-time membership contract.
-
-### STEP 03 — Historical Observation Retrieval
 - Reuse existing NSE UDiFF downloader and Bhavcopy service.
 - Retrieve only requested NSE CM / STK / EQ observations.
 - Preserve archive hash and actual fetch timestamp per date.
