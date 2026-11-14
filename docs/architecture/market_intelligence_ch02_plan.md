@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–08 VERIFIED; STEP 09 IN PROGRESS  
+Status: CHAPTER PLAN DRAFT — STEPS 01–08 VERIFIED; STEP 09 IMPLEMENTED; CI PENDING  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -344,11 +344,28 @@ Limitations:
 Exit: implementation and 12 focused tests pass in GitHub Actions; TradeLab Pro full regression 699 passed and Yahoo Adapter workflow PASS.
 
 ### STEP 09 — Market Intelligence Service
-- Orchestrate existing Data adapters and Core calculations.
-- Preserve per-date source, fetch timestamp, archive hash, fallback reason and MII evidence.
-- Return PASS / REVIEW / BLOCKED / UNAVAILABLE honestly.
-- Test service orchestration and failure propagation.
-- Exit: service tests pass.
+
+Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+
+Implementation:
+- Added `services/market_intelligence/historical_ad_service.py`.
+- Added `analyze_nse_historical_advance_decline(expected_sessions, initial_anchor=0, session=None)`.
+- Reuses `retrieve_nse_historical_observations` and the pure Step 08 core API; no duplicate downloader, provider or classifier.
+- Caller supplies the verified NSE session dates. The existing historical retriever attempts each date independently.
+- Preserves retrieval status, requested dates, retrieval summary and per-date provenance (source URL, filename, SHA-256, fetch timestamp and MII snapshot date) through the core result.
+- Per-date UNAVAILABLE/BLOCKED/REVIEW conditions remain visible; retrieval exceptions are propagated, not silently converted into fabricated results.
+- Session injection is supported for deterministic tests and controlled NSE retrieval.
+
+Tests:
+- Added `tests/test_market_intelligence_historical_ad_service.py`.
+- 8 test functions plus 2 parametrized cases (10 cases) cover retriever/core reuse, caller arguments, retrieval status, exception propagation, invalid/empty requests and date-list handling.
+
+Limitations:
+- Verified session calendar remains caller-supplied; official NSE calendar integration is not added here.
+- Existing historical retrieval is NSE UDiFF + dated MII; no Yahoo membership substitution or second downloader.
+- No live historical date-range run or Streamlit UI integration is claimed.
+
+Exit: implementation and 10 focused test cases committed to the draft feature branch; GitHub Actions verification pending.
 
 ### STEP 10 — UI Integration
 - Add Historical Advance / Decline view to the existing Market Intelligence page.
@@ -397,7 +414,7 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-09-SERVICE-INTEGRATION-IN-PROGRESS`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-09-SERVICE-INTEGRATION-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
