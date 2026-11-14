@@ -48,12 +48,20 @@ def test_missing_bhavcopy_symbol_is_review_not_fake_data():
     assert result["missing_symbols"] == ["CCC"]
 
 
-def test_unknown_symbol_is_rejected():
+def test_unknown_symbol_is_review_and_excluded_from_verified_observations():
     data = make_bhavcopy()
     data.loc[0, "Symbol"] = "UNKNOWN"
 
-    with pytest.raises(NSEMIIReconciliationError, match="absent from MII"):
-        reconcile_bhavcopy_with_mii(data, make_universe())
+    result = reconcile_bhavcopy_with_mii(data, make_universe())
+
+    assert result["identity_status"] == "REVIEW"
+    assert result["coverage_status"] == "REVIEW"
+    assert result["unknown_symbols"] == ["UNKNOWN"]
+    assert result["unknown_count"] == 1
+    assert "UNKNOWN" not in result["observations"]["Symbol"].tolist()
+    assert result["unverified_observations"]["Symbol"].tolist() == [
+        "UNKNOWN"
+    ]
 
 
 def test_symbol_isin_mismatch_is_rejected():
