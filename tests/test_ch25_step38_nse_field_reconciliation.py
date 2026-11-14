@@ -81,7 +81,9 @@ def test_missing_normalized_security_is_detected():
 def test_duplicate_raw_security_key_is_rejected():
     raw = make_raw()
     raw = pd.concat([raw, raw.iloc[[0]]], ignore_index=True)
-    normalized = normalize_nse_mii_security_master(raw)
+    normalized = normalize_nse_mii_security_master(
+        raw.drop_duplicates(subset=["FININSTRMID"])
+    )
 
     scoped, _ = prepare_raw_equity_scope(raw)
 
