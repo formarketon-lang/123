@@ -258,7 +258,7 @@ def validate_prior_session_prices(
                     ):
                         status = "BLOCKED"
                         reason = "Prior-session Close is invalid."
-                    elif abs(reported_previous - prior_close) > tolerance:
+                    elif abs(reported_previous - prior_close) > tolerance + 1e-9:
                         status = "BLOCKED"
                         reason = (
                             "Bhavcopy Previous Close differs from the "
