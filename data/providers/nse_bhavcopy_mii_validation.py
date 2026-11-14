@@ -117,6 +117,14 @@ def reconcile_bhavcopy_with_mii(
                 f"{label} contains duplicate ISIN values."
             )
 
+        if (
+            "Instrument ID" in frame.columns
+            and frame["Instrument ID"].duplicated().any()
+        ):
+            raise NSEMIIReconciliationError(
+                f"{label} contains duplicate Instrument ID values."
+            )
+
     observed_dates = pd.to_datetime(
         observed["Date"], errors="coerce"
     ).dt.normalize()
