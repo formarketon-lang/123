@@ -12,6 +12,10 @@ on:
       - "core/market_intelligence/historical_ad_analysis.py"
       - "services/market_intelligence/historical_observation_service.py"
       - "services/market_intelligence/historical_ad_service.py"
+      - "data/providers/nse_trading_calendar.py"
+      - "data/providers/nse_universe.py"
+      - "data/providers/nse_udiff_downloader.py"
+      - "data/providers/nse_downloader.py"
       - "scripts/run_ch02_historical_ad_live_check.py"
       - ".github/workflows/ch02-historical-ad-live-check.yml"
 
