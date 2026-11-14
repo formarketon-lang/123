@@ -168,7 +168,10 @@ def classify_historical_daily_advance_decline(history: dict[str, Any]) -> dict:
             coverage is None
             or not pd.notna(coverage)
             or not 0 <= coverage <= 100
-            or abs(coverage - expected_coverage) > 1e-6
+            # The accepted NSE MII reconciliation publishes coverage rounded
+            # to four decimal places. Allow only its maximum half-unit
+            # rounding error; larger differences remain a hard validation error.
+            or abs(coverage - expected_coverage) > 0.000051
         ):
             raise AdvanceDeclineClassificationError(
                 f"Coverage percentage is invalid or inconsistent for {day_key}."
