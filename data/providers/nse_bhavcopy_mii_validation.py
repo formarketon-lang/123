@@ -51,10 +51,25 @@ def reconcile_bhavcopy_with_mii(
     observed = bhavcopy.copy()
     verified = universe.copy()
 
+    has_bhavcopy_instrument_id = "Instrument ID" in observed.columns
+    has_universe_instrument_id = "Instrument ID" in verified.columns
+    if has_bhavcopy_instrument_id != has_universe_instrument_id:
+        raise NSEMIIReconciliationError(
+            "Instrument ID must be present in both Bhavcopy and MII."
+        )
+
     for frame, columns in (
-        (observed, ["Symbol", "ISIN", "Series"]),
-        (verified, ["Symbol", "ISIN", "Series", "Exchange", "Source",
-                    "Universe Verification Status"]),
+        (
+            observed,
+            ["Symbol", "ISIN", "Series"]
+            + (["Instrument ID"] if has_bhavcopy_instrument_id else []),
+        ),
+        (
+            verified,
+            ["Symbol", "ISIN", "Series", "Exchange", "Source",
+             "Universe Verification Status"]
+            + (["Instrument ID"] if has_universe_instrument_id else []),
+        ),
     ):
         for column in columns:
             frame[column] = (
@@ -149,11 +164,26 @@ def reconcile_bhavcopy_with_mii(
         ].iloc[0] != mii_identity[symbol]
     )
 
+    instrument_id_mismatch_symbols = []
+    if has_bhavcopy_instrument_id and has_universe_instrument_id:
+        mii_instrument_ids = (
+            verified.set_index("Symbol")["Instrument ID"].to_dict()
+        )
+        instrument_id_mismatch_symbols = sorted(
+            symbol
+            for symbol in verified_symbols
+            if observed.loc[
+                observed["Symbol"] == symbol, "Instrument ID"
+            ].iloc[0] != mii_instrument_ids[symbol]
+        )
+
     verified_symbols = verified_symbols.difference(
         isin_mismatch_symbols
-    )
-    exception_symbols = set(unknown_symbols).union(
-        isin_mismatch_symbols
+    ).difference(instrument_id_mismatch_symbols)
+    exception_symbols = (
+        set(unknown_symbols)
+        .union(isin_mismatch_symbols)
+        .union(instrument_id_mismatch_symbols)
     )
 
     missing_symbols = sorted(mii_symbols - verified_symbols)
@@ -181,6 +211,14 @@ def reconcile_bhavcopy_with_mii(
             "mii_isin": mii_identity[symbol],
             "reason": "SYMBOL_ISIN_MISMATCH",
         })
+    for symbol in instrument_id_mismatch_symbols:
+        row = observed.loc[observed["Symbol"] == symbol].iloc[0]
+        identity_exceptions.append({
+            "symbol": symbol,
+            "observed_instrument_id": row["Instrument ID"],
+            "mii_instrument_id": mii_instrument_ids[symbol],
+            "reason": "SYMBOL_INSTRUMENT_ID_MISMATCH",
+        })
 
     coverage_pct = (
         len(verified_symbols) / len(mii_symbols)
@@ -188,7 +226,11 @@ def reconcile_bhavcopy_with_mii(
 
     identity_status = (
         "REVIEW"
-        if unknown_symbols or isin_mismatch_symbols
+        if (
+            unknown_symbols
+            or isin_mismatch_symbols
+            or instrument_id_mismatch_symbols
+        )
         else "PASS"
     )
     coverage_status = (
@@ -197,6 +239,7 @@ def reconcile_bhavcopy_with_mii(
             not missing_symbols
             and not unknown_symbols
             and not isin_mismatch_symbols
+            and not instrument_id_mismatch_symbols
         )
         else "REVIEW"
     )
@@ -217,6 +260,10 @@ def reconcile_bhavcopy_with_mii(
         "unknown_count": len(unknown_symbols),
         "isin_mismatch_symbols": isin_mismatch_symbols,
         "isin_mismatch_count": len(isin_mismatch_symbols),
+        "instrument_id_mismatch_symbols": instrument_id_mismatch_symbols,
+        "instrument_id_mismatch_count": len(
+            instrument_id_mismatch_symbols
+        ),
         "identity_exceptions": identity_exceptions,
         "missing_symbols": missing_symbols,
         "missing_count": len(missing_symbols),
