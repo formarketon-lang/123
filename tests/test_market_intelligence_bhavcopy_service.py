@@ -180,6 +180,32 @@ def test_unknown_mii_publication_timestamp_keeps_point_in_time_review(monkeypatc
 
 
 
+
+def test_mii_publication_after_observation_date_keeps_point_in_time_review(
+    monkeypatch,
+):
+    install_download(monkeypatch)
+    universe = make_universe()
+    universe.attrs["source_provenance"]["published_at_utc"] = (
+        "2026-11-14T00:00:00Z"
+    )
+    monkeypatch.setattr(
+        service,
+        "fetch_nse_equity_universe",
+        lambda **kwargs: universe,
+    )
+
+    result = service.analyze_nse_market_breadth_from_udiff(
+        "2026-11-13",
+        session=object(),
+    )
+
+    assert result["point_in_time_status"] == "REVIEW"
+    assert result["analysis_status"] == "REVIEW"
+    assert result["reconciliation"]["coverage_status"] == "PASS"
+
+
+
 def test_unknown_udiff_symbol_is_excluded_and_keeps_review_status(
     monkeypatch,
 ):
