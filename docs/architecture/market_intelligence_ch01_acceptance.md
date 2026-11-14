@@ -20,21 +20,21 @@ live market dataset must return PASS.
 
 ## 2. Verified Implementation Baseline
 
-Latest verified code commit:
-`cd6ad5e7225885d82db3480ce23344fd9ad4fddf`
+Latest verified main commit:
+`500a5b12a501b915633b2ac949c61e0bd6188373`
 
 TradeLab Pro Tests:
-https://github.com/formarketon-lang/123/actions/runs/43550634089
+https://github.com/formarketon-lang/123/actions/runs/43551088158
 
 Verified result: **614/614 tests passed**.
 
 Yahoo Adapter Unit Tests:
-https://github.com/formarketon-lang/123/actions/runs/43550634119
+https://github.com/formarketon-lang/123/actions/runs/43550928337
 
 Verified result: **56/56 tests passed**.
 
 Live NSE UDiFF verification:
-https://github.com/formarketon-lang/123/actions/runs/43550260364
+https://github.com/formarketon-lang/123/actions/runs/43550928359
 
 Verified workflow result: SUCCESS. The live data audit itself
 correctly returns REVIEW for incomplete membership coverage
