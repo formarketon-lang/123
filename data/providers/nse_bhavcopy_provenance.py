@@ -158,6 +158,11 @@ def audit_nse_bhavcopy_provenance(
             "BHAVCOPY_SYMBOL_ISIN_MISMATCH"
         )
 
+    if reconciliation.get("instrument_id_mismatch_count", 0):
+        audit_reasons.append(
+            "BHAVCOPY_SYMBOL_INSTRUMENT_ID_MISMATCH"
+        )
+
     return {
         "source": "NSE",
         "source_format": "NSE_CM_UDIFF_ZIP",
@@ -190,6 +195,14 @@ def audit_nse_bhavcopy_provenance(
         ),
         "isin_mismatch_count": reconciliation.get(
             "isin_mismatch_count",
+            0,
+        ),
+        "instrument_id_mismatch_symbols": reconciliation.get(
+            "instrument_id_mismatch_symbols",
+            [],
+        ),
+        "instrument_id_mismatch_count": reconciliation.get(
+            "instrument_id_mismatch_count",
             0,
         ),
         "identity_exceptions": reconciliation.get(
