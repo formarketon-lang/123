@@ -39,8 +39,10 @@ def make_raw(include_unknown=False, include_mismatch=False):
         "OpnPric": ["100"] * count,
         "HghPric": ["110"] * count,
         "LwPric": ["90"] * count,
-        "ClsPric": ["105", "95", "100"] + (
-            ["105"] if include_unknown else []
+        "ClsPric": (
+            ["105", "95", "100"]
+            + (["105"] if include_unknown else [])
+            + (["105"] if include_mismatch else [])
         ),
         "PrvsClsgPric": ["100"] * count,
         "TtlTradgVol": ["1000"] * count,
