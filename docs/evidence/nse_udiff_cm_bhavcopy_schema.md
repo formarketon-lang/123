@@ -28,6 +28,7 @@ The official Forms & Formats page was observed to list the UDiFF catalogue throu
 
 | Canonical field | UDiFF ISO tag | Use |
 |---|---|---|
+| Instrument ID | FinInstrmId | Exchange instrument identity |
 | Observation Date | TradDt | Requested trade date |
 | Segment | Sgmt | Must be CM |
 | Source | Src | Must be NSE |
@@ -60,10 +61,10 @@ The official XLSX and ZIP are binary downloads. Their exact Bhavcopy worksheet/s
 
 A live 13-Nov-2026 UDiFF/MII comparison exposed two identity exceptions:
 
-- `DCMFINSERV` is present in the raw same-date MII file as EQ, but its Normal Market Eligibility is `0` (not allowed in the Normal Market). The normalizer correctly excludes it from the verified normal-market universe. Its appearance in the UDiFF EQ file is retained as an explicit REVIEW exception and is not counted as a normal-market constituent.
-- `BNAGROCHEM` appears in both sources, but the UDiFF ISIN is `INE00HZ01011` while the same-date MII ISIN is `INE00HZ01029`. Neither value is silently substituted. The observation is excluded from verified calculations and remains REVIEW pending authoritative identity resolution.
+- `DCMFINSERV` is present in the raw same-date MII file as EQ, but its Normal Market Eligibility is `0` (not allowed in the Normal Market); its Auction Market Eligibility is `1`. The normalizer correctly excludes it from the verified normal-market universe. Its appearance in the UDiFF EQ file is retained as an explicit REVIEW exception and is not counted as a normal-market constituent.
+- `BNAGROCHEM` appears in both sources, but the UDiFF row has Instrument ID `762608`, Series `EQ`, ISIN `INE00HZ01011`; the same-date MII EQ row has the same Instrument ID and Series but ISIN `INE00HZ01029`. The MII file also has the old ISIN `INE00HZ01011` under Series `IQ` and a different Instrument ID. Neither value is silently substituted. The observation is excluded from verified calculations and remains REVIEW pending authoritative identity resolution.
 
-The reconciliation service now returns both exceptions, preserves the raw rows in the live evidence artifact, and excludes them from verified breadth inputs.
+The reconciliation service now returns both exceptions, preserves the raw rows in the live evidence artifact, and excludes them from verified breadth inputs. The service also compares Instrument ID when available on both sides; it never treats a matching Symbol alone as sufficient identity evidence.
 
 ## Decision
 
