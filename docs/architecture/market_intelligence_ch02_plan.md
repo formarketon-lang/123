@@ -187,7 +187,7 @@ Step 02 result: contract documented. This is a specification milestone only; no 
 
 ### STEP 03 — Historical Observation Retrieval
 
-Status: IMPLEMENTED ON FEATURE BRANCH — AUTOMATED TESTS PENDING
+Status: PASS — IMPLEMENTED ON FEATURE BRANCH; GITHUB ACTIONS VERIFIED
 
 Implementation:
 - Added `services/market_intelligence/historical_observation_service.py`.
@@ -202,7 +202,7 @@ Implementation:
 Tests added:
 - `tests/test_market_intelligence_historical_observation_service.py`
 - Covers date sorting, malformed/empty/duplicate input, per-date provenance, failure isolation, REVIEW propagation, no cross-date reuse and mixed-status precedence.
-- Seven test functions plus five parameterized invalid-date cases are defined; GitHub Actions execution remains pending.
+- Eight test functions plus five parameterized invalid-date cases are defined; the full TradeLab Pro workflow passed (626 tests), and Yahoo Adapter workflow passed (56 tests).
 
 Limitations and safety:
 - This step retrieves historical NSE observations only; it does not calculate the A/D series.
@@ -211,7 +211,7 @@ Limitations and safety:
 - No live historical date range has been executed in this step.
 - No production UI or Main branch change.
 
-Exit: implementation and focused tests are committed to the Chapter 02 draft branch; automated workflow result is pending.
+Exit: implementation and focused tests are committed to the Chapter 02 draft branch; full regression and Yahoo adapter workflows both PASS. Live historical-range verification is still pending.
 
 ### STEP 04 — Prior-Session Price Validation
 - Validate Previous Close and Current Close for each eligible identity.
@@ -303,7 +303,8 @@ Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-03-IMPLEMENTED-CI-PENDIN
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
-- Step 03 automated workflow: PENDING; no PASS is claimed.
+- Step 03 full TradeLab Pro regression: PASS — 626 tests.
+- Step 03 Yahoo Adapter regression: PASS — 56 tests.
 - Step 03 live historical-range verification: NOT RUN.
 - MII raw archive SHA-256 / fetch timestamp exposure: REMAINS AN EVIDENCE GAP.
 - Sector Mapping Expansion: OFF.
