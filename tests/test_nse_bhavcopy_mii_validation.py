@@ -88,6 +88,36 @@ def test_wrong_snapshot_date_is_rejected():
         reconcile_bhavcopy_with_mii(make_bhavcopy(), universe)
 
 
+
+def test_future_dated_mii_snapshot_is_rejected():
+    universe = make_universe()
+    universe["Universe As Of Date"] = "2026-11-13"
+
+    with pytest.raises(NSEMIIReconciliationError, match="exactly match"):
+        reconcile_bhavcopy_with_mii(make_bhavcopy(), universe)
+
+
+def test_mixed_mii_snapshot_dates_are_rejected():
+    universe = make_universe()
+    universe.loc[0, "Universe As Of Date"] = "2026-11-11"
+
+    with pytest.raises(NSEMIIReconciliationError, match="one valid snapshot date"):
+        reconcile_bhavcopy_with_mii(make_bhavcopy(), universe)
+
+
+def test_yahoo_or_non_mii_universe_substitution_is_rejected():
+    universe = make_universe()
+    universe["Source"] = "Yahoo Finance"
+
+    with pytest.raises(NSEMIIReconciliationError, match="Official NSE MII"):
+        reconcile_bhavcopy_with_mii(make_bhavcopy(), universe)
+
+
+def test_missing_official_historical_snapshot_is_unavailable():
+    with pytest.raises(NSEMIIReconciliationError, match="universe is empty"):
+        reconcile_bhavcopy_with_mii(make_bhavcopy(), pd.DataFrame())
+
+
 def test_undated_mii_is_rejected():
     universe = make_universe()
     universe["Universe Verification Status"] = "LEGACY_UNDATED"
