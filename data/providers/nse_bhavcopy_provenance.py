@@ -90,8 +90,10 @@ def audit_nse_bhavcopy_provenance(
 ) -> dict:
     """Audit archive structure, hash, MII identity and coverage.
 
-    A valid ZIP and recorded hash do not prove NSE authenticity.
-    Official UDiFF schema mapping remains independently unverified.
+    A valid ZIP and recorded hash do not prove NSE origin authenticity.
+    Official UDiFF schema mapping is checked against pinned official
+    workbook/sample evidence and the raw archive header; daily MII
+    identity and membership coverage are audited separately.
     """
 
     if (
