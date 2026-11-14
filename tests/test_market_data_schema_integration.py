@@ -6,7 +6,7 @@ from data import market_data_adapter as adapter
 
 
 def sample_equity_data():
-    return pd.DataFrame({
+    data = pd.DataFrame({
         "Date": pd.to_datetime([
             "2026-10-01",
             "2026-10-02",
@@ -17,6 +17,8 @@ def sample_equity_data():
         "Close": [102, 103],
         "Volume": [1000, 1200],
     })
+    data.attrs["fetched_at_utc"] = "2026-11-11T05:00:00Z"
+    return data
 
 
 def sample_index_data():

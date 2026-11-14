@@ -42,17 +42,27 @@ def test_provenance_contains_source_and_observation_range():
     assert result.observation_end == "2026-10-02"
 
 
-def test_naive_fetch_timestamp_is_treated_as_utc():
-    result = build_data_provenance(
-        sample_data(),
-        symbol="MARICO",
-        source="NSE",
-        exchange="NSE",
-        timeframe="1d",
-        fetched_at_utc="2026-11-11 05:00:00",
-    )
+def test_naive_fetch_timestamp_is_rejected():
+    with pytest.raises(ValueError, match="timezone-aware"):
+        build_data_provenance(
+            sample_data(),
+            symbol="MARICO",
+            source="NSE",
+            exchange="NSE",
+            timeframe="1d",
+            fetched_at_utc="2026-11-11 05:00:00",
+        )
 
-    assert result.fetched_at_utc == "2026-11-11T05:00:00Z"
+
+def test_missing_fetch_timestamp_is_rejected():
+    with pytest.raises(ValueError, match="explicit fetched_at_utc"):
+        build_data_provenance(
+            sample_data(),
+            symbol="MARICO",
+            source="NSE",
+            exchange="NSE",
+            timeframe="1d",
+        )
 
 
 def test_timezone_aware_fetch_timestamp_converts_to_utc():
@@ -76,6 +86,7 @@ def test_fallback_reason_is_preserved():
         exchange="NSE",
         timeframe="1d",
         fallback_reason="NSE unavailable",
+        fetched_at_utc="2026-11-11T05:00:00Z",
     )
 
     assert result.source == "YAHOO"
@@ -90,6 +101,7 @@ def test_supported_validation_statuses(status):
         source="NSE",
         exchange="NSE",
         timeframe="1d",
+        fetched_at_utc="2026-11-11T05:00:00Z",
         validation_status=status,
     )
 

@@ -23,15 +23,26 @@ class DataProvenance:
 
 
 def _utc_timestamp(value=None) -> str:
-    """Return an ISO-8601 UTC timestamp."""
+    """Validate and normalize an explicit timezone-aware fetch timestamp."""
 
-    timestamp = pd.Timestamp.now(tz="UTC") if value is None else pd.Timestamp(value)
+    if value is None or not str(value).strip():
+        raise ValueError(
+            "An explicit fetched_at_utc timestamp is required."
+        )
 
-    if timestamp.tzinfo is None:
-        timestamp = timestamp.tz_localize("UTC")
-    else:
-        timestamp = timestamp.tz_convert("UTC")
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(
+            "fetched_at_utc must be a valid timestamp."
+        ) from exc
 
+    if pd.isna(timestamp) or timestamp.tzinfo is None:
+        raise ValueError(
+            "fetched_at_utc must be timezone-aware."
+        )
+
+    timestamp = timestamp.tz_convert("UTC")
     return timestamp.isoformat().replace("+00:00", "Z")
 
 

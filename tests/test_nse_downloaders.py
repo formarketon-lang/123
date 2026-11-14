@@ -1,3 +1,4 @@
+import pandas as pd
 import pytest
 
 from data.providers import nse_downloader
