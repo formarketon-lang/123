@@ -1,13 +1,14 @@
-
-"""Tests for the isolated Market Intelligence UI shell."""
+"""Tests for the Market Intelligence UI and service-layer boundary."""
 
 import ast
+from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import pytest
 import streamlit as st
 
-from ui.market_intelligence import render_market_intelligence_page
+import ui.market_intelligence as market_intelligence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -24,8 +25,13 @@ def captured_streamlit_calls(monkeypatch):
         "info": [],
         "subheader": [],
         "warning": [],
+        "success": [],
+        "error": [],
         "write": [],
         "divider": [],
+        "date_input": [],
+        "button": [],
+        "dataframe": [],
     }
 
     for method_name in calls:
@@ -42,29 +48,23 @@ def captured_streamlit_calls(monkeypatch):
 def test_market_intelligence_page_renders_without_error(
     captured_streamlit_calls,
 ):
-    """The isolated page must render its main sections."""
-
-    render_market_intelligence_page()
+    market_intelligence.render_market_intelligence_page()
 
     calls = captured_streamlit_calls
 
     assert "Market Intelligence" in calls["header"]
-
     assert "Module Activation Status" in calls["subheader"]
-
-    assert "Planned Analysis Areas" in calls["subheader"]
-
+    assert "Live NSE Market Breadth" in calls["subheader"]
     assert calls["info"]
     assert calls["warning"]
-    assert calls["divider"]
+    assert calls["date_input"]
+    assert calls["button"]
 
 
 def test_market_intelligence_lists_all_planned_analysis_areas(
     captured_streamlit_calls,
 ):
-    """All planned analysis areas must remain visible."""
-
-    render_market_intelligence_page()
+    market_intelligence.render_market_intelligence_page()
 
     displayed_items = captured_streamlit_calls["write"]
 
@@ -82,30 +82,122 @@ def test_market_intelligence_lists_all_planned_analysis_areas(
         assert item in displayed_items
 
 
-def test_market_intelligence_remains_pending_without_fake_signals(
+def test_market_intelligence_reports_review_without_claiming_pass(
     captured_streamlit_calls,
 ):
-    """The shell must not imply that unbuilt analysis is active."""
-
-    render_market_intelligence_page()
+    market_intelligence.render_market_intelligence_page()
 
     warning_text = " ".join(
         str(value)
         for value in captured_streamlit_calls["warning"]
     )
 
-    info_text = " ".join(
-        str(value)
-        for value in captured_streamlit_calls["info"]
+    assert "REVIEW" in warning_text
+    assert not captured_streamlit_calls["success"]
+
+
+def test_market_intelligence_calls_service_and_displays_review(
+    monkeypatch,
+    captured_streamlit_calls,
+):
+    service_calls = []
+
+    result = {
+        "analysis_status": "REVIEW",
+        "source": "NSE",
+        "source_sha256": "a" * 64,
+        "fetched_at_utc": "2026-11-14T01:00:00Z",
+        "observation_date": "2026-11-13",
+        "reconciliation": {
+            "coverage_pct": 99.2,
+            "observed_symbols": 2740,
+            "expected_symbols": 2762,
+            "identity_status": "REVIEW",
+            "coverage_status": "REVIEW",
+            "identity_exceptions": [
+                {
+                    "symbol": "BNAGROCHEM",
+                    "reason": "SYMBOL_ISIN_MISMATCH",
+                }
+            ],
+            "missing_symbols": ["MISSING1", "MISSING2"],
+        },
+        "breadth": {
+            "advancing": 1200,
+            "declining": 1100,
+            "unchanged": 440,
+            "coverage_status": "REVIEW",
+        },
+        "audit": {
+            "schema_mapping_status": "PASS",
+            "audit_status": "REVIEW",
+            "audit_reasons": ["MII_SYMBOL_COVERAGE_INCOMPLETE"],
+        },
+    }
+
+    monkeypatch.setattr(
+        st,
+        "date_input",
+        lambda *args, **kwargs: date(2026, 11, 13),
+    )
+    monkeypatch.setattr(
+        st,
+        "button",
+        lambda *args, **kwargs: True,
+    )
+    monkeypatch.setattr(
+        market_intelligence,
+        "analyze_nse_market_breadth_from_udiff",
+        lambda selected_date: (
+            service_calls.append(selected_date) or result
+        ),
     )
 
-    assert "PENDING" in warning_text
-    assert "কোনো Market Signal" in info_text
+    market_intelligence.render_market_intelligence_page()
+
+    assert service_calls == [date(2026, 11, 13)]
+    warning_text = " ".join(
+        str(value)
+        for value in captured_streamlit_calls["warning"]
+    )
+    assert "REVIEW" in warning_text
+    assert "Advancing: 1200" in captured_streamlit_calls["write"]
+    assert "Declining: 1100" in captured_streamlit_calls["write"]
+    assert captured_streamlit_calls["dataframe"]
+    assert "MISSING1, MISSING2" in captured_streamlit_calls["write"]
 
 
-def test_market_intelligence_ui_has_no_core_or_data_imports():
-    """The UI shell must not depend directly on Core or Data layers."""
+def test_market_intelligence_handles_service_failure(
+    monkeypatch,
+    captured_streamlit_calls,
+):
+    monkeypatch.setattr(
+        st,
+        "date_input",
+        lambda *args, **kwargs: date(2026, 11, 13),
+    )
+    monkeypatch.setattr(
+        st,
+        "button",
+        lambda *args, **kwargs: True,
+    )
 
+    def fail_service(_):
+        raise RuntimeError("NSE source unavailable")
+
+    monkeypatch.setattr(
+        market_intelligence,
+        "analyze_nse_market_breadth_from_udiff",
+        fail_service,
+    )
+
+    market_intelligence.render_market_intelligence_page()
+
+    assert captured_streamlit_calls["error"]
+    assert not captured_streamlit_calls["success"]
+
+
+def test_market_intelligence_ui_imports_service_not_core_or_data():
     source = UI_FILE.read_text(encoding="utf-8")
     syntax_tree = ast.parse(source)
 
@@ -122,6 +214,10 @@ def test_market_intelligence_ui_has_no_core_or_data_imports():
                 imported_modules.append(node.module)
 
     assert "streamlit" in imported_modules
+    assert (
+        "services.market_intelligence.bhavcopy_service"
+        in imported_modules
+    )
 
     assert not any(
         module == "core"
@@ -130,4 +226,3 @@ def test_market_intelligence_ui_has_no_core_or_data_imports():
         or module.startswith("data.")
         for module in imported_modules
     )
-  
