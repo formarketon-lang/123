@@ -96,3 +96,14 @@ def test_duplicate_isin_in_universe_is_rejected():
 
     with pytest.raises(NSEMIIReconciliationError, match="duplicate ISIN"):
         reconcile_bhavcopy_with_mii(make_bhavcopy(), universe)
+
+
+def test_partially_undated_mii_snapshot_is_rejected():
+    universe = make_universe()
+    universe.loc[0, "Universe As Of Date"] = None
+
+    with pytest.raises(
+        NSEMIIReconciliationError,
+        match="Every MII universe row",
+    ):
+        reconcile_bhavcopy_with_mii(make_bhavcopy(), universe)
