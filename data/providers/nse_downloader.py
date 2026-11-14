@@ -2,7 +2,7 @@
 """NSE historical equity downloader using current NSE historical API."""
 
 import csv
-from datetime import datetime
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 
@@ -290,6 +290,7 @@ def download_equity_history(symbol, start_date, end_date):
         },
         timeout=60,
     )
+    fetched_at_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     response.raise_for_status()
 
     result = _parse_equity_csv(response, symbol)
@@ -301,6 +302,7 @@ def download_equity_history(symbol, start_date, end_date):
             "NSE equity response contains dates outside requested range."
         )
 
+    result.attrs["fetched_at_utc"] = fetched_at_utc
     return result
 
 
