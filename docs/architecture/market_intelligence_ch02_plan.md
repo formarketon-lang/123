@@ -241,7 +241,7 @@ Exit: deterministic validation engine and focused tests pass in GitHub Actions. 
 
 ### STEP 05 — Daily A/D Classification
 
-Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+Status: PASS — 15 FOCUSED TESTS; FULL REGRESSION VERIFIED
 
 Implementation:
 - Added `core/market_intelligence/advance_decline.py`.
@@ -262,7 +262,7 @@ Limitations:
 - Official NSE calendar integration, MII raw archive provenance exposure and live historical-range verification remain open.
 - No production UI or Main branch change.
 
-Exit: implementation and focused tests committed to the draft feature branch; GitHub Actions verification pending.
+Exit: implementation and 15 focused tests pass in GitHub Actions; full TradeLab Pro regression 656 passed and Yahoo Adapter regression 56 passed.
 
 ### STEP 06 — A-D Difference and A/D Ratio
 - Calculate A-D Difference and ratio.
@@ -337,13 +337,13 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-05-FIXTURE-AND-DATE-GUARD-CI-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-05-DAILY-AD-CLASSIFICATION-PASS`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
 - Step 03 status: REGRESSION PASS; feature branch remains unmerged.
 - Step 04: prior-session validation engine and 15 focused tests PASS in GitHub Actions.
-- Step 05: daily A/D classification hardened with 15 focused tests. Latest earlier CI found one test-fixture inconsistency (654 passed, 1 failed); fixture corrected, exact date-isolation guard added; fresh CI pending.
+- Step 05: daily A/D classification hardened with 15 focused tests; fixture corrected and exact date-isolation guard added. Latest GitHub Actions: TradeLab Pro 656 passed; Yahoo Adapter 56 passed.
 - Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
 - Live historical-range validation: NOT RUN.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
