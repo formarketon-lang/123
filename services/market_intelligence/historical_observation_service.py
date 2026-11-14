@@ -110,6 +110,10 @@ def retrieve_nse_historical_observations(
                 "source_sha256": None,
                 "fetched_at_utc": None,
                 "mii_snapshot_date": None,
+                "mii_source_url": None,
+                "mii_source_filename": None,
+                "mii_source_sha256": None,
+                "mii_fetched_at_utc": None,
                 "expected_symbols": None,
                 "verified_symbols": 0,
                 "missing_count": None,
@@ -142,6 +146,18 @@ def retrieve_nse_historical_observations(
             "mii_source_provenance": result.get(
                 "mii_source_provenance", {}
             ),
+            "mii_source_url": result.get(
+                "mii_source_provenance", {}
+            ).get("source_url"),
+            "mii_source_filename": result.get(
+                "mii_source_provenance", {}
+            ).get("source_filename"),
+            "mii_source_sha256": result.get(
+                "mii_source_provenance", {}
+            ).get("source_sha256"),
+            "mii_fetched_at_utc": result.get(
+                "mii_source_provenance", {}
+            ).get("fetched_at_utc"),
             "expected_symbols": reconciliation["expected_symbols"],
             "verified_symbols": reconciliation["observed_symbols"],
             "missing_count": reconciliation["missing_count"],
@@ -187,6 +203,10 @@ def retrieve_nse_historical_observations(
                 "source_sha256",
                 "fetched_at_utc",
                 "mii_snapshot_date",
+                "mii_source_url",
+                "mii_source_filename",
+                "mii_source_sha256",
+                "mii_fetched_at_utc",
                 "expected_symbols",
                 "verified_symbols",
                 "missing_count",
