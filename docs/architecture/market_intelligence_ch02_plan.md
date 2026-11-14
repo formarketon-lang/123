@@ -71,6 +71,35 @@ Use official NSE MII membership snapshots aligned to each observation date. A cu
 
 ## 5. Step Plan
 
+### STEP 01 — Inventory Result (2026-11-14)
+
+<badge>INVENTORY VERIFIED — NO CODE CHANGE</badge>
+
+Inspected the current Main implementation:
+
+- Core daily classification: `core/market_intelligence/breadth.py`
+- Validated daily breadth service: `services/market_intelligence/breadth_service.py`
+- NSE UDiFF + dated MII orchestration: `services/market_intelligence/bhavcopy_service.py`
+- Official UDiFF normalization: `data/providers/nse_udiff_bhavcopy.py`
+- Dated Symbol / ISIN / Instrument ID reconciliation: `data/providers/nse_bhavcopy_mii_validation.py`
+- UI integration: `ui/market_intelligence.py`
+- Existing tests: `tests/test_market_intelligence_bhavcopy_service.py`,
+  `tests/test_market_intelligence_breadth_service.py`,
+  `tests/test_nse_bhavcopy_mii_validation.py`,
+  `tests/test_market_intelligence_navigation.py`
+
+Inventory findings:
+
+1. Daily advancing / declining / unchanged classification already exists; Chapter 02 must reuse it rather than create a second daily classifier.
+2. The current production Bhavcopy service is single-observation-date and requires a same-date MII snapshot. Historical A/D therefore needs an explicit per-date orchestration contract.
+3. The MII reconciliation already supports Symbol + ISIN and Instrument ID when available on both sources, and excludes mismatches.
+4. Existing breadth service preserves source, fallback reason, timezone-aware fetch timestamps and validation status.
+5. Historical point-in-time MII availability and the cumulative A-D Line are not implemented by the inspected service. These are Chapter 02 gaps, not assumptions that may be bypassed.
+6. No existing Chapter 02 production module was found in the inspected paths. No duplicate downloader or new adapter is required.
+
+Step 01 result: inventory completed. No production code was changed. Focused tests for any future implementation remain mandatory in their planned steps.
+
+
 ### STEP 01 — Existing Code and Data Inventory
 - Inspect accepted Chapter 01 Core, Data, Service, UI and tests.
 - Identify reusable daily breadth calculation and UDiFF/MII service methods.
