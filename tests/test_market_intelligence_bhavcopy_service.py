@@ -15,20 +15,25 @@ from services.market_intelligence import bhavcopy_service as service
 FETCHED_AT = "2026-11-14T01:00:00Z"
 
 
-def make_raw(include_unknown=False):
+def make_raw(include_unknown=False, include_mismatch=False):
     symbols = ["AAA", "BBB", "CCC"]
     if include_unknown:
         symbols.append("DCMFINSERV")
+    if include_mismatch:
+        symbols.append("BNAGROCHEM")
     count = len(symbols)
+    isins = [
+        f"INE000{chr(65 + i)}01010" for i in range(count)
+    ]
+    if include_mismatch:
+        isins[-1] = "INE00HZ01011"
 
     return pd.DataFrame({
         "TradDt": ["2026-11-13"] * count,
         "Sgmt": ["CM"] * count,
         "Src": ["NSE"] * count,
         "FinInstrmTp": ["STK"] * count,
-        "ISIN": [
-            f"INE000{chr(65 + i)}01010" for i in range(count)
-        ],
+        "ISIN": isins,
         "TckrSymb": symbols,
         "SctySrs": ["EQ"] * count,
         "OpnPric": ["100"] * count,
@@ -42,14 +47,19 @@ def make_raw(include_unknown=False):
     })
 
 
-def make_universe():
+def make_universe(include_mismatch=False):
+    symbols = ["AAA", "BBB", "CCC"]
+    isins = [
+        "INE000A01010",
+        "INE000B01010",
+        "INE000C01010",
+    ]
+    if include_mismatch:
+        symbols.append("BNAGROCHEM")
+        isins.append("INE00HZ01029")
     return pd.DataFrame({
-        "Symbol": ["AAA", "BBB", "CCC"],
-        "ISIN": [
-            "INE000A01010",
-            "INE000B01010",
-            "INE000C01010",
-        ],
+        "Symbol": symbols,
+        "ISIN": isins,
         "Series": ["EQ"] * 3,
         "Exchange": ["NSE"] * 3,
         "Source": ["NSE MII Security Master"] * 3,
@@ -65,8 +75,15 @@ def make_archive():
     return buffer.getvalue()
 
 
-def install_download(monkeypatch, include_unknown=False):
-    raw = make_raw(include_unknown=include_unknown)
+def install_download(
+    monkeypatch,
+    include_unknown=False,
+    include_mismatch=False,
+):
+    raw = make_raw(
+        include_unknown=include_unknown,
+        include_mismatch=include_mismatch,
+    )
     normalized = normalize_nse_cm_udiff_equity(
         raw,
         trade_date="2026-11-13",
@@ -98,7 +115,9 @@ def install_download(monkeypatch, include_unknown=False):
     monkeypatch.setattr(
         service,
         "fetch_nse_equity_universe",
-        lambda **kwargs: make_universe(),
+        lambda **kwargs: make_universe(
+            include_mismatch=include_mismatch
+        ),
     )
 
 
@@ -179,3 +198,25 @@ def test_service_rejects_wrong_mii_snapshot_date(monkeypatch):
         service.analyze_nse_market_breadth_from_udiff(
             "2026-11-13"
         )
+
+
+def test_symbol_isin_mismatch_is_excluded_and_keeps_review_status(
+    monkeypatch,
+):
+    install_download(monkeypatch, include_mismatch=True)
+
+    result = service.analyze_nse_market_breadth_from_udiff(
+        "2026-11-13"
+    )
+
+    assert result["reconciliation"]["identity_status"] == "REVIEW"
+    assert result["reconciliation"]["isin_mismatch_symbols"] == [
+        "BNAGROCHEM"
+    ]
+    assert "BNAGROCHEM" not in (
+        result["verified_observations"]["Symbol"].tolist()
+    )
+    assert result["unverified_observations"]["Symbol"].tolist() == [
+        "BNAGROCHEM"
+    ]
+    assert result["analysis_status"] == "REVIEW"
