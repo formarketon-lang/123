@@ -51,7 +51,7 @@ REQUIRED_RAW_FIELDS = {
 }
 
 
-class NSEUdiFFDownloadError(RuntimeError):
+class NSEUdiFFDownloadError(ValueError):
     """Raised when the official NSE CM UDiFF file cannot be verified."""
 
 
