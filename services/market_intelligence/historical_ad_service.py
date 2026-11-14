@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
+import pandas as pd
+
 from core.market_intelligence.historical_ad_analysis import (
     analyze_historical_advance_decline,
 )
@@ -107,10 +109,10 @@ def analyze_nse_historical_advance_decline_for_range(
             "blocked_count": 0,
             "unavailable_count": 0,
             "missing_count": 0,
-            "per_date_status": __import__("pandas").DataFrame(),
-            "coverage": __import__("pandas").DataFrame(),
-            "provenance": __import__("pandas").DataFrame(),
-            "retrieval_summary": __import__("pandas").DataFrame(),
+            "per_date_status": pd.DataFrame(),
+            "coverage": pd.DataFrame(),
+            "provenance": pd.DataFrame(),
+            "retrieval_summary": pd.DataFrame(),
         }
 
     if not calendar["session_dates"]:
@@ -125,10 +127,10 @@ def analyze_nse_historical_advance_decline_for_range(
             "blocked_count": 0,
             "unavailable_count": 0,
             "missing_count": 0,
-            "per_date_status": __import__("pandas").DataFrame(),
-            "coverage": __import__("pandas").DataFrame(),
-            "provenance": __import__("pandas").DataFrame(),
-            "retrieval_summary": __import__("pandas").DataFrame(),
+            "per_date_status": pd.DataFrame(),
+            "coverage": pd.DataFrame(),
+            "provenance": pd.DataFrame(),
+            "retrieval_summary": pd.DataFrame(),
         }
 
     result = analyze_nse_historical_advance_decline(
