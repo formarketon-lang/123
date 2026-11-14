@@ -372,6 +372,9 @@ def test_fetcher_attaches_exact_mii_archive_hash_and_fetch_timestamp():
     assert provenance["source_sha256"] == hashlib.sha256(archive).hexdigest()
     assert provenance["source_size_bytes"] == len(archive)
     assert provenance["snapshot_date"] == "2026-11-04"
+    assert provenance["published_at_utc"] is None
+    assert provenance["publication_time_status"] == "UNKNOWN"
+    assert provenance["point_in_time_status"] == "REVIEW"
     assert provenance["verification_status"] == "MII_DATED"
     assert provenance["fetched_at_utc"].endswith("Z")
 
