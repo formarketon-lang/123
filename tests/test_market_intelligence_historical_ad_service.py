@@ -128,9 +128,12 @@ def test_service_preserves_caller_session_order_input_before_retriever(monkeypat
         calls["dates"] = received
         return fake_history()
     monkeypatch.setattr(service, "retrieve_nse_historical_observations", retrieve)
+    def analyze(received, *, expected_sessions, initial_anchor):
+        calls["core_sessions"] = expected_sessions
+        return fake_analysis()
     monkeypatch.setattr(
-        service, "analyze_historical_advance_decline",
-        lambda *args, **kwargs: fake_analysis(),
+        service, "analyze_historical_advance_decline", analyze,
     )
     service.analyze_nse_historical_advance_decline(dates)
     assert calls["dates"] == dates
+    assert calls["core_sessions"] == ["2026-11-12", "2026-11-13"]
