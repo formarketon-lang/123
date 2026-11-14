@@ -240,10 +240,29 @@ Important limitations:
 Exit: deterministic validation engine and focused tests pass in GitHub Actions. Official calendar-source integration and live historical verification remain pending.
 
 ### STEP 05 — Daily A/D Classification
-- Reuse existing classification rules where suitable.
-- Produce advances, declines, unchanged and missing counts per date.
-- Test equality boundaries, zero movement, missing observations and exact universe reconciliation.
-- Exit: tested daily A/D result.
+
+Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+
+Implementation:
+- Added `core/market_intelligence/advance_decline.py`.
+- Reuses `core.market_intelligence.breadth.analyze_market_breadth` for the established price-direction classification; no duplicate comparison engine was introduced.
+- Consumes the date-isolated output of `retrieve_nse_historical_observations` and classifies only its verified observations.
+- Produces per-date Advancing, Declining, Unchanged, Missing, Identity Exceptions, Verified Observations, Expected Universe, Coverage and status.
+- Missing members are counted separately and never added to Unchanged. If all observations are missing, the result is 0/0/0 plus the full missing count and REVIEW.
+- REVIEW dates may show verified-subset counts but remain REVIEW. BLOCKED and UNAVAILABLE dates never receive fabricated classification counts.
+- Enforces count reconciliation, unique dates, supported status values, verified-observation row counts and valid coverage values.
+- Overall status precedence is BLOCKED → UNAVAILABLE → REVIEW → PASS.
+
+Tests added:
+- `tests/test_market_intelligence_advance_decline.py`
+- 12 focused tests cover advances/declines/unchanged, missing observations, all-missing dates, identity exceptions, unavailable/blocked dates, date ordering, duplicate dates, metadata mismatch and invalid prices.
+
+Limitations:
+- This is a pure historical classification layer; it does not fetch NSE data or calculate A-D Difference, A/D Ratio or cumulative A-D Line.
+- Official NSE calendar integration, MII raw archive provenance exposure and live historical-range verification remain open.
+- No production UI or Main branch change.
+
+Exit: implementation and focused tests committed to the draft feature branch; GitHub Actions verification pending.
 
 ### STEP 06 — A-D Difference and A/D Ratio
 - Calculate A-D Difference and ratio.
@@ -318,12 +337,13 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-04-ENGINE-REGRESSION-PASS-CALENDAR-PENDING`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-05-IMPLEMENTED-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
 - Step 03 status: REGRESSION PASS; feature branch remains unmerged.
 - Step 04: prior-session validation engine and 15 focused tests PASS in GitHub Actions.
+- Step 05: daily A/D classification module and 12 focused tests added; GitHub Actions pending.
 - Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
 - Live historical-range validation: NOT RUN.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
