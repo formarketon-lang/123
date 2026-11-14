@@ -73,7 +73,7 @@ Use official NSE MII membership snapshots aligned to each observation date. A cu
 
 ### STEP 01 — Inventory Result (2026-11-14)
 
-<badge>INVENTORY VERIFIED — NO CODE CHANGE</badge>
+Status: INVENTORY VERIFIED — NO CODE CHANGE
 
 Inspected the current Main implementation:
 
