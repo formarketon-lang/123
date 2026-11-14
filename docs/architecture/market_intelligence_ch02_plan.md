@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–09 VERIFIED; STEP 10 IN PROGRESS  
+Status: CHAPTER PLAN DRAFT — STEPS 01–09 VERIFIED; STEP 10 IMPLEMENTED; CI PENDING  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -368,12 +368,29 @@ Limitations:
 Exit: implementation and 10 focused test cases pass in GitHub Actions; TradeLab Pro full regression 708 passed and Yahoo Adapter workflow PASS.
 
 ### STEP 10 — UI Integration
-- Add Historical Advance / Decline view to the existing Market Intelligence page.
-- Provide date range selection, counts, A-D Difference, ratio, cumulative line and coverage status.
-- Display REVIEW dates visibly; do not render provisional series as verified PASS.
-- Keep existing Market Regime, Breadth and other app navigation unchanged.
-- Test UI/service integration and existing-page regression.
-- Exit: UI integration tests pass.
+
+Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+
+Implementation:
+- Updated `ui/market_intelligence.py`; existing Market Regime, live Market Breadth and navigation are retained.
+- Added Historical Advance / Decline Analysis section wired to `analyze_nse_historical_advance_decline`.
+- Requires explicitly entered NSE session dates in ISO format. A conventional date range is intentionally not converted into weekdays because the official NSE holiday/session calendar is not yet integrated.
+- Limits one UI request to 30 sessions to avoid unbounded sequential archive retrieval.
+- Exposes initial cumulative anchor, daily counts, A-D Difference, A/D Ratio, cumulative A-D chart, coverage and source/MII provenance.
+- PASS, REVIEW, BLOCKED and UNAVAILABLE have distinct UI messages; missing/review sessions are not filled or presented as verified PASS.
+- Existing Market Regime, Breadth and navigation remain unchanged; BSE and F&O remain disabled/excluded.
+
+Tests:
+- Added `tests/test_market_intelligence_historical_ad_ui.py`.
+- 4 focused UI tests cover service invocation, required session input, 30-session limit and strict ISO date validation.
+- Existing navigation tests remain in place.
+
+Limitations:
+- Official NSE session calendar is not yet automatically sourced; users must supply verified NSE dates.
+- No live historical date range has been executed.
+- UI integration does not activate Sector Mapping Expansion, BSE or F&O.
+
+Exit: UI integration and 4 focused tests committed to the draft feature branch; GitHub Actions verification pending.
 
 ### STEP 11 — Final Verification and Acceptance
 - Run focused Chapter 02 tests.
@@ -414,7 +431,7 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-10-UI-INTEGRATION-IN-PROGRESS`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-10-UI-INTEGRATION-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
