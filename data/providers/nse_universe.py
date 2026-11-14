@@ -38,6 +38,7 @@ NSE_HEADERS = {
 }
 
 MII_REQUIRED_COLUMNS = [
+    "FININSTRMID",
     "TCKRSYMB",
     "FININSTRMNM",
     "SCTYSRS",
@@ -122,6 +123,7 @@ def normalize_nse_mii_security_master(
     ].copy()
 
     text_columns = [
+        "Instrument ID",
         "Symbol",
         "Company",
         "Series",
@@ -131,6 +133,19 @@ def normalize_nse_mii_security_master(
         "Normal Market Status",
         "Permitted to Trade",
     ]
+
+    if "Instrument ID" not in frame.columns:
+        raise ValueError("NSE MII Instrument ID is required.")
+
+    frame["Instrument ID"] = (
+        frame["Instrument ID"].astype("string").str.strip()
+    )
+    if (
+        frame["Instrument ID"].isna().any()
+        or frame["Instrument ID"].eq("").any()
+        or not frame["Instrument ID"].str.fullmatch(r"\\d+").all()
+    ):
+        raise ValueError("NSE MII Instrument ID values are invalid.")
 
     for column in text_columns:
         if column in frame.columns:
@@ -204,6 +219,9 @@ def normalize_nse_mii_security_master(
     # A normalizer alone cannot prove which archive date was fetched.
     frame["Universe As Of Date"] = pd.NaT
     frame["Universe Verification Status"] = "MII_UNDATED"
+
+    if frame["Instrument ID"].duplicated().any():
+        raise ValueError("NSE MII contains duplicate Instrument ID values.")
 
     frame = frame.drop_duplicates(
         subset=["Symbol", "Series", "ISIN"],
