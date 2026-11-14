@@ -17,7 +17,7 @@ Status: REVIEW — reference recorded; final workbook content review pending
    https://nsearchives.nseindia.com/web/sites/default/files/inline-files/Bhavcopy.zip
 
 4. NSE Circular NSE/MSD/62142, 22-May-2024 — UDiFF update. The circular records the revision of reserved tags to Rsvd1–Rsvd4 and removal of the trailing extra comma for the CM UDiFF Bhavcopy, effective 21-Jun-2024:  
-   https://nsearchives.nseindia.com/content/circulars/MSD62142.pdf
+   https://nsearchives.nseindia.com/web/sites/default/files/inline-files/MSD62142.zip
 
 The official Forms & Formats page was observed to list the UDiFF catalogue through Version 4.0 and the CM Bhavcopy format/test files. The page shows an update date of 30-Jun-2026.
 
