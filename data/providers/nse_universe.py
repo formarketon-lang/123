@@ -11,7 +11,8 @@ Point-in-time metadata:
 from __future__ import annotations
 
 import gzip
-from datetime import date, datetime, timedelta
+import hashlib
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
@@ -426,13 +427,35 @@ def fetch_nse_equity_universe(
             print(f"Trying NSE MII: {url}")
 
             response = client.get(url, timeout=timeout)
+            fetched_at_utc = (
+                datetime.now(timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
             response.raise_for_status()
+            source_bytes = response.content
+            if not isinstance(source_bytes, bytes) or not source_bytes:
+                raise ValueError("NSE MII archive response is empty.")
 
-            raw = _read_mii_security_file(response.content)
+            raw = _read_mii_security_file(source_bytes)
             result = normalize_nse_mii_security_master(raw)
 
             if result.empty:
                 raise ValueError("MII universe is empty.")
+
+            # Attach provenance for the exact successful dated archive.
+            source_provenance = {
+                "source": "NSE",
+                "source_format": "NSE_MII_SECURITY_MASTER_GZIP_CSV",
+                "source_url": getattr(response, "url", None) or url,
+                "source_filename": url.rsplit("/", 1)[-1],
+                "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+                "source_size_bytes": len(source_bytes),
+                "fetched_at_utc": fetched_at_utc,
+                "snapshot_date": candidate_date.isoformat(),
+                "verification_status": "MII_DATED",
+            }
+            result.attrs["source_provenance"] = source_provenance
 
             # This is the actual date of the successful archive.
             result["Universe As Of Date"] = pd.Timestamp(
