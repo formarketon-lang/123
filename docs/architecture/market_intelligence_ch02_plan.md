@@ -282,7 +282,7 @@ Implementation:
 
 Tests added:
 - `tests/test_market_intelligence_ad_metrics.py`
-- 13 test functions plus 6 parametrized cases (17 cases total) cover normal calculations, zero-decliner, zero-advancer, no movers, REVIEW behavior, BLOCKED/UNAVAILABLE, reconciliation, invalid counts, duplicate dates, chronological ordering, status precedence and overflow.
+- 13 test functions plus 6 parametrized cases (17 cases total) cover normal calculations, zero-decliner, zero-advancer, no movers, REVIEW behavior, BLOCKED/UNAVAILABLE, reconciliation, invalid counts, duplicate dates, chronological ordering, status precedence and unsupported status rejection.
 
 Limitations:
 - This step calculates daily A-D Difference and A/D Ratio only; cumulative A-D Line is Step 07.
@@ -366,7 +366,7 @@ Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-06-AD-METRICS-CI-PENDING
 - Step 03 status: REGRESSION PASS; feature branch remains unmerged.
 - Step 04: prior-session validation engine and 15 focused tests PASS in GitHub Actions.
 - Step 05: daily A/D classification PASS; 15 focused tests. Latest verified GitHub Actions: TradeLab Pro 656 passed; Yahoo Adapter 56 passed.
-- Step 06: A-D Difference and A/D Ratio implementation added; 17 test cases committed; fresh GitHub Actions verification pending.
+- Step 06: A-D Difference and A/D Ratio implementation added; 17 test cases committed; oversized-number test replaced with unsupported-status contract test after Pandas coerced the impossible fixture before metric calculation; fresh GitHub Actions verification pending.
 - Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
 - Live historical-range validation: NOT RUN.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
