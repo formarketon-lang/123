@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: PLAN DRAFT — IMPLEMENTATION NOT STARTED  
+Status: CHAPTER PLAN DRAFT — STEP 03 IMPLEMENTED ON FEATURE BRANCH; CI PENDING  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -297,12 +297,14 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-02-CONTRACT-DEFINED`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-03-IMPLEMENTED-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
-- Chapter 02 production implementation: NOT STARTED.
-- Step 02 status: CONTRACT DEFINED; implementation and contract tests remain pending.
+- Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
+- Step 03 automated workflow: PENDING; no PASS is claimed.
+- Step 03 live historical-range verification: NOT RUN.
+- MII raw archive SHA-256 / fetch timestamp exposure: REMAINS AN EVIDENCE GAP.
 - Sector Mapping Expansion: OFF.
 - BSE: DISABLED.
 - F&O Scanner: EXCLUDED.
