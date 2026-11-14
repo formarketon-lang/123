@@ -23,6 +23,71 @@ from data.providers.nse_trading_calendar import (
 )
 
 
+
+_RECONCILIATION_DETAIL_COLUMNS = [
+    "observation_date", "issue_type", "symbol", "observed_isin",
+    "mii_isin", "observed_instrument_id", "mii_instrument_id", "reason",
+]
+
+
+def _build_reconciliation_details(per_date: list[dict]) -> pd.DataFrame:
+    """Expose symbol-level missing and identity exceptions for audit artifacts."""
+    rows = []
+    for item in per_date:
+        day = item.get("observation_date")
+        result = item.get("result")
+        if not isinstance(result, dict):
+            continue
+        reconciliation = result.get("reconciliation")
+        if not isinstance(reconciliation, dict):
+            continue
+
+        exceptions = reconciliation.get("identity_exceptions") or []
+        exception_by_symbol = {
+            str(exception.get("symbol")): exception
+            for exception in exceptions
+            if isinstance(exception, dict) and exception.get("symbol")
+        }
+        seen_symbols = set()
+
+        for symbol in reconciliation.get("missing_symbols") or []:
+            symbol = str(symbol)
+            exception = exception_by_symbol.get(symbol, {})
+            rows.append({
+                "observation_date": day,
+                "issue_type": (
+                    "IDENTITY_EXCEPTION_NOT_VERIFIED"
+                    if exception else "MISSING_EXPECTED_MEMBER"
+                ),
+                "symbol": symbol,
+                "observed_isin": exception.get("observed_isin"),
+                "mii_isin": exception.get("mii_isin"),
+                "observed_instrument_id": exception.get("observed_instrument_id"),
+                "mii_instrument_id": exception.get("mii_instrument_id"),
+                "reason": exception.get("reason") or "NO_VALID_BHAVCOPY_OBSERVATION",
+            })
+            seen_symbols.add(symbol)
+
+        for exception in exceptions:
+            if not isinstance(exception, dict):
+                continue
+            symbol = str(exception.get("symbol") or "")
+            if symbol and symbol in seen_symbols:
+                continue
+            rows.append({
+                "observation_date": day,
+                "issue_type": "IDENTITY_EXCEPTION",
+                "symbol": symbol or None,
+                "observed_isin": exception.get("observed_isin"),
+                "mii_isin": exception.get("mii_isin"),
+                "observed_instrument_id": exception.get("observed_instrument_id"),
+                "mii_instrument_id": exception.get("mii_instrument_id"),
+                "reason": exception.get("reason") or "IDENTITY_EXCEPTION",
+            })
+
+    return pd.DataFrame(rows, columns=_RECONCILIATION_DETAIL_COLUMNS)
+
+
 class HistoricalADServiceError(ValueError):
     """Raised when the historical A/D service request is invalid."""
 
@@ -75,6 +140,9 @@ def analyze_nse_historical_advance_decline(
         **analysis,
         "retrieval_status": history["analysis_status"],
         "retrieval_summary": history["summary"],
+        "reconciliation_details": _build_reconciliation_details(
+            history.get("per_date", [])
+        ),
         "requested_sessions": history["requested_dates"],
         "source_observation_count": history["date_count"],
     }
