@@ -33,6 +33,7 @@ def make_raw(include_unknown=False, include_mismatch=False):
         "Sgmt": ["CM"] * count,
         "Src": ["NSE"] * count,
         "FinInstrmTp": ["STK"] * count,
+        "FinInstrmId": [str(i + 1) for i in range(count)],
         "ISIN": isins,
         "TckrSymb": symbols,
         "SctySrs": ["EQ"] * count,
@@ -61,6 +62,7 @@ def make_universe(include_mismatch=False):
         isins.append("INE00HZ01029")
     return pd.DataFrame({
         "Symbol": symbols,
+        "Instrument ID": [str(i + 1) for i in range(len(symbols))],
         "ISIN": isins,
         "Series": ["EQ"] * 3,
         "Exchange": ["NSE"] * 3,
