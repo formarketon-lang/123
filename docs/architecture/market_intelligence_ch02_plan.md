@@ -214,10 +214,30 @@ Limitations and safety:
 Exit: implementation and focused tests are committed to the Chapter 02 draft branch; full regression and Yahoo adapter workflows both PASS. Live historical-range verification is still pending.
 
 ### STEP 04 — Prior-Session Price Validation
-- Validate Previous Close and Current Close for each eligible identity.
-- Confirm that the supplied Previous Close is the exchange-reported prior-session close; do not assume the prior calendar day is a trading day.
-- Test weekends, holidays, missing rows, invalid prices and duplicate identities.
-- Exit: deterministic daily comparison input.
+
+Status: IMPLEMENTED ON FEATURE BRANCH — AUTOMATED TESTS PENDING
+
+Implementation:
+- Added `services/market_intelligence/prior_session_validation.py`.
+- Compares each requested date's NSE `Previous Close` with the same Symbol + ISIN's `Current Close` from the immediately preceding session in a caller-supplied, independently verified NSE trading calendar.
+- Uses the repository's existing price tolerance of 0.01; the global data-integrity tolerance is not changed.
+- Requires explicit target observation dates so a warm-up prior-session row is not incorrectly treated as another date to validate.
+- Handles weekend gaps, official holidays and special sessions strictly through the supplied calendar; no Monday-Friday inference or calendar-day subtraction.
+- Missing entire prior-session archive is `UNAVAILABLE`; missing one security's prior observation is `REVIEW`; identity conflicts, duplicate identities, invalid prices or price differences beyond tolerance are `BLOCKED`.
+- Returns per-symbol differences and per-date counts/status for downstream deterministic A/D processing.
+
+Tests added:
+- `tests/test_market_intelligence_prior_session_validation.py`
+- 14 focused test functions cover prior-session equality, holiday/weekend gaps, special sessions, tolerance boundaries, missing prior rows, ISIN mismatch, unavailable archives, unverified calendar, duplicate dates/identities and invalid prices.
+
+Important limitations:
+- This module validates against a supplied calendar; it does not yet download or independently authenticate the official NSE trading calendar.
+- The caller must include at least one prior-session warm-up observation before the first target date.
+- No live historical NSE range has been run.
+- The MII raw archive SHA-256 / fetch timestamp gap from Step 03 remains open.
+- This is a pure validation module; no production UI, live service activation or Main branch change.
+
+Exit: deterministic validation engine and focused tests added; CI and calendar-source integration remain pending.
 
 ### STEP 05 — Daily A/D Classification
 - Reuse existing classification rules where suitable.
@@ -298,11 +318,13 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-03-REGRESSION-PASS`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-04-IMPLEMENTED-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
 - Step 03 status: REGRESSION PASS; feature branch remains unmerged.
+- Step 04: prior-session validation module and 14 focused tests added; CI pending.
+- Official NSE calendar downloader/authentication: NOT IMPLEMENTED; caller-supplied verified calendar required.
 - Step 03: historical retrieval orchestration and focused tests added on the draft feature branch.
 - Step 03 full TradeLab Pro regression: PASS — 626 tests.
 - Step 03 Yahoo Adapter regression: PASS — 56 tests.
