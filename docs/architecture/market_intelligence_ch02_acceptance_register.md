@@ -7,7 +7,7 @@ Branch: ch02-advance-decline-plan
 Base: main  
 Chapter: 02 — Historical Advance / Decline Analysis  
 Checkpoint: TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-RANGE-VERIFICATION-IN-PROGRESS  
-Register status: TECHNICAL IMPLEMENTATION VERIFIED; FULL RANGE EVIDENCE AND POINT-IN-TIME REVIEW GATE OPEN  
+Register status: FULL 83-SESSION RANGE EVIDENCE REVIEWED; POINT-IN-TIME AND UNIVERSE COVERAGE REVIEW GATES OPEN  
 PR: #2 — Draft / Unmerged
 
 ---
@@ -26,14 +26,14 @@ PR: #2 — Draft / Unmerged
 | 08 | Pure Core Analysis | PASS | 12 focused cases; provenance, coverage and status composition |
 | 09 | Historical A/D Service | PASS | 10 focused cases; existing retriever reused |
 | 10 | Market Intelligence UI | PASS | 4 focused UI tests |
-| 11 | Final Verification | IN PROGRESS | Regression green; official 120-day calendar PASS; first range artifact covers only 60/83 sessions |
+| 11 | Final Verification | IN PROGRESS — FULL RANGE EVIDENCE REVIEWED | 83/83 official sessions analyzed; all 83 remain REVIEW due to incomplete universe reconciliation and unknown MII publication time |
 
 ## 2. Latest GitHub Actions verification
 
-Latest PR regression commit: `f494290101c6313c88a5b957de2bf3ca40ebc9e8`.
+Latest PR regression commit: `35ab609c7ae524bc10b18c36b7cf83e412c79c99`.
 
-- TradeLab Pro Tests: **727 passed**, workflow run `43563135790`.
-- Yahoo Adapter Unit Tests: **56 passed**, workflow run `43563135837`.
+- TradeLab Pro Tests: **727 passed**, workflow run `43564395698`.
+- Yahoo Adapter Unit Tests: **56 passed**, workflow run `43564395706`.
 - Both latest PR workflows completed successfully; no failures in these latest runs.
 - Earlier failures were found and corrected:
   - Historical live check rejected the official NSE redirect host `nseindia.in`; allowlist now accepts both official NSE domains.
@@ -104,12 +104,52 @@ The first 120-day range had 83 official sessions but the default cap analyzed on
 
 The next range workflow triggered by these changes must be checked for all 83 sessions and its new artifact reviewed before Step 11 can close.
 
+## 5A. Corrected full 83-session range evidence — reviewed
+
+Range workflow run: 43563688178  
+Workflow result: SUCCESS  
+Artifact: tlp-mim-ch02-multi-month-historical-ad-evidence  
+Artifact ID: 14101766488  
+Artifact SHA-256: ff11eda60daa9f8e7d7fae882ab6c6ba3b5884617365e9c4584a9b4a1eaf63d9
+
+The artifact was downloaded and its JSON/CSV files were inspected directly.
+
+- Requested period: **2026-07-17 through 2026-11-13** (120 calendar days).
+- Official NSE CM calendar sessions: **83**; analyzed sessions: **83/83**.
+- Calendar status: PASS; special session 2026-11-08 has an archive-verified NSE Bhavcopy.
+- All 83 rows are NSE-sourced; all 83 dated MII snapshots match their observation dates.
+- Bhavcopy SHA-256 and fetched-at UTC are present for all 83 dates.
+- MII raw archive SHA-256 and fetched-at UTC are present for all 83 dates.
+- MII publication timestamp is not supplied by the retrieved NSE source; all 83 point-in-time statuses remain REVIEW.
+
+Universe reconciliation across 83 sessions:
+
+| Measure | Result |
+|---|---:|
+| Expected member-observations | **217,464** |
+| Verified member-observations | **216,334** |
+| Missing observations | **1,130** |
+| Identity exceptions | **288** |
+| Mean daily coverage | **99.4834%** |
+| Coverage range | **93.3257%–99.9251%** |
+| Daily status | **83 REVIEW / 0 PASS** |
+
+Notable coverage exceptions for investigation:
+- 2026-08-14: 176 missing; 93.3257% coverage.
+- 2026-08-10: 51 missing and 16 identity exceptions.
+- 2026-11-02: 43 missing and 11 identity exceptions.
+- 2026-10-29: 24 identity exceptions.
+
+Daily A-D values and ratios are verified-subset diagnostics only. The cumulative A-D field is null for all 83 dates because non-PASS sessions must not be joined into a verified cumulative series. No incomplete date is promoted to PASS.
+
+A subsequent alignment run (43564379235) was observed IN PROGRESS while this register was updated; it changes the service default to 180 sessions. The reviewed 83-session artifact above already used max_sessions=180 explicitly and covers the complete official session list. Recheck the alignment run before final acceptance.
+
 ## 6. Remaining acceptance conditions
 
-1. Review the new 83-session range artifact. The previous 60-session artifact is not complete coverage of the 120-calendar-day period.
+1. Recheck completion and artifact for alignment workflow run 43564379235 (180-session service default); the full 83-session artifact 14101766488 has already been reviewed.
 2. Resolve or formally accept the official MII publication-time limitation. Until then, strict point-in-time availability remains REVIEW.
-3. Review whether missing members and identity exceptions can be authoritatively reconciled from NSE evidence. Do not lower validation thresholds or fabricate records to force PASS.
-4. Update this register and checkpoint with the final full-range artifact and latest regression run IDs.
+3. Investigate the missing-member and identity-exception clusters, especially 2026-08-14, 2026-08-10, 2026-11-02 and 2026-10-29, using authoritative NSE evidence only. Do not lower thresholds or fabricate records.
+4. Record the final alignment-run outcome and decide whether the remaining REVIEW gates are acceptable for Chapter 02 acceptance; do not auto-promote REVIEW to PASS.
 
 ## 7. Safety gates
 
@@ -119,6 +159,6 @@ The next range workflow triggered by these changes must be checked for all 83 se
 - Sector Mapping Expansion: OFF.
 - F&O Scanner: EXCLUDED.
 - No fabricated, forward-filled or Yahoo-derived NSE membership observations.
-- No merge until the full-range artifact and acceptance conditions are reviewed.
+- No merge until the alignment workflow is complete and the point-in-time / universe coverage REVIEW conditions are explicitly resolved or formally accepted.
 
 End of Chapter 02 Acceptance Register.
