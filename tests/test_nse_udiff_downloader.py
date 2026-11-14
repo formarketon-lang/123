@@ -95,7 +95,7 @@ def test_excludes_non_cm_non_nse_non_stock_and_non_eq_rows():
     raw.loc[1, "FinInstrmTp"] = "FUT"
     raw.loc[2, "SctySrs"] = "BE"
 
-    with pytest.raises(ValueError, match="no NSE CM STK EQ rows"):
+    with pytest.raises(downloader.NSEUdiFFDownloadError, match="no NSE CM STK EQ rows"):
         downloader.normalize_nse_cm_udiff_equity(
             raw,
             trade_date="2026-11-13",
@@ -104,7 +104,7 @@ def test_excludes_non_cm_non_nse_non_stock_and_non_eq_rows():
 
 
 def test_rejects_trade_date_mismatch():
-    with pytest.raises(ValueError, match="does not match requested date"):
+    with pytest.raises(downloader.NSEUdiFFDownloadError, match="does not match requested date"):
         downloader.normalize_nse_cm_udiff_equity(
             make_raw(),
             trade_date="2026-11-12",
@@ -115,7 +115,7 @@ def test_rejects_trade_date_mismatch():
 def test_rejects_missing_official_iso_tag():
     raw = make_raw().drop(columns=["PrvsClsgPric"])
 
-    with pytest.raises(ValueError, match="missing required ISO tags"):
+    with pytest.raises(downloader.NSEUdiFFDownloadError, match="missing required ISO tags"):
         downloader.normalize_nse_cm_udiff_equity(
             raw,
             trade_date="2026-11-13",
@@ -127,7 +127,7 @@ def test_rejects_bad_ohlc_relationship():
     raw = make_raw()
     raw.loc[0, "HghPric"] = "99"
 
-    with pytest.raises(ValueError, match="inconsistent OHLC"):
+    with pytest.raises(downloader.NSEUdiFFDownloadError, match="inconsistent OHLC"):
         downloader.normalize_nse_cm_udiff_equity(
             raw,
             trade_date="2026-11-13",
@@ -168,7 +168,7 @@ def test_download_rejects_non_official_redirect_host():
         )
     )
 
-    with pytest.raises(ValueError, match="official NSE archive host"):
+    with pytest.raises(downloader.NSEUdiFFDownloadError, match="official NSE archive host"):
         downloader.download_nse_cm_udiff_equity_bhavcopy(
             "2026-11-13",
             session=session,
@@ -180,7 +180,7 @@ def test_download_rejects_non_zip_response():
         FakeResponse(b"not-a-zip")
     )
 
-    with pytest.raises(ValueError, match="did not return a ZIP"):
+    with pytest.raises(downloader.NSEUdiFFDownloadError, match="did not return a ZIP"):
         downloader.download_nse_cm_udiff_equity_bhavcopy(
             "2026-11-13",
             session=session,
