@@ -140,8 +140,10 @@ def test_production_service_uses_date_matched_mii_and_reports_review(
     assert result["reconciliation"]["identity_status"] == "PASS"
     assert result["reconciliation"]["coverage_status"] == "PASS"
     assert result["breadth"]["analysis_status"] == "PASS"
-    assert result["audit"]["audit_status"] == "REVIEW"
-    assert result["analysis_status"] == "REVIEW"
+    assert result["audit"]["schema_mapping_status"] == "PASS"
+    assert result["audit"]["raw_schema_status"] == "PASS"
+    assert result["audit"]["audit_status"] == "PASS"
+    assert result["analysis_status"] == "PASS"
 
 
 def test_unknown_udiff_symbol_is_excluded_and_keeps_review_status(
