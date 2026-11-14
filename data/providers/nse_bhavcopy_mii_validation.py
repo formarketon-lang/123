@@ -114,7 +114,12 @@ def reconcile_bhavcopy_with_mii(
 
     snapshot_dates = pd.to_datetime(
         verified["Universe As Of Date"], errors="coerce"
-    ).dropna().dt.normalize()
+    ).dt.normalize()
+
+    if snapshot_dates.isna().any():
+        raise NSEMIIReconciliationError(
+            "Every MII universe row must have a valid snapshot date."
+        )
 
     if snapshot_dates.empty or snapshot_dates.nunique() != 1:
         raise NSEMIIReconciliationError(
