@@ -64,12 +64,20 @@ def test_unknown_symbol_is_review_and_excluded_from_verified_observations():
     ]
 
 
-def test_symbol_isin_mismatch_is_rejected():
+def test_symbol_isin_mismatch_is_review_and_excluded():
     data = make_bhavcopy()
     data.loc[0, "ISIN"] = "INE999Z01010"
 
-    with pytest.raises(NSEMIIReconciliationError, match="mismatch"):
-        reconcile_bhavcopy_with_mii(data, make_universe())
+    result = reconcile_bhavcopy_with_mii(data, make_universe())
+
+    assert result["identity_status"] == "REVIEW"
+    assert result["coverage_status"] == "REVIEW"
+    assert result["isin_mismatch_symbols"] == ["AAA"]
+    assert result["isin_mismatch_count"] == 1
+    assert "AAA" not in result["observations"]["Symbol"].tolist()
+    assert result["unverified_observations"]["Symbol"].tolist() == [
+        "AAA"
+    ]
 
 
 def test_wrong_snapshot_date_is_rejected():
