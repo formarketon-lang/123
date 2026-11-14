@@ -63,6 +63,22 @@ def main() -> None:
             result = candidate_result
             break
 
+    daily_detail = (
+        result["per_date_status"].to_dict(orient="records")[0]
+        if result is not None and not result["per_date_status"].empty
+        else None
+    )
+    retrieval_detail = (
+        result["retrieval_summary"].to_dict(orient="records")[0]
+        if result is not None and not result["retrieval_summary"].empty
+        else None
+    )
+    provenance_detail = (
+        result["provenance"].to_dict(orient="records")[0]
+        if result is not None and not result["provenance"].empty
+        else None
+    )
+
     report = {
         "project": "TLP-MIM-001",
         "chapter": "02",
@@ -78,6 +94,9 @@ def main() -> None:
         "blocked_count": result.get("blocked_count", 0) if result else 0,
         "unavailable_count": result.get("unavailable_count", 0) if result else 0,
         "missing_count": result.get("missing_count", 0) if result else 0,
+        "daily_detail": daily_detail,
+        "retrieval_detail": retrieval_detail,
+        "provenance_detail": provenance_detail,
         "note": (
             "A one-session live smoke test only; not a multi-month historical "
             "range validation. REVIEW is retained as REVIEW."
