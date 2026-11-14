@@ -137,3 +137,86 @@ def test_service_preserves_caller_session_order_input_before_retriever(monkeypat
     service.analyze_nse_historical_advance_decline(dates)
     assert calls["dates"] == dates
     assert calls["core_sessions"] == ["2026-11-12", "2026-11-13"]
+
+
+def test_range_service_uses_official_calendar_sessions(monkeypatch):
+    calendar = {
+        "calendar_status": "PASS",
+        "source": "NSE",
+        "source_sha256": "c" * 64,
+        "session_dates": ["2026-11-12", "2026-11-13"],
+        "special_sessions": [],
+    }
+    calls = {}
+    monkeypatch.setattr(
+        service,
+        "discover_nse_cm_trading_sessions",
+        lambda start, end, session=None: calendar,
+    )
+
+    def analyze(dates, *, initial_anchor, session=None):
+        calls["dates"] = dates
+        calls["initial_anchor"] = initial_anchor
+        calls["session"] = session
+        return {
+            "analysis_status": "REVIEW",
+            "retrieval_status": "REVIEW",
+            "date_count": 2,
+            "per_date_status": pd.DataFrame(),
+            "coverage": pd.DataFrame(),
+            "provenance": pd.DataFrame(),
+            "retrieval_summary": pd.DataFrame(),
+        }
+
+    monkeypatch.setattr(
+        service,
+        "analyze_nse_historical_advance_decline",
+        analyze,
+    )
+    session = object()
+    result = service.analyze_nse_historical_advance_decline_for_range(
+        "2026-11-12",
+        "2026-11-13",
+        initial_anchor=10,
+        session=session,
+    )
+
+    assert calls["dates"] == calendar["session_dates"]
+    assert calls["initial_anchor"] == 10
+    assert calls["session"] is session
+    assert result["calendar_status"] == "PASS"
+    assert result["calendar_provenance"] is calendar
+    assert result["session_count"] == 2
+    assert result["analysis_status"] == "REVIEW"
+
+
+def test_range_service_does_not_guess_sessions_when_calendar_unavailable(
+    monkeypatch,
+):
+    calendar = {
+        "calendar_status": "UNAVAILABLE",
+        "source_errors": [{"date": "2026-11-08", "error": "NSE 403"}],
+        "session_dates": [],
+    }
+    monkeypatch.setattr(
+        service,
+        "discover_nse_cm_trading_sessions",
+        lambda *args, **kwargs: calendar,
+    )
+
+    def unexpected_analysis(*args, **kwargs):
+        raise AssertionError("Analysis must not run without verified calendar.")
+
+    monkeypatch.setattr(
+        service,
+        "analyze_nse_historical_advance_decline",
+        unexpected_analysis,
+    )
+    result = service.analyze_nse_historical_advance_decline_for_range(
+        "2026-11-01",
+        "2026-11-14",
+    )
+
+    assert result["analysis_status"] == "UNAVAILABLE"
+    assert result["calendar_status"] == "UNAVAILABLE"
+    assert result["date_count"] == 0
