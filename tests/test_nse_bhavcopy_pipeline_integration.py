@@ -147,7 +147,7 @@ def test_incomplete_bhavcopy_coverage_stays_review():
     assert breadth["analysis_status"] == "REVIEW"
 
 
-def test_symbol_isin_mismatch_blocks_pipeline():
+def test_symbol_isin_mismatch_is_review_and_excluded_from_pipeline():
     raw = make_raw_data()
     raw.loc[0, "SecurityISIN"] = "INE999Z01010"
 
@@ -155,11 +155,19 @@ def test_symbol_isin_mismatch_blocks_pipeline():
     parsed = read_nse_udiff_bhavcopy(archive_bytes)
     normalized = normalize(parsed)
 
-    with pytest.raises(ValueError, match="mismatch"):
-        reconcile_bhavcopy_with_mii(
-            normalized,
-            make_universe(),
-        )
+    reconciliation = reconcile_bhavcopy_with_mii(
+        normalized,
+        make_universe(),
+    )
+
+    assert reconciliation["identity_status"] == "REVIEW"
+    assert reconciliation["isin_mismatch_symbols"] == ["AAA"]
+    assert "AAA" not in (
+        reconciliation["observations"]["Symbol"].tolist()
+    )
+    assert reconciliation["unverified_observations"]["Symbol"].tolist() == [
+        "AAA"
+    ]
 
 
 def test_test_mapping_is_not_official_schema_approval():
