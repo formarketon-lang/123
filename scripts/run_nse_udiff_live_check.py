@@ -113,16 +113,27 @@ def main() -> None:
         low_memory=False,
     )
     raw_mii.columns = [str(c).strip().upper() for c in raw_mii.columns]
-    mii_isin_by_symbol = universe.set_index("Symbol")["ISIN"].to_dict()
+    mii_identity = universe.set_index("Symbol")
+    mii_isin_by_symbol = mii_identity["ISIN"].to_dict()
+    mii_instrument_id_by_symbol = (
+        mii_identity["Instrument ID"].to_dict()
+    )
     normalized = downloaded["normalized"]
     diagnostic_symbols = set()
 
-    for row in normalized[["Symbol", "ISIN"]].itertuples(index=False):
+    for row in normalized[
+        ["Symbol", "ISIN", "Instrument ID"]
+    ].itertuples(index=False):
         symbol = str(row.Symbol).strip().upper()
         isin = str(row.ISIN).strip().upper()
+        instrument_id = str(row._2).strip().upper()
         if symbol not in mii_isin_by_symbol:
             diagnostic_symbols.add(symbol)
-        elif isin != str(mii_isin_by_symbol[symbol]).strip().upper():
+        elif (
+            isin != str(mii_isin_by_symbol[symbol]).strip().upper()
+            or instrument_id
+            != str(mii_instrument_id_by_symbol[symbol]).strip().upper()
+        ):
             diagnostic_symbols.add(symbol)
 
     raw_mii_symbol_column = "TCKRSYMB"
@@ -144,11 +155,11 @@ def main() -> None:
         .isin(diagnostic_symbols)
     ].copy()
     raw_mii_diag.to_csv(
-        output_dir / "mii_dcmfinserv_raw_diagnostic.csv",
+        output_dir / "mii_identity_exception_raw_diagnostic.csv",
         index=False,
     )
     raw_udiff_diag.to_csv(
-        output_dir / "udiff_dcmfinserv_raw_diagnostic.csv",
+        output_dir / "udiff_identity_exception_raw_diagnostic.csv",
         index=False,
     )
 
@@ -183,6 +194,12 @@ def main() -> None:
         "unknown_symbol_count": reconciliation["unknown_count"],
         "isin_mismatch_symbols": reconciliation["isin_mismatch_symbols"],
         "isin_mismatch_count": reconciliation["isin_mismatch_count"],
+        "instrument_id_mismatch_symbols": reconciliation[
+            "instrument_id_mismatch_symbols"
+        ],
+        "instrument_id_mismatch_count": reconciliation[
+            "instrument_id_mismatch_count"
+        ],
         "identity_exceptions": reconciliation["identity_exceptions"],
         "coverage_status": reconciliation["coverage_status"],
         "coverage_pct": reconciliation["coverage_pct"],
@@ -210,6 +227,10 @@ def main() -> None:
     print(
         "Symbol/ISIN mismatches: "
         f"{report['isin_mismatch_symbols']}"
+    )
+    print(
+        "Instrument ID mismatches: "
+        f"{report['instrument_id_mismatch_symbols']}"
     )
     print(f"Historical membership coverage: {report['coverage_status']}")
     print(f"Coverage: {report['coverage_pct']}%")
