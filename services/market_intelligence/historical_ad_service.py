@@ -18,6 +18,7 @@ from services.market_intelligence.historical_observation_service import (
 )
 
 from data.providers.nse_trading_calendar import (
+    NSETradingCalendarError,
     discover_nse_cm_trading_sessions,
 )
 
@@ -102,11 +103,33 @@ def analyze_nse_historical_advance_decline_for_range(
             "max_sessions must be a positive integer."
         )
 
-    calendar = discover_nse_cm_trading_sessions(
-        start_date,
-        end_date,
-        session=session,
-    )
+    try:
+        calendar = discover_nse_cm_trading_sessions(
+            start_date,
+            end_date,
+            session=session,
+        )
+    except NSETradingCalendarError as exc:
+        return {
+            "analysis_status": "UNAVAILABLE",
+            "retrieval_status": "UNAVAILABLE",
+            "calendar_status": "UNAVAILABLE",
+            "calendar_provenance": {
+                "calendar_status": "UNAVAILABLE",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+            "date_count": 0,
+            "pass_count": 0,
+            "review_count": 0,
+            "blocked_count": 0,
+            "unavailable_count": 0,
+            "missing_count": 0,
+            "per_date_status": pd.DataFrame(),
+            "coverage": pd.DataFrame(),
+            "provenance": pd.DataFrame(),
+            "retrieval_summary": pd.DataFrame(),
+        }
     if calendar["calendar_status"] != "PASS":
         return {
             "analysis_status": "UNAVAILABLE",
