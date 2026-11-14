@@ -68,6 +68,56 @@ def test_service_reuses_existing_retriever_and_core(monkeypatch):
     assert result["source_observation_count"] == 2
 
 
+
+def test_service_exposes_symbol_level_reconciliation_details(monkeypatch):
+    history = fake_history()
+    history["per_date"] = [
+        {
+            "observation_date": "2026-11-12",
+            "result": {
+                "reconciliation": {
+                    "missing_symbols": ["MISSING1", "MISMATCH1"],
+                    "identity_exceptions": [
+                        {
+                            "symbol": "MISMATCH1",
+                            "observed_isin": "IN0000000001",
+                            "mii_isin": "IN0000000002",
+                            "reason": "SYMBOL_ISIN_MISMATCH",
+                        },
+                        {
+                            "symbol": "UNKNOWN1",
+                            "observed_isin": "IN0000000003",
+                            "mii_isin": None,
+                            "reason": "SYMBOL_NOT_IN_VERIFIED_MII_UNIVERSE",
+                        },
+                    ],
+                }
+            },
+        }
+    ]
+    monkeypatch.setattr(
+        service, "retrieve_nse_historical_observations",
+        lambda dates, session=None: history,
+    )
+    monkeypatch.setattr(
+        service, "analyze_historical_advance_decline",
+        lambda *args, **kwargs: fake_analysis(),
+    )
+
+    result = service.analyze_nse_historical_advance_decline(
+        ["2026-11-12"]
+    )
+    details = result["reconciliation_details"]
+
+    assert len(details) == 3
+    missing = details.loc[details["symbol"] == "MISSING1"].iloc[0]
+    assert missing["issue_type"] == "MISSING_EXPECTED_MEMBER"
+    mismatch = details.loc[details["symbol"] == "MISMATCH1"].iloc[0]
+    assert mismatch["issue_type"] == "IDENTITY_EXCEPTION_NOT_VERIFIED"
+    assert mismatch["reason"] == "SYMBOL_ISIN_MISMATCH"
+    unknown = details.loc[details["symbol"] == "UNKNOWN1"].iloc[0]
+    assert unknown["issue_type"] == "IDENTITY_EXCEPTION"
+
 def test_service_preserves_unavailable_retrieval_status(monkeypatch):
     history = fake_history()
     history["analysis_status"] = "UNAVAILABLE"
