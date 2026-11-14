@@ -439,6 +439,36 @@ Open acceptance conditions:
 
 Exit: Step 11 technical verification is progressing; the 60-session evidence run passed as a workflow but did not cover all 83 sessions. Chapter 02 remains unaccepted until the corrected full-range artifact is reviewed and the point-in-time REVIEW condition is explicitly accepted or resolved.
 
+## 5A. Step 11 — Full 83-session artifact review (2026-11-14)
+
+Completed range evidence:
+- Workflow run: 43563688178 — SUCCESS.
+- Artifact ID: 14101766488.
+- Artifact SHA-256: ff11eda60daa9f8e7d7fae882ab6c6ba3b5884617365e9c4584a9b4a1eaf63d9.
+- Requested period: 2026-07-17 to 2026-11-13 (120 calendar days).
+- Official NSE CM sessions discovered and analyzed: 83/83.
+- Calendar: PASS; 2026-11-08 special session supported by an official NSE archive.
+- All 83 Bhavcopy and dated MII records have raw SHA-256 and actual UTC fetch timestamps; each MII snapshot date matches its observation date.
+- All 83 sources are NSE. The retrieved MII response supplies no official publication timestamp; strict point-in-time status remains REVIEW.
+
+Aggregate reconciliation:
+- Expected member-observations: 217,464.
+- Verified member-observations: 216,334.
+- Missing: 1,130.
+- Identity exceptions: 288.
+- Mean daily coverage: 99.4834%; range: 93.3257%–99.9251%.
+- Daily statuses: 83 REVIEW, 0 PASS.
+
+Coverage exceptions requiring authoritative investigation:
+- 2026-08-14: 176 missing; 93.3257% coverage.
+- 2026-08-10: 51 missing; 16 identity exceptions.
+- 2026-11-02: 43 missing; 11 identity exceptions.
+- 2026-10-29: 24 identity exceptions.
+
+All daily A-D metrics remain verified-subset diagnostics. The cumulative A-D value is null across all 83 sessions because non-PASS sessions must not be combined into a verified cumulative series. No REVIEW date is promoted to PASS.
+
+The range artifact was reviewed directly from its ZIP contents. A subsequent service-default alignment workflow, run 43564379235, was still IN PROGRESS at checkpoint review. The completed 83-session artifact already passed max_sessions=180 explicitly; recheck the alignment run before final acceptance.
+
 ## 6. Chapter 02 Acceptance Gates
 
 Chapter 02 cannot be accepted until:
@@ -479,15 +509,15 @@ Checkpoint ID: TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-11-RANGE-VERIFICATION-IN-
 - Step 08: Core Analysis — PASS; 12 focused cases.
 - Step 09: Historical A/D Service — PASS; 10 focused cases.
 - Step 10: UI Integration — PASS; 4 focused UI tests.
-- Latest PR regression: TradeLab Pro **727 passed**; Yahoo Adapter **56 passed**.
+- Latest PR regression on commit 35ab609c7ae524bc10b18c36b7cf83e412c79c99: TradeLab Pro **727 passed** (run 43564395698); Yahoo Adapter **56 passed** (run 43564395706).
 - Official NSE Calendar: implemented; 120-day calendar evidence PASS, 83 sessions discovered, one special session archive-verified.
-- First range artifact: 60 of 83 sessions analyzed; all 60 REVIEW; 744 missing and 231 identity exceptions across those sessions; mean coverage 99.5397%.
-- MII raw SHA-256 and fetched-at UTC are present in retrieval summary for all 60 analyzed dates. MII publication timestamp unavailable; strict point-in-time status remains REVIEW.
-- Workflow/script defaults corrected from 60 to 180 sessions. Full 83-session rerun is pending.
+- Corrected full-range artifact 14101766488 (run 43563688178): 83/83 sessions analyzed; all 83 REVIEW; 217,464 expected, 216,334 verified, 1,130 missing and 288 identity exceptions; mean coverage 99.4834%.
+- Bhavcopy and MII raw SHA-256 plus actual fetched-at UTC are present for all 83 dates; all MII snapshot dates align. MII publication timestamp unavailable; strict point-in-time status remains REVIEW.
+- Workflow, script and historical service defaults are aligned to 180 sessions. Alignment workflow run 43564379235 was IN PROGRESS at last check; completed 83-session artifact already verified the full range.
 - Latest Actions page: https://github.com/formarketon-lang/123/actions
 - PR #2: DRAFT / UNMERGED; Main unchanged.
 - Sector Mapping Expansion: OFF. BSE: DISABLED. F&O Scanner: EXCLUDED.
 
-Chapter 02 is not declared accepted. Await the corrected 83-session artifact; do not convert REVIEW data into PASS.
+Chapter 02 is not declared accepted. The full 83-session artifact is reviewed, but all dates remain REVIEW. Recheck alignment workflow 43564379235 and resolve or explicitly accept the MII publication-time and universe-reconciliation review gates; never convert REVIEW data into PASS.
 
 End of Chapter 02 Plan.
