@@ -123,3 +123,32 @@ def test_partially_undated_mii_snapshot_is_rejected():
         match="Every MII universe row",
     ):
         reconcile_bhavcopy_with_mii(make_bhavcopy(), universe)
+
+
+def test_instrument_id_mismatch_is_review_and_excluded():
+    bhavcopy = make_bhavcopy()
+    universe = make_universe()
+    bhavcopy["Instrument ID"] = ["1", "2", "3"]
+    universe["Instrument ID"] = ["1", "2", "999"]
+
+    result = reconcile_bhavcopy_with_mii(bhavcopy, universe)
+
+    assert result["identity_status"] == "REVIEW"
+    assert result["instrument_id_mismatch_symbols"] == ["CCC"]
+    assert result["instrument_id_mismatch_count"] == 1
+    assert "CCC" not in result["observations"]["Symbol"].tolist()
+    assert result["unverified_observations"]["Symbol"].tolist() == [
+        "CCC"
+    ]
+
+
+def test_instrument_id_must_exist_in_both_sources():
+    bhavcopy = make_bhavcopy()
+    universe = make_universe()
+    bhavcopy["Instrument ID"] = ["1", "2", "3"]
+
+    with pytest.raises(
+        NSEMIIReconciliationError,
+        match="present in both",
+    ):
+        reconcile_bhavcopy_with_mii(bhavcopy, universe)
