@@ -100,15 +100,24 @@ Current implementation review:
   fetched_at_utc argument and emits Fetched At UTC.
 - A production NSE CM UDiFF downloader now retrieves the official
   final archive over HTTPS, records the actual response retrieval
-  timestamp and SHA-256, validates the raw ISO tags, and normalizes
-  only NSE / CM / STK / EQ rows.
+  timestamp and SHA-256, validates the raw ISO tags, final session
+  identifier and numeric Instrument ID, and normalizes only
+  NSE / CM / STK / EQ rows.
+- The official NSE UDiFF workbook's `Bhavcopy File Format` sheet
+  and official CM sample CSV header were downloaded and inspected.
+  All 14 required field-name / ISO-tag pairs matched. Workbook and
+  sample SHA-256 values are pinned in the UDiFF downloader and
+  recorded in the NSE UDiFF evidence register.
 - A production Bhavcopy service requires an exact-date MII_DATED
   universe, reconciles Symbol + ISIN, excludes unverified rows from
   breadth calculations, and preserves identity exceptions.
 - Live 13-Nov-2026 UDiFF data parsed successfully. The live identity
   audit exposed DCMFINSERV as not eligible for Normal Market and a
   BNAGROCHEM Symbol/ISIN mismatch. Both are excluded from verified
-  breadth observations and remain REVIEW.
+  breadth observations and remain REVIEW. The same-date MII universe
+  has 2,762 eligible rows; 2,742 observations reconcile exactly,
+  producing 99.2759% coverage and a REVIEW result. Missing rows are
+  not treated as unchanged.
 
 The standard NSE Equity/Index timestamp handoff is verified.
 The production UDiFF downloader and service are implemented, but
@@ -315,15 +324,18 @@ A UI shell alone does not authorize activation.
 Current decision: REVIEW — NOT APPROVED.
 
 Open verification items:
-1. Independently inspect the exact Bhavcopy sheet and sample headers
-   in the official NSE UDiFF format workbook; approve the production
-   ISO-tag mapping only after field-by-field confirmation.
-2. Resolve or formally document the live DCMFINSERV Normal Market
-   eligibility exception and BNAGROCHEM ISIN mismatch. Do not
-   substitute identifiers or include either row in verified breadth.
-3. Re-run live identity, coverage, provenance and full regression
-   checks after the evidence review.
-The timestamp supplied by test fixtures is not production evidence.
+1. Preserve DCMFINSERV as an explicit non-Normal-Market exception;
+   its raw MII row has Normal Market Eligibility 0 and Auction Market
+   Eligibility 1. Do not count it in Normal-Market breadth.
+2. Resolve the BNAGROCHEM Symbol/ISIN mismatch through authoritative
+   NSE evidence. Do not substitute identifiers or include the row
+   in verified breadth until resolved.
+3. Review the 20 MII members without a matching daily Bhavcopy
+   observation. Keep coverage at REVIEW; never count missing members
+   as unchanged.
+4. Re-run the full regression and navigation tests after final UI
+   integration. The timestamp supplied by test fixtures is not
+   production evidence.
 
 CH01 STATUS: NOT ACCEPTED  
 CH02 STATUS: NOT STARTED
