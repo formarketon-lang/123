@@ -24,7 +24,7 @@ from data.providers.nse_udiff_downloader import (
 NSE_CM_HOLIDAY_MASTER_URL = (
     "https://www.nseindia.com/api/holiday-master?type=trading"
 )
-NSE_OFFICIAL_DOMAIN = "nseindia.com"
+NSE_OFFICIAL_DOMAINS = {"nseindia.com", "nseindia.in"}
 
 
 class NSETradingCalendarError(RuntimeError):
@@ -66,8 +66,10 @@ def fetch_nse_cm_trading_holidays(*, session=None, timeout: int = 30) -> dict:
     if (
         parsed_url.scheme != "https"
         or not (
-            hostname == NSE_OFFICIAL_DOMAIN
-            or hostname.endswith("." + NSE_OFFICIAL_DOMAIN)
+            any(
+                hostname == domain or hostname.endswith("." + domain)
+                for domain in NSE_OFFICIAL_DOMAINS
+            )
         )
     ):
         raise NSETradingCalendarError(
