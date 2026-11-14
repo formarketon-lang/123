@@ -162,5 +162,5 @@ def test_overall_status_uses_strictest_date_status():
 def test_non_finite_ratio_is_rejected():
     with pytest.raises(AdvanceDeclineMetricsError, match="Non-finite"):
         calculate_historical_ad_metrics(classification([
-            ("2026-11-13", 10**308, 1, 0, 10**308 + 1, "PASS"),
+            ("2026-11-13", 10**309, 1, 0, 10**308 + 1, "PASS"),
         ]))
