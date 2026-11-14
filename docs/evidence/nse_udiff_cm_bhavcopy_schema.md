@@ -88,10 +88,10 @@ The reconciliation service now returns both exceptions, preserves the raw rows i
 - Official source reference: RECORDED
 - Official endpoint transport: VERIFIED by HTTPS host allowlist
 - Raw archive hash: RECORDED
-- Live raw-field parsing: IMPLEMENTED; latest rerun pending
+- Live raw-field parsing: PASS — official NSE archive and required ISO tags verified in https://github.com/formarketon-lang/123/actions/runs/43550260364
 - Symbol/ISIN reconciliation: REVIEW where unknown rows occur
 - Official schema mapping approval: PASS
 - Live MII identity/coverage: REVIEW
-- Chapter 01 acceptance: NOT ACCEPTED
+- Chapter 01 acceptance: ACCEPTED WITH REVIEW CONDITIONS
 
 No sector mapping, BSE mapping, or F&O Scanner scope is authorized by this evidence record.
