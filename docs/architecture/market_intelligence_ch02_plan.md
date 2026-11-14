@@ -6,7 +6,7 @@ Base: main
 Branch: ch02-advance-decline-plan  
 Chapter: 02  
 Title: Historical Advance / Decline Analysis  
-Status: CHAPTER PLAN DRAFT — STEPS 01–06 VERIFIED; STEP 07 IN PROGRESS  
+Status: CHAPTER PLAN DRAFT — STEPS 01–06 VERIFIED; STEP 07 IMPLEMENTED; CI PENDING  
 Scope: NSE Cash Equity only  
 F&O Scanner: Excluded
 
@@ -293,11 +293,30 @@ Limitations:
 Exit: implementation and 18 test cases committed to the draft feature branch; GitHub Actions verification pending.
 
 ### STEP 07 — Cumulative A-D Line
-- Build a date-ordered cumulative series from daily A-D differences.
-- Define initial anchor and reset behavior explicitly.
-- Do not bridge missing/invalid dates without a documented policy.
-- Test ordering, gaps, reset, reproducibility and REVIEW propagation.
-- Exit: deterministic cumulative series.
+
+Status: IMPLEMENTED ON FEATURE BRANCH — GITHUB ACTIONS PENDING
+
+Implementation:
+- Added `core/market_intelligence/cumulative_ad_line.py`.
+- Added `calculate_cumulative_ad_line(metrics, expected_sessions, initial_anchor=0)`.
+- Requires an explicit, verified NSE session calendar supplied by the caller; no weekend/holiday inference or Yahoo calendar substitution.
+- Calculates cumulative A-D from daily A-D Difference in chronological session order.
+- Default initial anchor is 0; caller may provide an integer anchor.
+- PASS sessions contribute to the line.
+- Missing, REVIEW, BLOCKED and UNAVAILABLE sessions emit null cumulative values and break the segment. The next PASS session starts a new segment from the configured anchor.
+- Metrics dates outside the verified calendar, duplicate dates, invalid statuses and non-integer PASS differences are rejected.
+- Integer-valued floats from nullable Pandas columns are accepted only when finite and mathematically integral.
+
+Tests:
+- Added `tests/test_market_intelligence_cumulative_ad_line.py`.
+- 12 test functions plus 3 parametrized cases (15 cases) cover accumulation, initial anchor, missing session reset, REVIEW/BLOCKED/UNAVAILABLE resets, nullable DataFrame values, calendar validation, duplicates, invalid values, deterministic output and empty calendars.
+
+Limitations:
+- This step does not fetch or authenticate the official NSE calendar; the caller must supply verified sessions.
+- A missing date can only be identified when it is present in the supplied expected-session calendar.
+- No live historical date range or UI integration is claimed.
+
+Exit: implementation and 15 test cases committed to the draft feature branch; GitHub Actions verification pending.
 
 ### STEP 08 — Core Analysis Module
 - Implement pure calculations only; no network or Streamlit imports.
@@ -359,7 +378,7 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-07-CUMULATIVE-AD-LINE-IN-PROGRESS`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-07-CUMULATIVE-AD-LINE-CI-PENDING`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
 - Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
