@@ -52,9 +52,15 @@ def analyze_nse_historical_advance_decline(
         sessions,
         session=session,
     )
+    normalized_sessions = history.get("requested_dates")
+    if not isinstance(normalized_sessions, list) or not normalized_sessions:
+        raise HistoricalADServiceError(
+            "Historical retriever did not return normalized requested dates."
+        )
+
     analysis = analyze_historical_advance_decline(
         history,
-        expected_sessions=sessions,
+        expected_sessions=normalized_sessions,
         initial_anchor=initial_anchor,
     )
 
