@@ -5,7 +5,7 @@ Parent Project: TLP-MASTER-001
 Part: Market Intelligence  
 Chapter: 01  
 Step: 37  
-Status: REVIEW CANDIDATE — NOT APPROVED  
+Status: APPROVED — REVIEW-AWARE NSE CASH-MARKET FOUNDATION  
 Market Scope: NSE Cash Equity  
 F&O Scanner: Excluded
 
@@ -120,10 +120,14 @@ Current implementation review:
   not treated as unchanged.
 
 The standard NSE Equity/Index timestamp handoff is verified.
-The production UDiFF downloader and service are implemented, but
-official workbook field-sheet review and live identity exception
-resolution remain open. Test-only timestamps are fixtures and
-must never be used as production data.
+The production UDiFF downloader, official schema mapping and
+production service are implemented and verified. Live identity
+exceptions and incomplete daily membership coverage are correctly
+returned as REVIEW; unverified rows are excluded and missing
+members are not counted as unchanged. This is an approved,
+review-aware NSE cash-market contract, not a claim that every
+daily live dataset is PASS. Test-only timestamps are fixtures
+and must never be used as production data.
 
 ## 5. Analysis Data Requirements
 
@@ -321,23 +325,36 @@ A UI shell alone does not authorize activation.
 
 ## Review Decision
 
-Current decision: REVIEW — NOT APPROVED.
+Current decision: APPROVED — REVIEW-AWARE NSE CASH-MARKET FOUNDATION.
 
-Open verification items:
-1. Preserve DCMFINSERV as an explicit non-Normal-Market exception;
-   its raw MII row has Normal Market Eligibility 0 and Auction Market
-   Eligibility 1. Do not count it in Normal-Market breadth.
-2. Resolve the BNAGROCHEM Symbol/ISIN mismatch through authoritative
-   NSE evidence. Do not substitute identifiers or include the row
-   in verified breadth until resolved.
-3. Review the 20 MII members without a matching daily Bhavcopy
-   observation. Keep coverage at REVIEW; never count missing members
-   as unchanged.
-4. Re-run the full regression and navigation tests after final UI
-   integration. The timestamp supplied by test fixtures is not
-   production evidence.
+Approval conditions:
+1. DCMFINSERV is formally classified as outside the Normal Market
+   because its same-date MII row has Normal Market Eligibility 0
+   and Auction Market Eligibility 1. It remains excluded from
+   Normal-Market breadth.
+2. BNAGROCHEM's Symbol/ISIN mismatch remains an explicit identity
+   exception. No identifier substitution is permitted; the row
+   remains excluded until authoritative NSE evidence resolves it.
+3. The 20 MII members without a matching daily Bhavcopy observation
+   remain missing, not unchanged. The live breadth result stays
+   REVIEW at 99.2759% coverage until coverage is complete.
+4. The UI must continue to show REVIEW and exclude unverified rows.
+   BSE remains disabled and Sector Mapping Expansion remains OFF.
 
-CH01 STATUS: NOT ACCEPTED  
+Verified activation gates:
+- Data interfaces are implemented and verified.
+- Core calculations are implemented and tested.
+- Provenance and validation tests pass.
+- Navigation integration tests pass.
+- Existing application regression tests pass.
+- GitHub Actions are successful.
+
+This approval does not mark the 13-Nov-2026 live breadth data as
+PASS. It approves the data contract and the safe REVIEW-aware
+NSE implementation. Test-only timestamps are fixtures and must
+never be used as production data.
+
+CH01 STATUS: ACCEPTED WITH REVIEW CONDITIONS  
 CH02 STATUS: NOT STARTED
 
 End of Market Intelligence Data Contract.
