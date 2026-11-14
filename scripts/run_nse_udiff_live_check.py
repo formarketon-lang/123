@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import sys
 from datetime import datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -25,7 +28,11 @@ from data.providers.nse_udiff_downloader import (
     NSEUdiFFDownloadError,
     download_nse_cm_udiff_equity_bhavcopy,
 )
-from data.providers.nse_universe import fetch_nse_equity_universe
+from data.providers.nse_universe import (
+    NSE_HEADERS,
+    NSE_MII_SECURITY_URL_TEMPLATE,
+    fetch_nse_equity_universe,
+)
 
 
 def main() -> None:
@@ -71,20 +78,6 @@ def main() -> None:
             "legacy/undated fallback is not accepted."
         )
 
-    reconciliation = reconcile_bhavcopy_with_mii(
-        downloaded["normalized"],
-        universe,
-    )
-
-    audit = audit_nse_bhavcopy_provenance(
-        bhavcopy=downloaded["normalized"],
-        universe=universe,
-        source_bytes=downloaded["raw_bytes"],
-        source_filename=downloaded["source_filename"],
-        source_url=downloaded["source_url"],
-        schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
-    )
-
     output_dir = Path("artifacts/nse_udiff_live")
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -98,6 +91,67 @@ def main() -> None:
     universe.to_csv(
         output_dir / "nse_mii_universe.csv",
         index=False,
+    )
+
+    # Preserve raw MII rows for any symbol rejected by the normalized
+    # eligibility rules. This makes identity exceptions auditable.
+    mii_url = NSE_MII_SECURITY_URL_TEMPLATE.format(
+        date=selected_date.strftime("%d%m%Y")
+    )
+    raw_mii_response = requests.get(
+        mii_url,
+        headers=NSE_HEADERS,
+        timeout=30,
+    )
+    raw_mii_response.raise_for_status()
+    raw_mii_bytes = raw_mii_response.content
+    if raw_mii_bytes[:2] == b"\\x1f\\x8b":
+        raw_mii_bytes = gzip.decompress(raw_mii_bytes)
+    raw_mii = pd.read_csv(
+        BytesIO(raw_mii_bytes),
+        dtype="string",
+        low_memory=False,
+    )
+    raw_mii.columns = [str(c).strip().upper() for c in raw_mii.columns]
+    raw_mii_symbol_column = "TCKRSYMB"
+    if raw_mii_symbol_column in raw_mii.columns:
+        raw_mii_diag = raw_mii[
+            raw_mii[raw_mii_symbol_column]
+            .astype("string")
+            .str.strip()
+            .str.upper()
+            .eq("DCMFINSERV")
+        ].copy()
+    else:
+        raw_mii_diag = pd.DataFrame()
+    raw_udiff_diag = downloaded["raw_data"][
+        downloaded["raw_data"]["TckrSymb"]
+        .astype("string")
+        .str.strip()
+        .str.upper()
+        .eq("DCMFINSERV")
+    ].copy()
+    raw_mii_diag.to_csv(
+        output_dir / "mii_dcmfinserv_raw_diagnostic.csv",
+        index=False,
+    )
+    raw_udiff_diag.to_csv(
+        output_dir / "udiff_dcmfinserv_raw_diagnostic.csv",
+        index=False,
+    )
+
+    reconciliation = reconcile_bhavcopy_with_mii(
+        downloaded["normalized"],
+        universe,
+    )
+
+    audit = audit_nse_bhavcopy_provenance(
+        bhavcopy=downloaded["normalized"],
+        universe=universe,
+        source_bytes=downloaded["raw_bytes"],
+        source_filename=downloaded["source_filename"],
+        source_url=downloaded["source_url"],
+        schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
     )
 
     report = {
@@ -122,6 +176,9 @@ def main() -> None:
         ],
         "schema_mapping_status": audit["schema_mapping_status"],
         "audit_reasons": audit["audit_reasons"],
+        "udiff_dcmfinserv_rows": len(raw_udiff_diag),
+        "mii_dcmfinserv_raw_rows": len(raw_mii_diag),
+        "mii_dcmfinserv_raw": raw_mii_diag.to_dict(orient="records"),
     }
 
     (output_dir / "nse_udiff_live_audit.json").write_text(
