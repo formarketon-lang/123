@@ -1,4 +1,5 @@
 import gzip
+import hashlib
 from datetime import date
 
 import pandas as pd
@@ -348,6 +349,32 @@ def test_fetcher_uses_mii_as_primary_source():
 
     assert mii_url in session.urls
     assert NSE_EQUITY_MASTER_URL not in session.urls
+
+
+
+def test_fetcher_attaches_exact_mii_archive_hash_and_fetch_timestamp():
+    archive = gzip_csv(sample_mii())
+    session = FakeSession([
+        FakeResponse(),
+        FakeResponse(archive),
+    ])
+
+    result = fetch_nse_equity_universe(
+        session=session,
+        as_of_date=date(2026, 11, 4),
+        lookback_days=0,
+    )
+
+    provenance = result.attrs["source_provenance"]
+    assert provenance["source"] == "NSE"
+    assert provenance["source_format"] == "NSE_MII_SECURITY_MASTER_GZIP_CSV"
+    assert provenance["source_filename"] == "NSE_CM_security_04112026.csv.gz"
+    assert provenance["source_sha256"] == hashlib.sha256(archive).hexdigest()
+    assert provenance["source_size_bytes"] == len(archive)
+    assert provenance["snapshot_date"] == "2026-11-04"
+    assert provenance["verification_status"] == "MII_DATED"
+    assert provenance["fetched_at_utc"].endswith("Z")
+
 
 
 def test_fetcher_tries_previous_date_when_latest_mii_is_missing():
