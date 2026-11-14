@@ -27,7 +27,7 @@ The official Forms & Formats page was observed to list the UDiFF catalogue throu
 ## Verified official schema evidence
 
 GitHub Actions live evidence run:  
-https://github.com/formarketon-lang/123/actions/runs/43550921462
+https://github.com/formarketon-lang/123/actions/runs/43550928359
 
 Artifact: `tlp-ch01-nse-udiff-live-audit` (14-day retention)
 
@@ -88,7 +88,7 @@ The reconciliation service now returns both exceptions, preserves the raw rows i
 - Official source reference: RECORDED
 - Official endpoint transport: VERIFIED by HTTPS host allowlist
 - Raw archive hash: RECORDED
-- Live raw-field parsing: PASS — official NSE archive and required ISO tags verified in https://github.com/formarketon-lang/123/actions/runs/43550921462
+- Live raw-field parsing: PASS — official NSE archive and required ISO tags verified in https://github.com/formarketon-lang/123/actions/runs/43550928359
 - Symbol/ISIN reconciliation: REVIEW where unknown rows occur
 - Official schema mapping approval: PASS
 - Live MII identity/coverage: REVIEW
