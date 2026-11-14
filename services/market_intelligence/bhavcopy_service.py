@@ -14,6 +14,7 @@ from data.providers.nse_bhavcopy_provenance import (
 )
 from data.providers.nse_universe import fetch_nse_equity_universe
 from data.providers.nse_udiff_downloader import (
+    NSE_UDIFF_SCHEMA_MAPPING_VERIFIED,
     download_nse_cm_udiff_equity_bhavcopy,
 )
 from data.providers.nse_bhavcopy_provenance import (
@@ -124,6 +125,7 @@ def analyze_nse_market_breadth_from_udiff(
         source_filename=downloaded["source_filename"],
         source_url=downloaded["source_url"],
         schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
+        schema_mapping_verified=NSE_UDIFF_SCHEMA_MAPPING_VERIFIED,
     )
 
     verified_observations = reconciliation["observations"]
