@@ -34,7 +34,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nse-live-data
-          path: data/raw/nse/
+          path: |
+            data/raw/nse/
+            data/raw/yahoo/
           if-no-files-found: warn
           retention-days: 30
           
