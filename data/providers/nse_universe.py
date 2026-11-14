@@ -143,7 +143,7 @@ def normalize_nse_mii_security_master(
     if (
         frame["Instrument ID"].isna().any()
         or frame["Instrument ID"].eq("").any()
-        or not frame["Instrument ID"].str.fullmatch(r"\\d+").all()
+        or not frame["Instrument ID"].str.fullmatch(r"\d+").all()
     ):
         raise ValueError("NSE MII Instrument ID values are invalid.")
 
