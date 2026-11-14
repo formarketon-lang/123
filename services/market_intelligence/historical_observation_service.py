@@ -139,6 +139,9 @@ def retrieve_nse_historical_observations(
             "source_sha256": result["source_sha256"],
             "fetched_at_utc": result["fetched_at_utc"],
             "mii_snapshot_date": reconciliation["mii_snapshot_date"],
+            "mii_source_provenance": result.get(
+                "mii_source_provenance", {}
+            ),
             "expected_symbols": reconciliation["expected_symbols"],
             "verified_symbols": reconciliation["observed_symbols"],
             "missing_count": reconciliation["missing_count"],
