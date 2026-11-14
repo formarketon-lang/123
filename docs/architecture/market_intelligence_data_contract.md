@@ -299,8 +299,8 @@ contract requirement is implemented.
 
 ## 11. Activation Gate
 
-Market Intelligence remains inactive until all of the following
-are verified:
+Before an analysis path is activated, all of the following
+must be verified:
 
 - Data interfaces are implemented and verified.
 - Core calculations are implemented and tested.
@@ -309,6 +309,16 @@ are verified:
 - Existing application regression tests pass.
 - GitHub Actions are successful.
 - Contract approval and final review evidence are recorded.
+
+Current activation decision: PASS for the verified NSE Market
+Regime path and the review-aware NSE Market Breadth path. Market
+Breadth may return REVIEW and must not publish a verified PASS
+when identity or membership coverage is incomplete.
+
+Advance / Decline Analysis, Sector Strength, Index Participation,
+Market Trend Classification and News and Events Context remain
+inactive roadmap items. BSE remains disabled. Sector Mapping
+Expansion remains OFF.
 
 A UI shell alone does not authorize activation.
 
