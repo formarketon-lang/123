@@ -277,10 +277,12 @@ These remain separate roadmap items and require their own chapter plans and acce
 
 ## 8. Checkpoint
 
-Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-PLAN-DRAFT`
+Checkpoint ID: `TLP-CP-2026-11-14-TLP-MIM-001-CH02-STEP-02-CONTRACT-DEFINED`
 
 - Chapter 01: ACCEPTED WITH REVIEW CONDITIONS.
-- Chapter 02: PLAN DRAFT — implementation not started.
+- Chapter 02: PLAN + STEP 01 INVENTORY + STEP 02 UNIVERSE CONTRACT DOCUMENTED.
+- Chapter 02 production implementation: NOT STARTED.
+- Step 02 status: CONTRACT DEFINED; implementation and contract tests remain pending.
 - Sector Mapping Expansion: OFF.
 - BSE: DISABLED.
 - F&O Scanner: EXCLUDED.
