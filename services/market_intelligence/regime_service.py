@@ -6,6 +6,9 @@ from data.market_data_adapter import NSE_INDEX_SYMBOLS
 from core.market_intelligence.regime import analyze_market_regime
 
 
+SUPPORTED_NSE_INDEXES = dict(NSE_INDEX_SYMBOLS)
+
+
 def analyze_index_market_regime(
     symbol,
     start_date,
