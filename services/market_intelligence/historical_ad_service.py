@@ -85,7 +85,7 @@ def analyze_nse_historical_advance_decline_for_range(
     end_date,
     *,
     initial_anchor: int = 0,
-    max_sessions: int = 60,
+    max_sessions: int = 180,
     session=None,
 ) -> dict:
     """Discover official NSE CM sessions and analyze the bounded date range.
