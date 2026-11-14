@@ -61,7 +61,7 @@ def make_universe(include_mismatch=False):
     if include_mismatch:
         symbols.append("BNAGROCHEM")
         isins.append("INE00HZ01029")
-    return pd.DataFrame({
+    frame = pd.DataFrame({
         "Symbol": symbols,
         "Instrument ID": [str(i + 1) for i in range(len(symbols))],
         "ISIN": isins,
@@ -71,6 +71,18 @@ def make_universe(include_mismatch=False):
         "Universe As Of Date": ["2026-11-13"] * len(symbols),
         "Universe Verification Status": ["MII_DATED"] * len(symbols),
     })
+    frame.attrs["source_provenance"] = {
+        "source": "NSE",
+        "source_url": "https://nsearchives.nseindia.com/content/cm/NSE_CM_security_13112026.csv.gz",
+        "source_filename": "NSE_CM_security_13112026.csv.gz",
+        "source_sha256": "a" * 64,
+        "fetched_at_utc": FETCHED_AT,
+        "snapshot_date": "2026-11-13",
+        "published_at_utc": "2026-11-13T00:00:00Z",
+        "point_in_time_status": "PASS",
+        "verification_status": "MII_DATED",
+    }
+    return frame
 
 
 def make_archive():
@@ -147,6 +159,25 @@ def test_production_service_uses_date_matched_mii_and_passes_schema_audit(
     assert result["audit"]["raw_schema_status"] == "PASS"
     assert result["audit"]["audit_status"] == "PASS"
     assert result["analysis_status"] == "PASS"
+
+
+
+def test_unknown_mii_publication_timestamp_keeps_point_in_time_review(monkeypatch):
+    install_download(monkeypatch)
+    universe = make_universe()
+    universe.attrs["source_provenance"]["published_at_utc"] = None
+    universe.attrs["source_provenance"]["point_in_time_status"] = "REVIEW"
+    monkeypatch.setattr(service, "fetch_nse_equity_universe", lambda **kwargs: universe)
+
+    result = service.analyze_nse_market_breadth_from_udiff(
+        "2026-11-13",
+        session=object(),
+    )
+
+    assert result["point_in_time_status"] == "REVIEW"
+    assert result["analysis_status"] == "REVIEW"
+    assert result["reconciliation"]["coverage_status"] == "PASS"
+
 
 
 def test_unknown_udiff_symbol_is_excluded_and_keeps_review_status(
