@@ -251,3 +251,45 @@ def test_both_sources_failure_is_reported(monkeypatch):
             "MARICO", "2026-10-01", "2026-10-02"
         )
         
+
+
+
+@pytest.mark.parametrize(
+    "symbol,is_index",
+    [("MARICO", False), ("^NSEI", True)],
+)
+def test_nse_fetch_timestamp_reaches_final_provenance(
+    monkeypatch, symbol, is_index
+):
+    fetched_at = "2026-11-14T01:23:45.678901Z"
+
+    def fake_equity(*args):
+        data = sample_data()
+        data.attrs["fetched_at_utc"] = fetched_at
+        return data
+
+    def fake_index(*args):
+        data = sample_index_data()
+        data.attrs["fetched_at_utc"] = fetched_at
+        return data
+
+    monkeypatch.setattr(
+        adapter, "download_equity_history", fake_equity
+    )
+    monkeypatch.setattr(
+        adapter, "download_index_history", fake_index
+    )
+    monkeypatch.setattr(
+        adapter,
+        "fetch_yahoo_history",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("Yahoo must not be called.")
+        ),
+    )
+
+    result = adapter.fetch_market_history(
+        symbol, "2026-10-01", "2026-10-02"
+    )
+
+    assert result["Fetched At UTC"].eq(fetched_at).all()
+    assert result["Source"].eq("NSE").all()
