@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import sys
 from datetime import datetime, timedelta
@@ -12,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import requests
+from openpyxl import load_workbook
+from zipfile import BadZipFile, ZipFile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -33,6 +36,160 @@ from data.providers.nse_universe import (
     NSE_MII_SECURITY_URL_TEMPLATE,
     fetch_nse_equity_universe,
 )
+
+
+NSE_UDIFF_SCHEMA_WORKBOOK_URL = (
+    "https://nsearchives.nseindia.com/web/mediaattachment/2026-06/"
+    "UDiFF_trade_and_Bhavcopy_file_formats_20260630115803.xlsx"
+)
+NSE_UDIFF_OFFICIAL_SAMPLE_URL = (
+    "https://nsearchives.nseindia.com/web/sites/default/files/"
+    "inline-files/Bhavcopy.zip"
+)
+REQUIRED_UDIFF_TAGS = {
+    "TradDt",
+    "Sgmt",
+    "Src",
+    "FinInstrmTp",
+    "FinInstrmId",
+    "ISIN",
+    "TckrSymb",
+    "SctySrs",
+    "OpnPric",
+    "HghPric",
+    "LwPric",
+    "ClsPric",
+    "PrvsClsgPric",
+    "TtlTradgVol",
+}
+
+
+def verify_official_udiff_schema(output_dir: Path) -> dict:
+    """Cross-check production tags against NSE's official workbook and sample."""
+
+    evidence = {
+        "workbook_url": NSE_UDIFF_SCHEMA_WORKBOOK_URL,
+        "sample_url": NSE_UDIFF_OFFICIAL_SAMPLE_URL,
+        "workbook_status": "REVIEW",
+        "sample_status": "REVIEW",
+        "schema_mapping_status": "REVIEW",
+        "required_tags": sorted(REQUIRED_UDIFF_TAGS),
+    }
+
+    workbook_bytes = None
+    try:
+        response = requests.get(
+            NSE_UDIFF_SCHEMA_WORKBOOK_URL,
+            headers=NSE_HEADERS,
+            timeout=45,
+        )
+        response.raise_for_status()
+        final_url = response.url or NSE_UDIFF_SCHEMA_WORKBOOK_URL
+        if (
+            final_url.startswith("https://")
+            and "nsearchives.nseindia.com" in final_url
+        ):
+            workbook_bytes = response.content
+            workbook_path = output_dir / "nse_udiff_format_workbook.xlsx"
+            workbook_path.write_bytes(workbook_bytes)
+            evidence["workbook_sha256"] = hashlib.sha256(
+                workbook_bytes
+            ).hexdigest()
+
+            workbook = load_workbook(
+                BytesIO(workbook_bytes),
+                read_only=True,
+                data_only=True,
+            )
+            evidence["workbook_sheets"] = list(workbook.sheetnames)
+            candidates = []
+
+            for sheet in workbook.worksheets:
+                rows = list(sheet.iter_rows(values_only=True))
+                flattened = {
+                    str(value).strip()
+                    for row in rows
+                    for value in row
+                    if value is not None
+                }
+                missing = sorted(REQUIRED_UDIFF_TAGS - flattened)
+                if not missing:
+                    candidates.append(sheet.title)
+
+            evidence["matching_bhavcopy_sheets"] = [
+                name for name in candidates
+                if "bhav" in name.lower()
+            ]
+            evidence["matching_sheets"] = candidates
+            evidence["workbook_status"] = (
+                "PASS" if evidence["matching_bhavcopy_sheets"]
+                else "REVIEW"
+            )
+            workbook.close()
+    except Exception as exc:
+        evidence["workbook_error"] = (
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    try:
+        response = requests.get(
+            NSE_UDIFF_OFFICIAL_SAMPLE_URL,
+            headers=NSE_HEADERS,
+            timeout=45,
+        )
+        response.raise_for_status()
+        sample_bytes = response.content
+        sample_path = output_dir / "nse_udiff_official_bhavcopy_sample.zip"
+        sample_path.write_bytes(sample_bytes)
+        evidence["sample_sha256"] = hashlib.sha256(
+            sample_bytes
+        ).hexdigest()
+
+        matching_members = []
+        try:
+            with ZipFile(BytesIO(sample_bytes)) as archive:
+                corrupt_member = archive.testzip()
+                if corrupt_member is not None:
+                    raise BadZipFile(
+                        f"Corrupt sample member: {corrupt_member}"
+                    )
+                for member in archive.namelist():
+                    if not member.lower().endswith(".csv"):
+                        continue
+                    sample_frame = pd.read_csv(
+                        BytesIO(archive.read(member)),
+                        nrows=0,
+                        dtype="string",
+                    )
+                    tags = {
+                        str(column).strip()
+                        for column in sample_frame.columns
+                    }
+                    if REQUIRED_UDIFF_TAGS.issubset(tags):
+                        matching_members.append(member)
+        except BadZipFile:
+            raise
+
+        evidence["matching_sample_members"] = matching_members
+        evidence["sample_status"] = (
+            "PASS" if matching_members else "REVIEW"
+        )
+    except Exception as exc:
+        evidence["sample_error"] = (
+            f"{type(exc).__name__}: {exc}"
+        )
+
+    if (
+        evidence["workbook_status"] == "PASS"
+        and evidence["sample_status"] == "PASS"
+    ):
+        evidence["schema_mapping_status"] = "PASS"
+
+    (output_dir / "nse_udiff_schema_evidence.json").write_text(
+        json.dumps(evidence, indent=2),
+        encoding="utf-8",
+    )
+    return evidence
 
 
 def main() -> None:
@@ -80,6 +237,7 @@ def main() -> None:
 
     output_dir = Path("artifacts/nse_udiff_live")
     output_dir.mkdir(parents=True, exist_ok=True)
+    schema_evidence = verify_official_udiff_schema(output_dir)
 
     (output_dir / downloaded["source_filename"]).write_bytes(
         downloaded["raw_bytes"]
@@ -175,6 +333,9 @@ def main() -> None:
         source_filename=downloaded["source_filename"],
         source_url=downloaded["source_url"],
         schema_reference_url=NSE_UDIFF_SCHEMA_REFERENCE_URL,
+        schema_mapping_verified=(
+            schema_evidence["schema_mapping_status"] == "PASS"
+        ),
     )
 
     report = {
@@ -209,6 +370,7 @@ def main() -> None:
             "source_authenticity_status"
         ],
         "schema_mapping_status": audit["schema_mapping_status"],
+        "official_schema_evidence": schema_evidence,
         "audit_reasons": audit["audit_reasons"],
         "udiff_dcmfinserv_rows": len(raw_udiff_diag),
         "mii_dcmfinserv_raw_rows": len(raw_mii_diag),
